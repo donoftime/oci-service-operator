@@ -1,46 +1,13 @@
-
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  creationTimestamp: null
   name: manager-role
 rules:
 - apiGroups:
   - ""
   resources:
-  - configmaps
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ""
-  resources:
-  - configmaps/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - ""
-  resources:
   - events
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ""
-  resources:
   - secrets
   verbs:
   - create
@@ -53,110 +20,17 @@ rules:
 - apiGroups:
   - oci.oracle.com
   resources:
-  - devopsprojects
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - oci.oracle.com
-  resources:
-  - devopsprojects/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - oci.oracle.com
-  resources:
-  - devopsprojects/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - oci.oracle.com
-  resources:
+  - apigatewaydeployments
+  - apigateways
   - autonomousdatabases
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - oci.oracle.com
-  resources:
-  - autonomousdatabases/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - oci.oracle.com
-  resources:
-  - autonomousdatabases/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - oci.oracle.com
-  resources:
+  - devopsprojects
+  - functionsapplications
+  - functionsfunctions
   - mysqldbsystems
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - oci.oracle.com
-  resources:
-  - mysqldbsystems/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - oci.oracle.com
-  resources:
-  - mysqldbsystems/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - oci.oracle.com
-  resources:
+  - nosqldatabases
+  - ociqueues
+  - opensearchclusters
   - redisclusters
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - oci.oracle.com
-  resources:
-  - redisclusters/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - oci.oracle.com
-  resources:
-  - redisclusters/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - oci.oracle.com
-  resources:
   - streams
   verbs:
   - create
@@ -169,12 +43,34 @@ rules:
 - apiGroups:
   - oci.oracle.com
   resources:
+  - apigatewaydeployments/finalizers
+  - apigateways/finalizers
+  - autonomousdatabases/finalizers
+  - devopsprojects/finalizers
+  - functionsapplications/finalizers
+  - functionsfunctions/finalizers
+  - mysqldbsystems/finalizers
+  - nosqldatabases/finalizers
+  - ociqueues/finalizers
+  - opensearchclusters/finalizers
+  - redisclusters/finalizers
   - streams/finalizers
   verbs:
   - update
 - apiGroups:
   - oci.oracle.com
   resources:
+  - apigatewaydeployments/status
+  - apigateways/status
+  - autonomousdatabases/status
+  - devopsprojects/status
+  - functionsapplications/status
+  - functionsfunctions/status
+  - mysqldbsystems/status
+  - nosqldatabases/status
+  - ociqueues/status
+  - opensearchclusters/status
+  - redisclusters/status
   - streams/status
   verbs:
   - get

@@ -3,8 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.4.1
-  creationTimestamp: null
+    controller-gen.kubebuilder.io/version: v0.17.3
   name: functionsapplications.oci.oracle.com
 spec:
   group: oci.oracle.com
@@ -35,15 +34,23 @@ spec:
     name: v1beta1
     schema:
       openAPIV3Schema:
-        description: FunctionsApplication is the Schema for the functionsapplications API
+        description: FunctionsApplication is the Schema for the functionsapplications
+          API
         properties:
           apiVersion:
-            description: APIVersion defines the versioned schema of this representation
-              of an object.
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
             type: string
           kind:
-            description: Kind is a string value representing the REST resource this
-              object represents.
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
             type: string
           metadata:
             type: object
@@ -51,14 +58,16 @@ spec:
             description: FunctionsApplicationSpec defines the desired state of FunctionsApplication
             properties:
               compartmentId:
-                description: CompartmentId is the OCID of the compartment in which to create the application
+                description: CompartmentId is the OCID of the compartment in which
+                  to create the application
                 maxLength: 255
                 minLength: 1
                 type: string
               config:
                 additionalProperties:
                   type: string
-                description: Config is the application configuration passed to functions as environment variables
+                description: Config is the application configuration passed to functions
+                  as environment variables
                 type: object
               definedTags:
                 additionalProperties:
@@ -74,25 +83,30 @@ spec:
                   type: string
                 type: object
               id:
-                description: The OCID of an existing FunctionsApplication to bind to
+                description: The OCID of an existing FunctionsApplication to bind
+                  to (optional; if omitted, a new application is created)
                 maxLength: 255
                 minLength: 1
                 type: string
               networkSecurityGroupIds:
-                description: NetworkSecurityGroupIds is the list of NSG OCIDs
+                description: NetworkSecurityGroupIds is the list of NSG OCIDs to add
+                  the application to
                 items:
                   type: string
                 type: array
               shape:
-                description: 'Shape is the processor shape (GENERIC_X86, GENERIC_ARM, GENERIC_X86_ARM)'
+                description: Shape is the processor shape for functions in the application
+                  (GENERIC_X86, GENERIC_ARM, GENERIC_X86_ARM)
                 type: string
               subnetIds:
-                description: SubnetIds is the list of subnet OCIDs
+                description: SubnetIds is the list of subnet OCIDs in which to run
+                  functions in the application
                 items:
                   type: string
                 type: array
               syslogUrl:
-                description: SyslogUrl is the syslog URL for function logs
+                description: SyslogUrl is the syslog URL to which to send all function
+                  logs
                 type: string
             required:
             - compartmentId
@@ -100,7 +114,8 @@ spec:
             - subnetIds
             type: object
           status:
-            description: FunctionsApplicationStatus defines the observed state of FunctionsApplication
+            description: FunctionsApplicationStatus defines the observed state of
+              FunctionsApplication
             properties:
               status:
                 properties:
@@ -152,9 +167,3 @@ spec:
     storage: true
     subresources:
       status: {}
-status:
-  acceptedNames:
-    kind: ""
-    plural: ""
-  conditions: []
-  storedVersions: []

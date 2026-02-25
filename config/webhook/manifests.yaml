@@ -1,9 +1,7 @@
-
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingWebhookConfiguration
 metadata:
-  creationTimestamp: null
   name: mutating-webhook-configuration
 webhooks:
 - admissionReviewVersions:
@@ -26,12 +24,30 @@ webhooks:
     resources:
     - autonomousdatabases
   sideEffects: None
-
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /mutate-oci-oci-v1beta1-nosqldatabase
+  failurePolicy: Ignore
+  name: mnosqldatabase.kb.io
+  rules:
+  - apiGroups:
+    - oci.oracle.com
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - nosqldatabases
+  sideEffects: None
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
 metadata:
-  creationTimestamp: null
   name: validating-webhook-configuration
 webhooks:
 - admissionReviewVersions:
@@ -53,4 +69,24 @@ webhooks:
     - UPDATE
     resources:
     - autonomousdatabases
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-oci-oci-v1beta1-nosqldatabase
+  failurePolicy: Fail
+  name: vnosqldatabase.kb.io
+  rules:
+  - apiGroups:
+    - oci.oracle.com
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - nosqldatabases
   sideEffects: None

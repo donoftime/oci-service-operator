@@ -4,14 +4,14 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.17.3
-  name: functionsfunctions.oci.oracle.com
+  name: apigatewaydeployments.oci.oracle.com
 spec:
   group: oci.oracle.com
   names:
-    kind: FunctionsFunction
-    listKind: FunctionsFunctionList
-    plural: functionsfunctions
-    singular: functionsfunction
+    kind: ApiGatewayDeployment
+    listKind: ApiGatewayDeploymentList
+    plural: apigatewaydeployments
+    singular: apigatewaydeployment
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -19,11 +19,15 @@ spec:
       name: DisplayName
       priority: 1
       type: string
-    - description: status of the FunctionsFunction
+    - jsonPath: .spec.pathPrefix
+      name: PathPrefix
+      priority: 1
+      type: string
+    - description: status of the ApiGatewayDeployment
       jsonPath: .status.status.conditions[-1].type
       name: Status
       type: string
-    - description: Ocid of the FunctionsFunction
+    - description: Ocid of the ApiGatewayDeployment
       jsonPath: .status.status.ocid
       name: Ocid
       priority: 1
@@ -34,7 +38,8 @@ spec:
     name: v1beta1
     schema:
       openAPIV3Schema:
-        description: FunctionsFunction is the Schema for the functionsfunctions API
+        description: ApiGatewayDeployment is the Schema for the apigatewaydeployments
+          API
         properties:
           apiVersion:
             description: |-
@@ -54,20 +59,14 @@ spec:
           metadata:
             type: object
           spec:
-            description: FunctionsFunctionSpec defines the desired state of FunctionsFunction
+            description: ApiGatewayDeploySpec defines the desired state of ApiGatewayDeployment
             properties:
-              applicationId:
-                description: ApplicationId is the OCID of the application this function
-                  belongs to
+              compartmentId:
+                description: CompartmentId is the OCID of the compartment in which
+                  to create the deployment
                 maxLength: 255
                 minLength: 1
                 type: string
-              config:
-                additionalProperties:
-                  type: string
-                description: Config is the function configuration, overrides application
-                  configuration
-                type: object
               definedTags:
                 additionalProperties:
                   additionalProperties:
@@ -75,40 +74,83 @@ spec:
                   type: object
                 type: object
               displayName:
-                description: DisplayName is a user-friendly name for the function
+                description: DisplayName is a user-friendly name for the deployment
                 type: string
               freeformTags:
                 additionalProperties:
                   type: string
                 type: object
-              id:
-                description: The OCID of an existing FunctionsFunction to bind to
-                  (optional; if omitted, a new function is created)
+              gatewayId:
+                description: GatewayId is the OCID of the API Gateway to deploy to
                 maxLength: 255
                 minLength: 1
                 type: string
-              image:
-                description: Image is the qualified name of the Docker image to use
-                  in the function
+              id:
+                description: The OCID of an existing Deployment to bind to (optional;
+                  if omitted, a new deployment is created)
+                maxLength: 255
+                minLength: 1
                 type: string
-              memoryInMBs:
-                description: MemoryInMBs is the maximum usable memory for the function
-                  in MiB
-                format: int64
-                minimum: 128
-                type: integer
-              timeoutInSeconds:
-                description: TimeoutInSeconds is the timeout for executions of the
-                  function in seconds
-                type: integer
+              pathPrefix:
+                description: PathPrefix is the path prefix for all routes in this
+                  deployment
+                type: string
+              routes:
+                description: Routes is the list of API routes in this deployment
+                items:
+                  description: ApiGatewayRoute defines a single route in a deployment
+                    specification
+                  properties:
+                    backend:
+                      description: Backend defines where the route sends traffic
+                      properties:
+                        body:
+                          description: Body is the response body for stock response
+                            (for STOCK_RESPONSE_BACKEND type)
+                          type: string
+                        functionId:
+                          description: FunctionId is the OCID of the Oracle Function
+                            (for ORACLE_FUNCTIONS_BACKEND type)
+                          type: string
+                        status:
+                          description: Status is the HTTP status code for stock response
+                            (for STOCK_RESPONSE_BACKEND type)
+                          type: integer
+                        type:
+                          description: Type is the backend type (HTTP_BACKEND, ORACLE_FUNCTIONS_BACKEND,
+                            STOCK_RESPONSE_BACKEND)
+                          enum:
+                          - HTTP_BACKEND
+                          - ORACLE_FUNCTIONS_BACKEND
+                          - STOCK_RESPONSE_BACKEND
+                          type: string
+                        url:
+                          description: Url is the backend URL (for HTTP_BACKEND type)
+                          type: string
+                      required:
+                      - type
+                      type: object
+                    methods:
+                      description: Methods is the list of HTTP methods (GET, POST,
+                        PUT, DELETE, etc.)
+                      items:
+                        type: string
+                      type: array
+                    path:
+                      description: Path is the route path (e.g., "/hello")
+                      type: string
+                  required:
+                  - backend
+                  - path
+                  type: object
+                type: array
             required:
-            - applicationId
-            - displayName
-            - image
-            - memoryInMBs
+            - compartmentId
+            - gatewayId
+            - pathPrefix
             type: object
           status:
-            description: FunctionsFunctionStatus defines the observed state of FunctionsFunction
+            description: ApiGatewayDeployStatus defines the observed state of ApiGatewayDeployment
             properties:
               status:
                 properties:

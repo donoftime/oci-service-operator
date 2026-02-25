@@ -4,14 +4,14 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.17.3
-  name: functionsfunctions.oci.oracle.com
+  name: apigateways.oci.oracle.com
 spec:
   group: oci.oracle.com
   names:
-    kind: FunctionsFunction
-    listKind: FunctionsFunctionList
-    plural: functionsfunctions
-    singular: functionsfunction
+    kind: ApiGateway
+    listKind: ApiGatewayList
+    plural: apigateways
+    singular: apigateway
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -19,11 +19,15 @@ spec:
       name: DisplayName
       priority: 1
       type: string
-    - description: status of the FunctionsFunction
+    - jsonPath: .spec.endpointType
+      name: EndpointType
+      priority: 1
+      type: string
+    - description: status of the ApiGateway
       jsonPath: .status.status.conditions[-1].type
       name: Status
       type: string
-    - description: Ocid of the FunctionsFunction
+    - description: Ocid of the ApiGateway
       jsonPath: .status.status.ocid
       name: Ocid
       priority: 1
@@ -34,7 +38,7 @@ spec:
     name: v1beta1
     schema:
       openAPIV3Schema:
-        description: FunctionsFunction is the Schema for the functionsfunctions API
+        description: ApiGateway is the Schema for the apigateways API
         properties:
           apiVersion:
             description: |-
@@ -54,20 +58,20 @@ spec:
           metadata:
             type: object
           spec:
-            description: FunctionsFunctionSpec defines the desired state of FunctionsFunction
+            description: ApiGatewaySpec defines the desired state of ApiGateway
             properties:
-              applicationId:
-                description: ApplicationId is the OCID of the application this function
-                  belongs to
+              certificateId:
+                description: CertificateId is the OCID of a certificate resource to
+                  use for HTTPS
                 maxLength: 255
                 minLength: 1
                 type: string
-              config:
-                additionalProperties:
-                  type: string
-                description: Config is the function configuration, overrides application
-                  configuration
-                type: object
+              compartmentId:
+                description: CompartmentId is the OCID of the compartment in which
+                  to create the gateway
+                maxLength: 255
+                minLength: 1
+                type: string
               definedTags:
                 additionalProperties:
                   additionalProperties:
@@ -75,40 +79,44 @@ spec:
                   type: object
                 type: object
               displayName:
-                description: DisplayName is a user-friendly name for the function
+                description: DisplayName is a user-friendly name for the gateway
+                type: string
+              endpointType:
+                description: 'EndpointType is the gateway endpoint type: PUBLIC or
+                  PRIVATE'
+                enum:
+                - PUBLIC
+                - PRIVATE
                 type: string
               freeformTags:
                 additionalProperties:
                   type: string
                 type: object
               id:
-                description: The OCID of an existing FunctionsFunction to bind to
-                  (optional; if omitted, a new function is created)
+                description: The OCID of an existing ApiGateway to bind to (optional;
+                  if omitted, a new gateway is created)
                 maxLength: 255
                 minLength: 1
                 type: string
-              image:
-                description: Image is the qualified name of the Docker image to use
-                  in the function
+              networkSecurityGroupIds:
+                description: NetworkSecurityGroupIds is an optional list of NSG OCIDs
+                  associated with the gateway
+                items:
+                  type: string
+                type: array
+              subnetId:
+                description: SubnetId is the OCID of the subnet in which the gateway
+                  is created
+                maxLength: 255
+                minLength: 1
                 type: string
-              memoryInMBs:
-                description: MemoryInMBs is the maximum usable memory for the function
-                  in MiB
-                format: int64
-                minimum: 128
-                type: integer
-              timeoutInSeconds:
-                description: TimeoutInSeconds is the timeout for executions of the
-                  function in seconds
-                type: integer
             required:
-            - applicationId
-            - displayName
-            - image
-            - memoryInMBs
+            - compartmentId
+            - endpointType
+            - subnetId
             type: object
           status:
-            description: FunctionsFunctionStatus defines the observed state of FunctionsFunction
+            description: ApiGatewayStatus defines the observed state of ApiGateway
             properties:
               status:
                 properties:
