@@ -10,6 +10,7 @@ resources:
 - bases/oci.oracle.com_autonomousdatabases.yaml
 - bases/oci.oracle.com_streams.yaml
 - bases/oci.oracle.com_mysqldbsystems.yaml
+- bases/oci.oracle.com_opensearchclusters.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patchesStrategicMerge:
