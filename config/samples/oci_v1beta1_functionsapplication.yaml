@@ -1,0 +1,12 @@
+apiVersion: oci.oracle.com/v1beta1
+kind: FunctionsApplication
+metadata:
+  name: functionsapplication-sample
+spec:
+  compartmentId: ocid1.compartment.oc1..aaaa
+  displayName: my-functions-app
+  subnetIds:
+    - ocid1.subnet.oc1..aaaa
+  config:
+    ENV: production
+  shape: GENERIC_X86

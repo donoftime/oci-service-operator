@@ -36,6 +36,7 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/servicemanager/autonomousdatabases/adb"
 	"github.com/oracle/oci-service-operator/pkg/servicemanager/mysql/dbsystem"
 	ociapigw "github.com/oracle/oci-service-operator/pkg/servicemanager/apigateway"
+	ocifunctions "github.com/oracle/oci-service-operator/pkg/servicemanager/functions"
 	"github.com/oracle/oci-service-operator/pkg/servicemanager/nosql"
 	opensearchmanager "github.com/oracle/oci-service-operator/pkg/servicemanager/opensearch"
 	ociqueue "github.com/oracle/oci-service-operator/pkg/servicemanager/queue"
@@ -273,6 +274,36 @@ func main() {
 		},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.ErrorLog(err, "unable to create controller", "controller", "OciQueue")
+		os.Exit(1)
+	}
+
+	if err = (&controllers.FunctionsApplicationReconciler{
+		Reconciler: &core.BaseReconciler{
+			Client:             mgr.GetClient(),
+			OSOKServiceManager: ocifunctions.NewFunctionsApplicationServiceManager(provider, credClient, scheme, loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("service-manager").WithName("FunctionsApplication")}),
+			Finalizer:          core.NewBaseFinalizer(mgr.GetClient(), ctrl.Log),
+			Log:                loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("controllers").WithName("FunctionsApplication")},
+			Metrics:            metricsClient,
+			Recorder:           mgr.GetEventRecorderFor("FunctionsApplication"),
+			Scheme:             scheme,
+		},
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.ErrorLog(err, "unable to create controller", "controller", "FunctionsApplication")
+		os.Exit(1)
+	}
+
+	if err = (&controllers.FunctionsFunctionReconciler{
+		Reconciler: &core.BaseReconciler{
+			Client:             mgr.GetClient(),
+			OSOKServiceManager: ocifunctions.NewFunctionsFunctionServiceManager(provider, credClient, scheme, loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("service-manager").WithName("FunctionsFunction")}),
+			Finalizer:          core.NewBaseFinalizer(mgr.GetClient(), ctrl.Log),
+			Log:                loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("controllers").WithName("FunctionsFunction")},
+			Metrics:            metricsClient,
+			Recorder:           mgr.GetEventRecorderFor("FunctionsFunction"),
+			Scheme:             scheme,
+		},
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.ErrorLog(err, "unable to create controller", "controller", "FunctionsFunction")
 		os.Exit(1)
 	}
 

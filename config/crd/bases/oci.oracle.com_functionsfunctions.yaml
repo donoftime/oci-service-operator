@@ -1,0 +1,156 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.4.1
+  creationTimestamp: null
+  name: functionsfunctions.oci.oracle.com
+spec:
+  group: oci.oracle.com
+  names:
+    kind: FunctionsFunction
+    listKind: FunctionsFunctionList
+    plural: functionsfunctions
+    singular: functionsfunction
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.displayName
+      name: DisplayName
+      priority: 1
+      type: string
+    - description: status of the FunctionsFunction
+      jsonPath: .status.status.conditions[-1].type
+      name: Status
+      type: string
+    - description: Ocid of the FunctionsFunction
+      jsonPath: .status.status.ocid
+      name: Ocid
+      priority: 1
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: FunctionsFunction is the Schema for the functionsfunctions API
+        properties:
+          apiVersion:
+            description: APIVersion defines the versioned schema of this representation
+              of an object.
+            type: string
+          kind:
+            description: Kind is a string value representing the REST resource this
+              object represents.
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: FunctionsFunctionSpec defines the desired state of FunctionsFunction
+            properties:
+              applicationId:
+                description: ApplicationId is the OCID of the application this function belongs to
+                maxLength: 255
+                minLength: 1
+                type: string
+              config:
+                additionalProperties:
+                  type: string
+                description: Config is the function configuration, overrides application configuration
+                type: object
+              definedTags:
+                additionalProperties:
+                  additionalProperties:
+                    type: string
+                  type: object
+                type: object
+              displayName:
+                description: DisplayName is a user-friendly name for the function
+                type: string
+              freeformTags:
+                additionalProperties:
+                  type: string
+                type: object
+              id:
+                description: The OCID of an existing FunctionsFunction to bind to
+                maxLength: 255
+                minLength: 1
+                type: string
+              image:
+                description: Image is the qualified Docker image name for the function
+                type: string
+              memoryInMBs:
+                description: MemoryInMBs is the maximum usable memory for the function in MiB
+                format: int64
+                minimum: 128
+                type: integer
+              timeoutInSeconds:
+                description: TimeoutInSeconds is the timeout for executions of the function
+                type: integer
+            required:
+            - applicationId
+            - displayName
+            - image
+            - memoryInMBs
+            type: object
+          status:
+            description: FunctionsFunctionStatus defines the observed state of FunctionsFunction
+            properties:
+              status:
+                properties:
+                  conditions:
+                    items:
+                      properties:
+                        lastTransitionTime:
+                          format: date-time
+                          type: string
+                        message:
+                          type: string
+                        reason:
+                          type: string
+                        status:
+                          type: string
+                        type:
+                          type: string
+                      required:
+                      - status
+                      - type
+                      type: object
+                    type: array
+                  createdAt:
+                    format: date-time
+                    type: string
+                  deletedAt:
+                    format: date-time
+                    type: string
+                  message:
+                    type: string
+                  ocid:
+                    maxLength: 255
+                    minLength: 1
+                    type: string
+                  reason:
+                    type: string
+                  requestedAt:
+                    format: date-time
+                    type: string
+                  updatedAt:
+                    format: date-time
+                    type: string
+                type: object
+            required:
+            - status
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: []
+  storedVersions: []

@@ -1,0 +1,12 @@
+apiVersion: oci.oracle.com/v1beta1
+kind: FunctionsFunction
+metadata:
+  name: functionsfunction-sample
+spec:
+  applicationId: ocid1.fnapp.oc1..aaaa
+  displayName: my-function
+  image: phx.ocir.io/mytenancy/myrepo/my-function:0.0.1
+  memoryInMBs: 256
+  timeoutInSeconds: 30
+  config:
+    LOG_LEVEL: info
