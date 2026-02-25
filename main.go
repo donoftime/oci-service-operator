@@ -35,6 +35,7 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/metrics"
 	"github.com/oracle/oci-service-operator/pkg/servicemanager/autonomousdatabases/adb"
 	"github.com/oracle/oci-service-operator/pkg/servicemanager/mysql/dbsystem"
+	ociapigw "github.com/oracle/oci-service-operator/pkg/servicemanager/apigateway"
 	opensearchmanager "github.com/oracle/oci-service-operator/pkg/servicemanager/opensearch"
 	ociqueue "github.com/oracle/oci-service-operator/pkg/servicemanager/queue"
 	ociredis "github.com/oracle/oci-service-operator/pkg/servicemanager/redis"
@@ -194,6 +195,36 @@ func main() {
 		},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.ErrorLog(err, "unable to create controller", "controller", "RedisCluster")
+		os.Exit(1)
+	}
+
+	if err = (&controllers.ApiGatewayReconciler{
+		Reconciler: &core.BaseReconciler{
+			Client:             mgr.GetClient(),
+			OSOKServiceManager: ociapigw.NewGatewayServiceManager(provider, credClient, scheme, loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("service-manager").WithName("ApiGateway")}),
+			Finalizer:          core.NewBaseFinalizer(mgr.GetClient(), ctrl.Log),
+			Log:                loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("controllers").WithName("ApiGateway")},
+			Metrics:            metricsClient,
+			Recorder:           mgr.GetEventRecorderFor("ApiGateway"),
+			Scheme:             scheme,
+		},
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.ErrorLog(err, "unable to create controller", "controller", "ApiGateway")
+		os.Exit(1)
+	}
+
+	if err = (&controllers.ApiGatewayDeploymentReconciler{
+		Reconciler: &core.BaseReconciler{
+			Client:             mgr.GetClient(),
+			OSOKServiceManager: ociapigw.NewDeploymentServiceManager(provider, credClient, scheme, loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("service-manager").WithName("ApiGatewayDeployment")}),
+			Finalizer:          core.NewBaseFinalizer(mgr.GetClient(), ctrl.Log),
+			Log:                loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("controllers").WithName("ApiGatewayDeployment")},
+			Metrics:            metricsClient,
+			Recorder:           mgr.GetEventRecorderFor("ApiGatewayDeployment"),
+			Scheme:             scheme,
+		},
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.ErrorLog(err, "unable to create controller", "controller", "ApiGatewayDeployment")
 		os.Exit(1)
 	}
 

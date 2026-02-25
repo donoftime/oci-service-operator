@@ -1,0 +1,19 @@
+#
+# Copyright (c) 2021, Oracle and/or its affiliates. All rights reserved.
+# Licensed under the Universal Permissive License v 1.0 as shown at http://oss.oracle.com/licenses/upl.
+#
+
+apiVersion: oci.oracle.com/v1beta1
+kind: ApiGateway
+metadata:
+  name: sample-apigateway
+spec:
+  # compartmentId: ocid1.compartment.oc1..aaaaaaaaXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+  compartmentId: ocid1.compartment.oc1..aaaaaaaaXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+  displayName: SampleApiGateway
+  endpointType: PUBLIC
+  subnetId: ocid1.subnet.oc1.iad.XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+  # id: ocid1.apigateway.oc1.iad.XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX  # bind to an existing gateway
+  # certificateId: ocid1.certificate.oc1.iad.XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+  # networkSecurityGroupIds:
+  #   - ocid1.networksecuritygroup.oc1.iad.XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX

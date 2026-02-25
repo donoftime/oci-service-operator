@@ -1,0 +1,30 @@
+#
+# Copyright (c) 2021, Oracle and/or its affiliates. All rights reserved.
+# Licensed under the Universal Permissive License v 1.0 as shown at http://oss.oracle.com/licenses/upl.
+#
+
+apiVersion: oci.oracle.com/v1beta1
+kind: ApiGatewayDeployment
+metadata:
+  name: sample-apigatewaydeploy
+spec:
+  # compartmentId: ocid1.compartment.oc1..aaaaaaaaXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+  compartmentId: ocid1.compartment.oc1..aaaaaaaaXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+  gatewayId: ocid1.apigateway.oc1.iad.XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+  displayName: SampleDeployment
+  pathPrefix: /v1
+  routes:
+    - path: /hello
+      methods:
+        - GET
+      backend:
+        type: HTTP_BACKEND
+        url: https://httpbin.org/get
+    - path: /echo
+      methods:
+        - POST
+      backend:
+        type: STOCK_RESPONSE_BACKEND
+        status: 200
+        body: '{"message": "echo"}'
+  # id: ocid1.apigateway.deployment.oc1.iad.XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX  # bind to an existing deployment
