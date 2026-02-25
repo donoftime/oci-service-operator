@@ -10,7 +10,6 @@ OSOK is based on the [Operator Framework](https://operatorframework.io/), an ope
 1. [Autonomous Database Service](https://www.oracle.com/in/autonomous-database/)
 1. [Oracle Streaming Service](https://docs.cloud.oracle.com/iaas/Content/Streaming/Concepts/streamingoverview.htm)
 1. [MySQL DB System Service](https://www.oracle.com/mysql/)
-1. [Service Mesh Service](https://docs.oracle.com/iaas/Content/service-mesh/home.htm)
 
 ## Installation
 
