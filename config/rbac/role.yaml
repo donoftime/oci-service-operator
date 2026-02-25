@@ -53,6 +53,32 @@ rules:
 - apiGroups:
   - oci.oracle.com
   resources:
+  - devopsprojects
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - oci.oracle.com
+  resources:
+  - devopsprojects/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - oci.oracle.com
+  resources:
+  - devopsprojects/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - oci.oracle.com
+  resources:
   - autonomousdatabases
   verbs:
   - create
