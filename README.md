@@ -10,6 +10,15 @@ OSOK is based on the [Operator Framework](https://operatorframework.io/), an ope
 1. [Autonomous Database Service](https://www.oracle.com/in/autonomous-database/)
 1. [Oracle Streaming Service](https://docs.cloud.oracle.com/iaas/Content/Streaming/Concepts/streamingoverview.htm)
 1. [MySQL DB System Service](https://www.oracle.com/mysql/)
+1. [OCI Cache with Redis](https://www.oracle.com/cloud/cache/)
+1. [OpenSearch Service](https://www.oracle.com/cloud/search/)
+1. [Queue Service](https://www.oracle.com/cloud/queue/)
+1. [API Gateway](https://www.oracle.com/cloud/networking/api-gateway/)
+1. [NoSQL Database](https://www.oracle.com/database/nosql-cloud.html)
+1. [Functions (FaaS)](https://www.oracle.com/cloud/cloud-native/functions/)
+1. [DevOps Service](https://www.oracle.com/devops/devops-service/)
+1. [Vault (Key Management)](https://www.oracle.com/security/cloud-security/key-management/)
+1. [Container Instances](https://www.oracle.com/cloud/cloud-native/container-instances/)
 
 ## Installation
 
