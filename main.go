@@ -35,6 +35,7 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/metrics"
 	"github.com/oracle/oci-service-operator/pkg/servicemanager/autonomousdatabases/adb"
 	"github.com/oracle/oci-service-operator/pkg/servicemanager/mysql/dbsystem"
+	ociredis "github.com/oracle/oci-service-operator/pkg/servicemanager/redis"
 	"github.com/oracle/oci-service-operator/pkg/servicemanager/streams"
 	"github.com/oracle/oci-service-operator/pkg/util"
 	// +kubebuilder:scaffold:imports
@@ -176,6 +177,21 @@ func main() {
 		},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.ErrorLog(err, "unable to create controller", "controller", "MySqlDbSystem")
+		os.Exit(1)
+	}
+
+	if err = (&controllers.RedisClusterReconciler{
+		Reconciler: &core.BaseReconciler{
+			Client:             mgr.GetClient(),
+			OSOKServiceManager: ociredis.NewRedisClusterServiceManager(provider, credClient, scheme, loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("service-manager").WithName("RedisCluster")}),
+			Finalizer:          core.NewBaseFinalizer(mgr.GetClient(), ctrl.Log),
+			Log:                loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("controllers").WithName("RedisCluster")},
+			Metrics:            metricsClient,
+			Recorder:           mgr.GetEventRecorderFor("RedisCluster"),
+			Scheme:             scheme,
+		},
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.ErrorLog(err, "unable to create controller", "controller", "RedisCluster")
 		os.Exit(1)
 	}
 
