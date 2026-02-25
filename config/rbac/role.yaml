@@ -105,6 +105,32 @@ rules:
 - apiGroups:
   - oci.oracle.com
   resources:
+  - containerinstances
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - oci.oracle.com
+  resources:
+  - containerinstances/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - oci.oracle.com
+  resources:
+  - containerinstances/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - oci.oracle.com
+  resources:
   - redisclusters
   verbs:
   - create

@@ -1,0 +1,26 @@
+#
+# Copyright (c) 2021, Oracle and/or its affiliates. All rights reserved.
+# Licensed under the Universal Permissive License v 1.0 as shown at http://oss.oracle.com/licenses/upl.
+#
+
+apiVersion: oci.oracle.com/v1beta1
+kind: ContainerInstance
+metadata:
+  name: sample-container-instance
+spec:
+  compartmentId: ocid1.compartment.oc1..aaaaaaaaXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+  availabilityDomain: Uocm:PHX-AD-1
+  shape: CI.Standard.E4.Flex
+  ocpus: 1
+  memoryInGBs: 6
+  displayName: SampleContainerInstance
+  containers:
+  - imageUrl: docker.io/library/nginx:latest
+    displayName: nginx
+    environmentVariables:
+      NGINX_PORT: "80"
+  vnics:
+  - subnetId: ocid1.subnet.oc1.iad.XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+  # id: ocid1.containerinstance.oc1.<region_code>.XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX  # bind to existing container instance
+  # faultDomain: FAULT-DOMAIN-1
+  # containerRestartPolicy: ALWAYS
