@@ -11,4 +11,5 @@ resources:
 - oci_v1beta1_nosqldatabase.yaml
 - oci_v1beta1_redis.yaml
 - oci_v1beta1_devopsproject.yaml
+- oci_v1beta1_vault.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples
