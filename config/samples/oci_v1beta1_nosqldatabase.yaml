@@ -1,0 +1,19 @@
+#
+# Copyright (c) 2021, Oracle and/or its affiliates. All rights reserved.
+# Licensed under the Universal Permissive License v 1.0 as shown at http://oss.oracle.com/licenses/upl.
+#
+
+apiVersion: oci.oracle.com/v1beta1
+kind: NoSQLDatabase
+metadata:
+  name: nosqldatabase-sample
+spec:
+  compartmentId: ocid1.compartment.oc1..aaaaaaaaxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+  name: SampleTable
+  ddlStatement: "CREATE TABLE IF NOT EXISTS SampleTable (id INTEGER, name STRING, PRIMARY KEY(id))"
+  tableLimits:
+    maxReadUnits: 50
+    maxWriteUnits: 50
+    maxStorageInGBs: 25
+  freeformTags:
+    env: sample

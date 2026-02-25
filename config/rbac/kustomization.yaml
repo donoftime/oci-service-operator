@@ -7,6 +7,8 @@ resources:
 - role_binding.yaml
 - leader_election_role.yaml
 - leader_election_role_binding.yaml
+- nosqldatabase_editor_role.yaml
+- nosqldatabase_viewer_role.yaml
 - rediscluster_editor_role.yaml
 - rediscluster_viewer_role.yaml
 - opensearchcluster_editor_role.yaml

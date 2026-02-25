@@ -36,6 +36,7 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/servicemanager/autonomousdatabases/adb"
 	"github.com/oracle/oci-service-operator/pkg/servicemanager/mysql/dbsystem"
 	ociapigw "github.com/oracle/oci-service-operator/pkg/servicemanager/apigateway"
+	"github.com/oracle/oci-service-operator/pkg/servicemanager/nosql"
 	opensearchmanager "github.com/oracle/oci-service-operator/pkg/servicemanager/opensearch"
 	ociqueue "github.com/oracle/oci-service-operator/pkg/servicemanager/queue"
 	ociredis "github.com/oracle/oci-service-operator/pkg/servicemanager/redis"
@@ -225,6 +226,21 @@ func main() {
 		},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.ErrorLog(err, "unable to create controller", "controller", "ApiGatewayDeployment")
+		os.Exit(1)
+	}
+
+	if err = (&controllers.NoSQLDatabaseReconciler{
+		Reconciler: &core.BaseReconciler{
+			Client:             mgr.GetClient(),
+			OSOKServiceManager: nosql.NewNoSQLDatabaseServiceManager(provider, credClient, scheme, loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("service-manager").WithName("NoSQLDatabase")}),
+			Finalizer:          core.NewBaseFinalizer(mgr.GetClient(), ctrl.Log),
+			Log:                loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("controllers").WithName("NoSQLDatabase")},
+			Metrics:            metricsClient,
+			Recorder:           mgr.GetEventRecorderFor("NoSQLDatabase"),
+			Scheme:             scheme,
+		},
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.ErrorLog(err, "unable to create controller", "controller", "NoSQLDatabase")
 		os.Exit(1)
 	}
 
