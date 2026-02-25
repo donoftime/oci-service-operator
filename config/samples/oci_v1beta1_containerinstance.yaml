@@ -1,0 +1,26 @@
+apiVersion: oci.oracle.com/v1beta1
+kind: ContainerInstance
+metadata:
+  name: containerinstance-sample
+spec:
+  compartmentId: ocid1.compartment.oc1..exampleuniqueID
+  availabilityDomain: "AD-1"
+  shape: "CI.Standard.E4.Flex"
+  shapeConfig:
+    ocpus: 1
+    memoryInGBs: 4
+  containers:
+    - imageUrl: "busybox:latest"
+      displayName: "my-container"
+      command:
+        - "/bin/sh"
+      arguments:
+        - "-c"
+        - "echo hello && sleep 3600"
+      environmentVariables:
+        MY_VAR: "my-value"
+  vnics:
+    - subnetId: ocid1.subnet.oc1..exampleuniqueID
+      displayName: "primary-vnic"
+  displayName: "my-container-instance"
+  containerRestartPolicy: "NEVER"

@@ -7,6 +7,7 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - configmaps
   - events
   - secrets
   verbs:
@@ -27,6 +28,7 @@ rules:
   - functionsapplications
   - functionsfunctions
   - mysqldbsystems
+  - containerinstances
   - nosqldatabases
   - ociqueues
   - opensearchclusters
@@ -46,6 +48,7 @@ rules:
   - apigatewaydeployments/finalizers
   - apigateways/finalizers
   - autonomousdatabases/finalizers
+  - containerinstances/finalizers
   - devopsprojects/finalizers
   - functionsapplications/finalizers
   - functionsfunctions/finalizers
@@ -63,6 +66,7 @@ rules:
   - apigatewaydeployments/status
   - apigateways/status
   - autonomousdatabases/status
+  - containerinstances/status
   - devopsprojects/status
   - functionsapplications/status
   - functionsfunctions/status

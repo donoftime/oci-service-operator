@@ -146,6 +146,7 @@ github.com/oracle/oci-go-sdk/v65/apigateway
 github.com/oracle/oci-go-sdk/v65/common
 github.com/oracle/oci-go-sdk/v65/common/auth
 github.com/oracle/oci-go-sdk/v65/common/utils
+github.com/oracle/oci-go-sdk/v65/containerinstances
 github.com/oracle/oci-go-sdk/v65/database
 github.com/oracle/oci-go-sdk/v65/devops
 github.com/oracle/oci-go-sdk/v65/functions
