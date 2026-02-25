@@ -1,0 +1,19 @@
+apiVersion: oci.oracle.com/v1beta1
+kind: RedisCluster
+metadata:
+  name: sample-redis-cluster
+spec:
+  compartmentId: ocid1.compartment.oc1..aaaaaaaaXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+  displayName: SampleRedisCluster
+  nodeCount: 3
+  nodeMemoryInGBs: 4.0
+  softwareVersion: V7_0_5
+  subnetId: ocid1.subnet.oc1.iad.aaaaaaaaXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+  # Optional: bind to an existing Redis cluster by OCID
+  # Id: ocid1.rediscluster.oc1.iad.XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+  # Optional: tags
+  # freeformTags:
+  #   env: dev
+  # definedTags:
+  #   MyNamespace:
+  #     MyKey: MyValue

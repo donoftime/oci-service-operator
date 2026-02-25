@@ -1,0 +1,24 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: rediscluster-editor-role
+rules:
+- apiGroups:
+  - oci.oracle.com
+  resources:
+  - redisclusters
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - oci.oracle.com
+  resources:
+  - redisclusters/status
+  verbs:
+  - get
