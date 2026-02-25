@@ -11,3 +11,4 @@ vendor/**/Dockerfile
 .runtime/
 .claude/commands/
 .logs/
+.beads/
