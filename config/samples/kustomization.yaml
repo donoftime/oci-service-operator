@@ -8,4 +8,5 @@ resources:
 - oci_v1beta1_autonomousdatabases.yaml
 - oci_v1beta1_stream.yaml
 - oci_v1beta1_mysqldbsystem.yaml
+- oci_v1beta1_redis.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

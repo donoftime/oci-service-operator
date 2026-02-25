@@ -1,0 +1,17 @@
+#
+# Copyright (c) 2021, Oracle and/or its affiliates. All rights reserved.
+# Licensed under the Universal Permissive License v 1.0 as shown at http://oss.oracle.com/licenses/upl.
+#
+
+apiVersion: oci.oracle.com/v1beta1
+kind: RedisCluster
+metadata:
+  name: sample-redis-cluster
+spec:
+  compartmentId: ocid1.compartment.oc1..aaaaaaaaXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+  displayName: SampleRedisCluster
+  nodeCount: 3
+  nodeMemoryInGBs: 16
+  softwareVersion: V7_0_5
+  subnetId: ocid1.subnet.oc1.iad.XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+  # id: ocid1.redis.oc1.<region_code>.XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX  # bind to existing cluster
