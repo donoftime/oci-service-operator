@@ -7,18 +7,18 @@ The OCI Service Operator for Kubernetes (OSOK) makes it easy to create, manage, 
 OSOK is based on the [Operator Framework](https://operatorframework.io/), an open-source toolkit used to manage Operators. It uses the [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) library, which provides high-level APIs and abstractions to write operational logic and also provides tools for scaffolding and code generation for Operators.
 
 **Services Supported**
-1. [Autonomous Database Service](https://www.oracle.com/in/autonomous-database/)
-1. [Oracle Streaming Service](https://docs.cloud.oracle.com/iaas/Content/Streaming/Concepts/streamingoverview.htm)
-1. [MySQL DB System Service](https://www.oracle.com/mysql/)
-1. [OCI Cache with Redis](https://www.oracle.com/cloud/cache/)
-1. [OpenSearch Service](https://www.oracle.com/cloud/search/)
-1. [Queue Service](https://www.oracle.com/cloud/queue/)
-1. [API Gateway](https://www.oracle.com/cloud/networking/api-gateway/)
-1. [NoSQL Database](https://www.oracle.com/database/nosql-cloud.html)
-1. [Functions (FaaS)](https://www.oracle.com/cloud/cloud-native/functions/)
-1. [DevOps Service](https://www.oracle.com/devops/devops-service/)
-1. [Vault (Key Management)](https://www.oracle.com/security/cloud-security/key-management/)
-1. [Container Instances](https://www.oracle.com/cloud/cloud-native/container-instances/)
+1. [Autonomous Database Service](https://www.oracle.com/in/autonomous-database/) — [OSOK docs](docs/adb.md)
+1. [Oracle Streaming Service](https://docs.cloud.oracle.com/iaas/Content/Streaming/Concepts/streamingoverview.htm) — [OSOK docs](docs/oss.md)
+1. [MySQL DB System Service](https://www.oracle.com/mysql/) — [OSOK docs](docs/mysql.md)
+1. [OCI Cache with Redis](https://www.oracle.com/cloud/cache/) — [OSOK docs](docs/redis.md)
+1. [OpenSearch Service](https://www.oracle.com/cloud/search/) — [OSOK docs](docs/opensearch.md)
+1. [Queue Service](https://www.oracle.com/cloud/queue/) — [OSOK docs](docs/queue.md)
+1. [API Gateway](https://www.oracle.com/cloud/networking/api-gateway/) — [OSOK docs](docs/apigateway.md)
+1. [NoSQL Database](https://www.oracle.com/database/nosql-cloud.html) — [OSOK docs](docs/nosql.md)
+1. [Functions (FaaS)](https://www.oracle.com/cloud/cloud-native/functions/) — [OSOK docs](docs/functions.md)
+1. [DevOps Service](https://www.oracle.com/devops/devops-service/) — [OSOK docs](docs/devops.md)
+1. [Vault (Key Management)](https://www.oracle.com/security/cloud-security/key-management/) — [OSOK docs](docs/vault.md)
+1. [Container Instances](https://www.oracle.com/cloud/cloud-native/container-instances/) — [OSOK docs](docs/containerinstances.md)
 
 ## Installation
 
