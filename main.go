@@ -36,6 +36,7 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/servicemanager/autonomousdatabases/adb"
 	"github.com/oracle/oci-service-operator/pkg/servicemanager/mysql/dbsystem"
 	opensearchmanager "github.com/oracle/oci-service-operator/pkg/servicemanager/opensearch"
+	ociqueue "github.com/oracle/oci-service-operator/pkg/servicemanager/queue"
 	ociredis "github.com/oracle/oci-service-operator/pkg/servicemanager/redis"
 	"github.com/oracle/oci-service-operator/pkg/servicemanager/streams"
 	"github.com/oracle/oci-service-operator/pkg/util"
@@ -210,6 +211,21 @@ func main() {
 		},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.ErrorLog(err, "unable to create controller", "controller", "OpenSearchCluster")
+		os.Exit(1)
+	}
+
+	if err = (&controllers.OciQueueReconciler{
+		Reconciler: &core.BaseReconciler{
+			Client:             mgr.GetClient(),
+			OSOKServiceManager: ociqueue.NewOciQueueServiceManager(provider, credClient, scheme, loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("service-manager").WithName("OciQueue")}),
+			Finalizer:          core.NewBaseFinalizer(mgr.GetClient(), ctrl.Log),
+			Log:                loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("controllers").WithName("OciQueue")},
+			Metrics:            metricsClient,
+			Recorder:           mgr.GetEventRecorderFor("OciQueue"),
+			Scheme:             scheme,
+		},
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.ErrorLog(err, "unable to create controller", "controller", "OciQueue")
 		os.Exit(1)
 	}
 
