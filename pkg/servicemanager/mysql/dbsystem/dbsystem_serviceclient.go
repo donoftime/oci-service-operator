@@ -66,12 +66,24 @@ func (c *DbSystemServiceManager) CreateDbSystem(ctx context.Context, dbSystem oc
 		AdminUsername:        common.String(adminUname),
 		AdminPassword:        common.String(adminPwd),
 		DisplayName:          common.String(dbSystem.Spec.DisplayName),
-		Port:                 common.Int(dbSystem.Spec.Port),
-		PortX:                common.Int(dbSystem.Spec.PortX),
-		ConfigurationId:      common.String(string(dbSystem.Spec.ConfigurationId.Id)),
-		Description:          common.String(dbSystem.Spec.Description),
 		DefinedTags:          *util.ConvertToOciDefinedTags(&dbSystem.Spec.DefinedTags),
 		FreeformTags:         dbSystem.Spec.FreeFormTags,
+	}
+
+	if dbSystem.Spec.Description != "" {
+		createDbSystemDetails.Description = common.String(dbSystem.Spec.Description)
+	}
+
+	if dbSystem.Spec.Port != 0 {
+		createDbSystemDetails.Port = common.Int(dbSystem.Spec.Port)
+	}
+
+	if dbSystem.Spec.PortX != 0 {
+		createDbSystemDetails.PortX = common.Int(dbSystem.Spec.PortX)
+	}
+
+	if dbSystem.Spec.ConfigurationId.Id != "" {
+		createDbSystemDetails.ConfigurationId = common.String(string(dbSystem.Spec.ConfigurationId.Id))
 	}
 
 	if dbSystem.Spec.IpAddress != "" {

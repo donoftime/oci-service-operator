@@ -64,12 +64,18 @@ func (c *AdbServiceManager) CreateAdb(ctx context.Context, adb ociv1beta1.Autono
 		AdminPassword:        common.String(adminPwd),
 		IsAutoScalingEnabled: common.Bool(adb.Spec.IsAutoScalingEnabled),
 		IsDedicated:          common.Bool(adb.Spec.IsDedicated),
-		DbVersion:            common.String(adb.Spec.DbVersion),
 		DbWorkload:           database.CreateAutonomousDatabaseBaseDbWorkloadEnum(adb.Spec.DbWorkload),
 		IsFreeTier:           common.Bool(adb.Spec.IsFreeTier),
-		LicenseModel:         database.CreateAutonomousDatabaseBaseLicenseModelEnum(adb.Spec.LicenseModel),
 		FreeformTags:         adb.Spec.FreeFormTags,
 		DefinedTags:          *util.ConvertToOciDefinedTags(&adb.Spec.DefinedTags),
+	}
+
+	if adb.Spec.DbVersion != "" {
+		createAutonomousDatabaseDetails.DbVersion = common.String(adb.Spec.DbVersion)
+	}
+
+	if adb.Spec.LicenseModel != "" {
+		createAutonomousDatabaseDetails.LicenseModel = database.CreateAutonomousDatabaseBaseLicenseModelEnum(adb.Spec.LicenseModel)
 	}
 
 	createAutonomousDatabaseRequest := database.CreateAutonomousDatabaseRequest{

@@ -312,7 +312,6 @@ func main() {
 		os.Exit(1)
 	}
 
-
 	if err = (&controllers.FunctionsApplicationReconciler{
 		Reconciler: &core.BaseReconciler{
 			Client:             mgr.GetClient(),

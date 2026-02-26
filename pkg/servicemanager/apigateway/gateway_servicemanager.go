@@ -99,6 +99,8 @@ func (c *GatewayServiceManager) CreateOrUpdate(ctx context.Context, obj runtime.
 				c.Log.ErrorLog(err, "Error while getting ApiGateway by OCID")
 				return servicemanager.OSOKResponse{IsSuccessful: false}, err
 			}
+			// Set OCID before UpdateGateway so it can use it in the request.
+			gw.Status.OsokStatus.Ocid = *gwOcid
 			if err = c.UpdateGateway(ctx, gw); err != nil {
 				c.Log.ErrorLog(err, "Error while updating ApiGateway")
 				return servicemanager.OSOKResponse{IsSuccessful: false}, err
@@ -111,6 +113,8 @@ func (c *GatewayServiceManager) CreateOrUpdate(ctx context.Context, obj runtime.
 			c.Log.ErrorLog(err, "Error while getting existing ApiGateway")
 			return servicemanager.OSOKResponse{IsSuccessful: false}, err
 		}
+		// Set OCID before UpdateGateway so it can use it in the request.
+		gw.Status.OsokStatus.Ocid = gw.Spec.ApiGatewayId
 		if err = c.UpdateGateway(ctx, gw); err != nil {
 			c.Log.ErrorLog(err, "Error while updating ApiGateway")
 			return servicemanager.OSOKResponse{IsSuccessful: false}, err

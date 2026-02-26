@@ -12,6 +12,17 @@ resources:
 - bases/oci.oracle.com_mysqldbsystems.yaml
 - bases/oci.oracle.com_opensearchclusters.yaml
 - bases/oci.oracle.com_ocivaults.yaml
+- bases/oci.oracle.com_apigateways.yaml
+- bases/oci.oracle.com_apigatewaydeployments.yaml
+- bases/oci.oracle.com_containerinstances.yaml
+- bases/oci.oracle.com_dataflowapplications.yaml
+- bases/oci.oracle.com_functionsapplications.yaml
+- bases/oci.oracle.com_functionsfunctions.yaml
+- bases/oci.oracle.com_nosqldatabases.yaml
+- bases/oci.oracle.com_objectstoragebuckets.yaml
+- bases/oci.oracle.com_ociqueues.yaml
+- bases/oci.oracle.com_postgresdbsystems.yaml
+- bases/oci.oracle.com_redisclusters.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patchesStrategicMerge:

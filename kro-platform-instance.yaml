@@ -1,0 +1,20 @@
+apiVersion: kro.run/v1alpha1
+kind: OSOKPlatform
+metadata:
+  name: my-platform
+  namespace: default
+spec:
+  compartmentId: ocid1.compartment.oc1..aaaaaaaax2gsh2zyasnt2ozsdwl5apgdp4seo2yy7nl3u4ngikynyl5mwq4a
+  availabilityDomain: IqDk:US-ASHBURN-AD-1
+  subnetId: ocid1.subnet.oc1.iad.aaaaaaaajubm6en7abkdkvyjb7oieedx6erstxi62zovgj3q5qbami2ygxza
+  lbSubnetId: ocid1.subnet.oc1.iad.aaaaaaaacmqn5tbxatzapwnqgapigor5jw7g2lft2gzqa2iqfnk56z6r2coa
+  vcnId: ocid1.vcn.oc1.iad.amaaaaaa2ahbgkyacqezlzup3hbkakou2pd2c7atxdrc76huezowualjc5xq
+  objectStorageNamespace: okedev
+
+  mysqlCredentialsSecret: osok-platform-mysql-creds
+  adbAdminPasswordSecret: osok-platform-adb-creds
+
+  adbDbName: myplatformadb
+  nosqlTableName: myplatform_events
+
+  containerImageUrl: iad.ocir.io/okedev/dmayo/osok:latest

@@ -1,0 +1,260 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: osok-platform
+spec:
+  schema:
+    apiVersion: v1alpha1
+    kind: OSOKPlatform
+    spec:
+      compartmentId: string
+      availabilityDomain: string
+      subnetId: string
+      lbSubnetId: string
+      vcnId: string
+      objectStorageNamespace: string
+      mysqlCredentialsSecret: string
+      adbAdminPasswordSecret: string
+      adbDbName: string
+      nosqlTableName: string
+      containerImageUrl: string
+
+  resources:
+
+    # ── 1. Vault ─────────────────────────────────────────────────────────────
+    - id: vault
+      template:
+        apiVersion: oci.oracle.com/v1beta1
+        kind: OciVault
+        metadata:
+          name: ${schema.metadata.name}-vault
+        spec:
+          compartmentId: ${schema.spec.compartmentId}
+          displayName: ${schema.metadata.name}-vault
+          vaultType: DEFAULT
+          key:
+            displayName: ${schema.metadata.name}-key
+            keyShape:
+              algorithm: AES
+              length: 32
+
+    # ── 2. Object Storage Bucket ──────────────────────────────────────────────
+    - id: objectStorageBucket
+      template:
+        apiVersion: oci.oracle.com/v1beta1
+        kind: ObjectStorageBucket
+        metadata:
+          name: ${schema.metadata.name}-bucket
+        spec:
+          compartmentId: ${schema.spec.compartmentId}
+          name: ${schema.metadata.name}-bucket
+          accessType: NoPublicAccess
+          storageType: Standard
+          versioning: Enabled
+
+    # ── 3. Oracle Streaming Service ───────────────────────────────────────────
+    - id: stream
+      template:
+        apiVersion: oci.oracle.com/v1beta1
+        kind: Stream
+        metadata:
+          name: ${schema.metadata.name}-stream
+        spec:
+          compartmentId: ${schema.spec.compartmentId}
+          name: ${schema.metadata.name}-stream
+          partitions: 1
+          retentionInHours: 24
+
+    # ── 4. OCI Queue ──────────────────────────────────────────────────────────
+    - id: queue
+      template:
+        apiVersion: oci.oracle.com/v1beta1
+        kind: OciQueue
+        metadata:
+          name: ${schema.metadata.name}-queue
+        spec:
+          compartmentId: ${schema.spec.compartmentId}
+          displayName: ${schema.metadata.name}-queue
+          retentionInSeconds: 86400
+          visibilityInSeconds: 30
+          deadLetterQueueDeliveryCount: 3
+
+    # ── 5. Autonomous Database ────────────────────────────────────────────────
+    - id: adb
+      template:
+        apiVersion: oci.oracle.com/v1beta1
+        kind: AutonomousDatabases
+        metadata:
+          name: ${schema.metadata.name}-adb
+        spec:
+          compartmentId: ${schema.spec.compartmentId}
+          displayName: ${schema.metadata.name}-adb
+          dbName: ${schema.spec.adbDbName}
+          dbWorkload: OLTP
+          cpuCoreCount: 1
+          dataStorageSizeInTBs: 1
+          isAutoScalingEnabled: false
+          isFreeTier: false
+          adminPassword:
+            secret:
+              secretName: ${schema.spec.adbAdminPasswordSecret}
+
+    # ── 6. MySQL DB System ────────────────────────────────────────────────────
+    - id: mysql
+      template:
+        apiVersion: oci.oracle.com/v1beta1
+        kind: MySqlDbSystem
+        metadata:
+          name: ${schema.metadata.name}-mysql
+        spec:
+          compartmentId: ${schema.spec.compartmentId}
+          displayName: ${schema.metadata.name}-mysql
+          shapeName: MySQL.VM.Standard.E3.1.8GB
+          subnetId: ${schema.spec.subnetId}
+          availabilityDomain: ${schema.spec.availabilityDomain}
+          mysqlVersion: "8.0.42"
+          dataStorageSizeInGBs: 50
+          adminUsername:
+            secret:
+              secretName: ${schema.spec.mysqlCredentialsSecret}
+          adminPassword:
+            secret:
+              secretName: ${schema.spec.mysqlCredentialsSecret}
+
+    # ── 7. PostgreSQL DB System ───────────────────────────────────────────────
+    - id: postgres
+      template:
+        apiVersion: oci.oracle.com/v1beta1
+        kind: PostgresDbSystem
+        metadata:
+          name: ${schema.metadata.name}-postgres
+        spec:
+          compartmentId: ${schema.spec.compartmentId}
+          displayName: ${schema.metadata.name}-postgres
+          dbVersion: "14.10"
+          shape: VM.Standard.E4.Flex
+          subnetId: ${schema.spec.subnetId}
+          storageType: HighPerformance
+          instanceCount: 1
+          instanceOcpuCount: 2
+          instanceMemoryInGBs: 32
+
+    # ── 8. NoSQL Table ────────────────────────────────────────────────────────
+    - id: nosqlTable
+      template:
+        apiVersion: oci.oracle.com/v1beta1
+        kind: NoSQLDatabase
+        metadata:
+          name: ${schema.metadata.name}-nosql
+        spec:
+          compartmentId: ${schema.spec.compartmentId}
+          name: ${schema.spec.nosqlTableName}
+          ddlStatement: >-
+            CREATE TABLE IF NOT EXISTS ${schema.spec.nosqlTableName}
+            (id STRING, ts TIMESTAMP(3), payload JSON, PRIMARY KEY(id))
+          tableLimits:
+            maxReadUnits: 50
+            maxWriteUnits: 50
+            maxStorageInGBs: 1
+
+    # ── 9. OCI Cache with Redis ────────────────────────────────────────────────
+    - id: redisCluster
+      template:
+        apiVersion: oci.oracle.com/v1beta1
+        kind: RedisCluster
+        metadata:
+          name: ${schema.metadata.name}-redis
+        spec:
+          compartmentId: ${schema.spec.compartmentId}
+          displayName: ${schema.metadata.name}-redis
+          softwareVersion: V7_0_5
+          nodeCount: 3
+          nodeMemoryInGBs: 2
+          subnetId: ${schema.spec.subnetId}
+
+    # ── 10. OpenSearch Cluster ────────────────────────────────────────────────
+    - id: opensearch
+      template:
+        apiVersion: oci.oracle.com/v1beta1
+        kind: OpenSearchCluster
+        metadata:
+          name: ${schema.metadata.name}-opensearch
+        spec:
+          compartmentId: ${schema.spec.compartmentId}
+          displayName: ${schema.metadata.name}-opensearch
+          softwareVersion: "2.11.0"
+          masterNodeCount: 3
+          masterNodeHostType: FLEX
+          masterNodeHostOcpuCount: 2
+          masterNodeHostMemoryGB: 32
+          dataNodeCount: 3
+          dataNodeHostType: FLEX
+          dataNodeHostOcpuCount: 4
+          dataNodeHostMemoryGB: 64
+          dataNodeStorageGB: 100
+          opendashboardNodeCount: 1
+          opendashboardNodeHostOcpuCount: 2
+          opendashboardNodeHostMemoryGB: 32
+          vcnId: ${schema.spec.vcnId}
+          vcnCompartmentId: ${schema.spec.compartmentId}
+          subnetId: ${schema.spec.subnetId}
+          subnetCompartmentId: ${schema.spec.compartmentId}
+
+    # ── 11. API Gateway ───────────────────────────────────────────────────────
+    - id: apiGateway
+      template:
+        apiVersion: oci.oracle.com/v1beta1
+        kind: ApiGateway
+        metadata:
+          name: ${schema.metadata.name}-apigw
+        spec:
+          compartmentId: ${schema.spec.compartmentId}
+          displayName: ${schema.metadata.name}-apigw
+          endpointType: PUBLIC
+          subnetId: ${schema.spec.lbSubnetId}
+
+    # ── 12. API Gateway Deployment ────────────────────────────────────────────
+    # Stock responses only — no function backend required.
+    - id: apiGatewayDeployment
+      template:
+        apiVersion: oci.oracle.com/v1beta1
+        kind: ApiGatewayDeployment
+        metadata:
+          name: ${schema.metadata.name}-apigw-deploy
+        spec:
+          compartmentId: ${schema.spec.compartmentId}
+          displayName: ${schema.metadata.name}-apigw-deploy
+          gatewayId: ${apiGateway.status.status.ocid}
+          pathPrefix: /v1
+          routes:
+            - path: /health
+              methods:
+                - GET
+              backend:
+                type: STOCK_RESPONSE_BACKEND
+                status: 200
+                body: '{"status":"ok"}'
+
+    # ── 13. Container Instance ────────────────────────────────────────────────
+    - id: containerInstance
+      template:
+        apiVersion: oci.oracle.com/v1beta1
+        kind: ContainerInstance
+        metadata:
+          name: ${schema.metadata.name}-ci
+        spec:
+          compartmentId: ${schema.spec.compartmentId}
+          availabilityDomain: ${schema.spec.availabilityDomain}
+          shape: CI.Standard.E4.Flex
+          shapeConfig:
+            ocpus: 1
+            memoryInGBs: 4
+          containers:
+            - imageUrl: ${schema.spec.containerImageUrl}
+              displayName: app
+              environmentVariables:
+                COMPARTMENT_ID: ${schema.spec.compartmentId}
+          vnics:
+            - subnetId: ${schema.spec.subnetId}
+              displayName: primary-vnic
+          containerRestartPolicy: ON_FAILURE
