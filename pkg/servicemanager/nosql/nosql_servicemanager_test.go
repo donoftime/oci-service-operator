@@ -749,3 +749,76 @@ func TestDelete_WithOcid_Error(t *testing.T) {
 	assert.Equal(t, deleteErr, err)
 	assert.False(t, done)
 }
+
+// TestDelete_BadType verifies Delete rejects non-NoSQLDatabase objects.
+func TestDelete_BadType(t *testing.T) {
+	mgr := newTestManager(&mockNosqlClient{})
+	_, err := mgr.Delete(context.Background(), &ociv1beta1.Stream{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed type assertion")
+}
+
+// TestCreateOrUpdate_NoTableId_CreateTable_WithDefinedTags verifies DefinedTags are passed to OCI create call.
+func TestCreateOrUpdate_NoTableId_CreateTable_WithDefinedTags(t *testing.T) {
+	listCount := 0
+	var capturedReq nosql.CreateTableRequest
+	mock := &mockNosqlClient{
+		listFn: func(_ context.Context, _ nosql.ListTablesRequest) (nosql.ListTablesResponse, error) {
+			listCount++
+			if listCount == 1 {
+				return nosql.ListTablesResponse{}, nil
+			}
+			return listResponse(makeTableSummary(testTableOcid, nosql.TableLifecycleStateActive)), nil
+		},
+		createFn: func(_ context.Context, req nosql.CreateTableRequest) (nosql.CreateTableResponse, error) {
+			capturedReq = req
+			return nosql.CreateTableResponse{}, nil
+		},
+		getFn: func(_ context.Context, _ nosql.GetTableRequest) (nosql.GetTableResponse, error) {
+			return nosql.GetTableResponse{Table: makeActiveTable(testTableOcid, "my-table")}, nil
+		},
+	}
+	mgr := newTestManager(mock)
+
+	db := &ociv1beta1.NoSQLDatabase{}
+	db.Spec.Name = "my-table"
+	db.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+	db.Spec.DdlStatement = "CREATE TABLE IF NOT EXISTS test (id INTEGER, PRIMARY KEY(id))"
+	db.Spec.DefinedTags = map[string]ociv1beta1.MapValue{
+		"ns1": {"key1": "val1"},
+	}
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), db, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.NotNil(t, capturedReq.CreateTableDetails.DefinedTags)
+}
+
+// TestCreateOrUpdate_NoTableId_SecondListError verifies that a list error after create is propagated.
+func TestCreateOrUpdate_NoTableId_SecondListError(t *testing.T) {
+	callCount := 0
+	listErr := errors.New("OCI list error after create")
+	mock := &mockNosqlClient{
+		listFn: func(_ context.Context, _ nosql.ListTablesRequest) (nosql.ListTablesResponse, error) {
+			callCount++
+			if callCount == 1 {
+				return nosql.ListTablesResponse{}, nil
+			}
+			return nosql.ListTablesResponse{}, listErr
+		},
+		createFn: func(_ context.Context, _ nosql.CreateTableRequest) (nosql.CreateTableResponse, error) {
+			return nosql.CreateTableResponse{}, nil
+		},
+	}
+	mgr := newTestManager(mock)
+
+	db := &ociv1beta1.NoSQLDatabase{}
+	db.Spec.Name = "list2err-table"
+	db.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+	db.Spec.DdlStatement = "CREATE TABLE IF NOT EXISTS test (id INTEGER, PRIMARY KEY(id))"
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), db, ctrl.Request{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "OCI list error after create")
+	assert.False(t, resp.IsSuccessful)
+}
