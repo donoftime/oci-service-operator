@@ -5,7 +5,10 @@
 
 package redis
 
-import "github.com/oracle/oci-go-sdk/v65/redis"
+import (
+	"github.com/oracle/oci-go-sdk/v65/common"
+	"github.com/oracle/oci-go-sdk/v65/redis"
+)
 
 // GetCredentialMapForTest exports getCredentialMap for unit testing.
 func GetCredentialMapForTest(cluster redis.RedisCluster) map[string][]byte {
@@ -15,4 +18,9 @@ func GetCredentialMapForTest(cluster redis.RedisCluster) map[string][]byte {
 // ExportSetClientForTest sets the OCI client on the service manager for unit testing.
 func ExportSetClientForTest(m *RedisClusterServiceManager, c RedisClusterClientInterface) {
 	m.ociClient = c
+}
+
+// ExportGetRetryPolicyForTest exports getRetryPolicy for unit testing.
+func ExportGetRetryPolicyForTest(mgr *RedisClusterServiceManager, attempts uint) common.RetryPolicy {
+	return mgr.getRetryPolicy(attempts)
 }

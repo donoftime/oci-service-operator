@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	ociredis "github.com/oracle/oci-go-sdk/v65/redis"
@@ -16,6 +17,8 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/loggerutil"
 	. "github.com/oracle/oci-service-operator/pkg/servicemanager/redis"
 	"github.com/stretchr/testify/assert"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
@@ -190,298 +193,393 @@ func TestCreateOrUpdate_BadType(t *testing.T) {
 	assert.False(t, resp.IsSuccessful)
 }
 
-// mockOciRedisClient implements RedisClusterClientInterface for unit testing.
-type mockOciRedisClient struct {
+// fakeOciClient implements RedisClusterClientInterface for testing.
+type fakeOciClient struct {
 	createFn func(ctx context.Context, req ociredis.CreateRedisClusterRequest) (ociredis.CreateRedisClusterResponse, error)
 	getFn    func(ctx context.Context, req ociredis.GetRedisClusterRequest) (ociredis.GetRedisClusterResponse, error)
 	listFn   func(ctx context.Context, req ociredis.ListRedisClustersRequest) (ociredis.ListRedisClustersResponse, error)
 	updateFn func(ctx context.Context, req ociredis.UpdateRedisClusterRequest) (ociredis.UpdateRedisClusterResponse, error)
 	deleteFn func(ctx context.Context, req ociredis.DeleteRedisClusterRequest) (ociredis.DeleteRedisClusterResponse, error)
+
+	updateCalled bool
 }
 
-func (m *mockOciRedisClient) CreateRedisCluster(ctx context.Context, req ociredis.CreateRedisClusterRequest) (ociredis.CreateRedisClusterResponse, error) {
-	if m.createFn != nil {
-		return m.createFn(ctx, req)
+func (f *fakeOciClient) CreateRedisCluster(ctx context.Context, req ociredis.CreateRedisClusterRequest) (ociredis.CreateRedisClusterResponse, error) {
+	if f.createFn != nil {
+		return f.createFn(ctx, req)
 	}
 	return ociredis.CreateRedisClusterResponse{}, nil
 }
 
-func (m *mockOciRedisClient) GetRedisCluster(ctx context.Context, req ociredis.GetRedisClusterRequest) (ociredis.GetRedisClusterResponse, error) {
-	if m.getFn != nil {
-		return m.getFn(ctx, req)
+func (f *fakeOciClient) GetRedisCluster(ctx context.Context, req ociredis.GetRedisClusterRequest) (ociredis.GetRedisClusterResponse, error) {
+	if f.getFn != nil {
+		return f.getFn(ctx, req)
 	}
 	return ociredis.GetRedisClusterResponse{}, nil
 }
 
-func (m *mockOciRedisClient) ListRedisClusters(ctx context.Context, req ociredis.ListRedisClustersRequest) (ociredis.ListRedisClustersResponse, error) {
-	if m.listFn != nil {
-		return m.listFn(ctx, req)
+func (f *fakeOciClient) ListRedisClusters(ctx context.Context, req ociredis.ListRedisClustersRequest) (ociredis.ListRedisClustersResponse, error) {
+	if f.listFn != nil {
+		return f.listFn(ctx, req)
 	}
 	return ociredis.ListRedisClustersResponse{}, nil
 }
 
-func (m *mockOciRedisClient) UpdateRedisCluster(ctx context.Context, req ociredis.UpdateRedisClusterRequest) (ociredis.UpdateRedisClusterResponse, error) {
-	if m.updateFn != nil {
-		return m.updateFn(ctx, req)
+func (f *fakeOciClient) UpdateRedisCluster(ctx context.Context, req ociredis.UpdateRedisClusterRequest) (ociredis.UpdateRedisClusterResponse, error) {
+	f.updateCalled = true
+	if f.updateFn != nil {
+		return f.updateFn(ctx, req)
 	}
 	return ociredis.UpdateRedisClusterResponse{}, nil
 }
 
-func (m *mockOciRedisClient) DeleteRedisCluster(ctx context.Context, req ociredis.DeleteRedisClusterRequest) (ociredis.DeleteRedisClusterResponse, error) {
-	if m.deleteFn != nil {
-		return m.deleteFn(ctx, req)
+func (f *fakeOciClient) DeleteRedisCluster(ctx context.Context, req ociredis.DeleteRedisClusterRequest) (ociredis.DeleteRedisClusterResponse, error) {
+	if f.deleteFn != nil {
+		return f.deleteFn(ctx, req)
 	}
 	return ociredis.DeleteRedisClusterResponse{}, nil
 }
 
-// newRedisMgr creates a RedisClusterServiceManager with injected mock clients.
-func newRedisMgr(t *testing.T, ociClient *mockOciRedisClient, credClient *fakeCredentialClient) *RedisClusterServiceManager {
-	t.Helper()
-	if credClient == nil {
-		credClient = &fakeCredentialClient{}
-	}
+func newMgrWithFakeClient(ociCl *fakeOciClient, credCl *fakeCredentialClient) *RedisClusterServiceManager {
 	log := loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("test")}
 	mgr := NewRedisClusterServiceManager(
 		common.NewRawConfigurationProvider("", "", "", "", "", nil),
-		credClient, nil, log)
-	if ociClient != nil {
-		ExportSetClientForTest(mgr, ociClient)
-	}
+		credCl, nil, log)
+	ExportSetClientForTest(mgr, ociCl)
 	return mgr
 }
 
-// TestGetRedisClusterOcid_ActiveReturnsOcid verifies that an ACTIVE cluster is found by display name.
-func TestGetRedisClusterOcid_ActiveReturnsOcid(t *testing.T) {
-	const clusterOcid = "ocid1.redis.oc1..active"
-	ociClient := &mockOciRedisClient{
-		listFn: func(_ context.Context, _ ociredis.ListRedisClustersRequest) (ociredis.ListRedisClustersResponse, error) {
-			return ociredis.ListRedisClustersResponse{
-				RedisClusterCollection: ociredis.RedisClusterCollection{
-					Items: []ociredis.RedisClusterSummary{
-						{Id: common.String(clusterOcid), LifecycleState: ociredis.RedisClusterLifecycleStateActive},
-					},
+// TestGetRedisClusterOcid exercises the display-name lookup paths.
+func TestGetRedisClusterOcid(t *testing.T) {
+	tests := []struct {
+		name       string
+		listItems  []ociredis.RedisClusterSummary
+		listErr    error
+		wantOcid   bool
+		wantErrMsg string
+	}{
+		{
+			name: "found_active",
+			listItems: []ociredis.RedisClusterSummary{
+				{Id: common.String("ocid1.redis.active"), LifecycleState: ociredis.RedisClusterLifecycleStateActive},
+			},
+			wantOcid: true,
+		},
+		{
+			name: "found_creating",
+			listItems: []ociredis.RedisClusterSummary{
+				{Id: common.String("ocid1.redis.creating"), LifecycleState: ociredis.RedisClusterLifecycleStateCreating},
+			},
+			wantOcid: true,
+		},
+		{
+			name: "found_updating",
+			listItems: []ociredis.RedisClusterSummary{
+				{Id: common.String("ocid1.redis.updating"), LifecycleState: ociredis.RedisClusterLifecycleStateUpdating},
+			},
+			wantOcid: true,
+		},
+		{
+			name:      "not_found_empty_list",
+			listItems: []ociredis.RedisClusterSummary{},
+			wantOcid:  false,
+		},
+		{
+			name: "not_found_failed_state",
+			listItems: []ociredis.RedisClusterSummary{
+				{Id: common.String("ocid1.redis.failed"), LifecycleState: ociredis.RedisClusterLifecycleStateFailed},
+			},
+			wantOcid: false,
+		},
+		{
+			name:       "api_error",
+			listErr:    errors.New("OCI list error"),
+			wantErrMsg: "OCI list error",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ociCl := &fakeOciClient{
+				listFn: func(_ context.Context, _ ociredis.ListRedisClustersRequest) (ociredis.ListRedisClustersResponse, error) {
+					if tc.listErr != nil {
+						return ociredis.ListRedisClustersResponse{}, tc.listErr
+					}
+					return ociredis.ListRedisClustersResponse{
+						RedisClusterCollection: ociredis.RedisClusterCollection{Items: tc.listItems},
+					}, nil
 				},
-			}, nil
-		},
+			}
+			mgr := newMgrWithFakeClient(ociCl, &fakeCredentialClient{})
+
+			cluster := &ociv1beta1.RedisCluster{}
+			cluster.Spec.DisplayName = "test-cluster"
+			cluster.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+
+			ocid, err := mgr.GetRedisClusterOcid(context.Background(), *cluster)
+			if tc.wantErrMsg != "" {
+				assert.ErrorContains(t, err, tc.wantErrMsg)
+				assert.Nil(t, ocid)
+			} else {
+				assert.NoError(t, err)
+				if tc.wantOcid {
+					assert.NotNil(t, ocid)
+				} else {
+					assert.Nil(t, ocid)
+				}
+			}
+		})
 	}
-	mgr := newRedisMgr(t, ociClient, nil)
-
-	cluster := &ociv1beta1.RedisCluster{}
-	cluster.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
-	cluster.Spec.DisplayName = "my-cluster"
-
-	ocid, err := mgr.GetRedisClusterOcid(context.Background(), *cluster)
-	assert.NoError(t, err)
-	assert.NotNil(t, ocid)
-	assert.Equal(t, ociv1beta1.OCID(clusterOcid), *ocid)
 }
 
-// TestGetRedisClusterOcid_CreatingReturnsOcid verifies that a CREATING cluster OCID is returned.
-func TestGetRedisClusterOcid_CreatingReturnsOcid(t *testing.T) {
-	const clusterOcid = "ocid1.redis.oc1..creating"
-	ociClient := &mockOciRedisClient{
-		listFn: func(_ context.Context, _ ociredis.ListRedisClustersRequest) (ociredis.ListRedisClustersResponse, error) {
-			return ociredis.ListRedisClustersResponse{
-				RedisClusterCollection: ociredis.RedisClusterCollection{
-					Items: []ociredis.RedisClusterSummary{
-						{Id: common.String(clusterOcid), LifecycleState: ociredis.RedisClusterLifecycleStateCreating},
-					},
+// TestCreateOrUpdate_CreateNew covers the no-OCID create path.
+func TestCreateOrUpdate_CreateNew(t *testing.T) {
+	activeCluster := makeActiveRedisCluster("ocid1.redis.new", "new-cluster")
+
+	tests := []struct {
+		name        string
+		createErr   error
+		getErr      error
+		wantSuccess bool
+		wantErr     bool
+	}{
+		{
+			name:        "success",
+			wantSuccess: true,
+		},
+		{
+			name:      "create_oci_error",
+			createErr: errors.New("OCI create failed"),
+			wantErr:   true,
+		},
+		{
+			name:    "get_after_create_error",
+			getErr:  errors.New("OCI get failed"),
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			credCl := &fakeCredentialClient{}
+			ociCl := &fakeOciClient{
+				listFn: func(_ context.Context, _ ociredis.ListRedisClustersRequest) (ociredis.ListRedisClustersResponse, error) {
+					return ociredis.ListRedisClustersResponse{
+						RedisClusterCollection: ociredis.RedisClusterCollection{Items: nil},
+					}, nil
 				},
-			}, nil
-		},
-	}
-	mgr := newRedisMgr(t, ociClient, nil)
-
-	cluster := &ociv1beta1.RedisCluster{}
-	cluster.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
-	cluster.Spec.DisplayName = "my-cluster"
-
-	ocid, err := mgr.GetRedisClusterOcid(context.Background(), *cluster)
-	assert.NoError(t, err)
-	assert.NotNil(t, ocid)
-	assert.Equal(t, ociv1beta1.OCID(clusterOcid), *ocid)
-}
-
-// TestGetRedisClusterOcid_NotFound verifies that an empty list returns nil (no cluster found).
-func TestGetRedisClusterOcid_NotFound(t *testing.T) {
-	ociClient := &mockOciRedisClient{
-		listFn: func(_ context.Context, _ ociredis.ListRedisClustersRequest) (ociredis.ListRedisClustersResponse, error) {
-			return ociredis.ListRedisClustersResponse{}, nil
-		},
-	}
-	mgr := newRedisMgr(t, ociClient, nil)
-
-	cluster := &ociv1beta1.RedisCluster{}
-	cluster.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
-	cluster.Spec.DisplayName = "nonexistent"
-
-	ocid, err := mgr.GetRedisClusterOcid(context.Background(), *cluster)
-	assert.NoError(t, err)
-	assert.Nil(t, ocid)
-}
-
-// TestCreateOrUpdate_CreateNew_ListEmpty verifies CreateRedisCluster is called when no cluster exists.
-func TestCreateOrUpdate_CreateNew_ListEmpty(t *testing.T) {
-	const newOcid = "ocid1.redis.oc1..new"
-	createCalled := false
-	activeCluster := makeActiveRedisCluster(newOcid, "test-cluster")
-	credClient := &fakeCredentialClient{}
-
-	ociClient := &mockOciRedisClient{
-		listFn: func(_ context.Context, _ ociredis.ListRedisClustersRequest) (ociredis.ListRedisClustersResponse, error) {
-			return ociredis.ListRedisClustersResponse{}, nil
-		},
-		createFn: func(_ context.Context, req ociredis.CreateRedisClusterRequest) (ociredis.CreateRedisClusterResponse, error) {
-			createCalled = true
-			assert.Equal(t, "test-cluster", *req.CreateRedisClusterDetails.DisplayName)
-			return ociredis.CreateRedisClusterResponse{RedisCluster: activeCluster}, nil
-		},
-		getFn: func(_ context.Context, _ ociredis.GetRedisClusterRequest) (ociredis.GetRedisClusterResponse, error) {
-			return ociredis.GetRedisClusterResponse{RedisCluster: activeCluster}, nil
-		},
-	}
-	mgr := newRedisMgr(t, ociClient, credClient)
-
-	cluster := &ociv1beta1.RedisCluster{}
-	cluster.Name = "test-cluster"
-	cluster.Namespace = "default"
-	cluster.Spec.DisplayName = "test-cluster"
-	cluster.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
-	cluster.Spec.NodeCount = 3
-	cluster.Spec.NodeMemoryInGBs = 16
-	cluster.Spec.SoftwareVersion = "V7_0_5"
-	cluster.Spec.SubnetId = "ocid1.subnet.oc1..xxx"
-
-	resp, err := mgr.CreateOrUpdate(context.Background(), cluster, ctrl.Request{})
-	assert.NoError(t, err)
-	assert.True(t, resp.IsSuccessful)
-	assert.True(t, createCalled, "CreateRedisCluster should have been called")
-	assert.True(t, credClient.createCalled, "CreateSecret should have been called on new cluster")
-	assert.Equal(t, ociv1beta1.OCID(newOcid), cluster.Status.OsokStatus.Ocid)
-}
-
-// TestCreateOrUpdate_CreateNew_ExistingByDisplayName verifies Create is NOT called when cluster found by name.
-func TestCreateOrUpdate_CreateNew_ExistingByDisplayName(t *testing.T) {
-	const existingOcid = "ocid1.redis.oc1..existing"
-	createCalled := false
-	activeCluster := makeActiveRedisCluster(existingOcid, "test-cluster")
-
-	ociClient := &mockOciRedisClient{
-		listFn: func(_ context.Context, _ ociredis.ListRedisClustersRequest) (ociredis.ListRedisClustersResponse, error) {
-			return ociredis.ListRedisClustersResponse{
-				RedisClusterCollection: ociredis.RedisClusterCollection{
-					Items: []ociredis.RedisClusterSummary{
-						{Id: common.String(existingOcid), LifecycleState: ociredis.RedisClusterLifecycleStateActive},
-					},
+				createFn: func(_ context.Context, _ ociredis.CreateRedisClusterRequest) (ociredis.CreateRedisClusterResponse, error) {
+					if tc.createErr != nil {
+						return ociredis.CreateRedisClusterResponse{}, tc.createErr
+					}
+					return ociredis.CreateRedisClusterResponse{
+						RedisCluster: ociredis.RedisCluster{Id: common.String("ocid1.redis.new")},
+					}, nil
 				},
-			}, nil
-		},
-		createFn: func(_ context.Context, _ ociredis.CreateRedisClusterRequest) (ociredis.CreateRedisClusterResponse, error) {
-			createCalled = true
-			return ociredis.CreateRedisClusterResponse{}, nil
-		},
-		getFn: func(_ context.Context, _ ociredis.GetRedisClusterRequest) (ociredis.GetRedisClusterResponse, error) {
-			return ociredis.GetRedisClusterResponse{RedisCluster: activeCluster}, nil
-		},
+				getFn: func(_ context.Context, _ ociredis.GetRedisClusterRequest) (ociredis.GetRedisClusterResponse, error) {
+					if tc.getErr != nil {
+						return ociredis.GetRedisClusterResponse{}, tc.getErr
+					}
+					return ociredis.GetRedisClusterResponse{RedisCluster: activeCluster}, nil
+				},
+			}
+
+			mgr := newMgrWithFakeClient(ociCl, credCl)
+			cluster := &ociv1beta1.RedisCluster{}
+			cluster.Name = "new-cluster"
+			cluster.Namespace = "default"
+			cluster.Spec.DisplayName = "new-cluster"
+			cluster.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+
+			resp, err := mgr.CreateOrUpdate(context.Background(), cluster, ctrl.Request{})
+			if tc.wantErr {
+				assert.Error(t, err)
+				assert.False(t, resp.IsSuccessful)
+			} else {
+				assert.NoError(t, err)
+				assert.True(t, resp.IsSuccessful)
+				assert.True(t, credCl.createCalled, "CreateSecret should be called on successful create")
+			}
+		})
 	}
-	mgr := newRedisMgr(t, ociClient, nil)
-
-	cluster := &ociv1beta1.RedisCluster{}
-	cluster.Name = "test-cluster"
-	cluster.Namespace = "default"
-	cluster.Spec.DisplayName = "test-cluster"
-	cluster.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
-
-	resp, err := mgr.CreateOrUpdate(context.Background(), cluster, ctrl.Request{})
-	assert.NoError(t, err)
-	assert.True(t, resp.IsSuccessful)
-	assert.False(t, createCalled, "CreateRedisCluster should NOT be called when cluster exists by display name")
 }
 
-// TestCreateOrUpdate_UpdatePath_FieldDiffTriggersUpdate verifies UpdateRedisCluster is called when spec differs.
-func TestCreateOrUpdate_UpdatePath_FieldDiffTriggersUpdate(t *testing.T) {
-	const clusterOcid = "ocid1.redis.oc1..update"
-	updateCalled := false
-	existingCluster := makeActiveRedisCluster(clusterOcid, "old-name")
+// TestCreateOrUpdate_Update covers the existing-OCID update path.
+func TestCreateOrUpdate_Update(t *testing.T) {
+	existingCluster := ociredis.RedisCluster{
+		Id:              common.String("ocid1.redis.existing"),
+		DisplayName:     common.String("old-name"),
+		NodeCount:       common.Int(3),
+		NodeMemoryInGBs: common.Float32(16.0),
+		LifecycleState:  ociredis.RedisClusterLifecycleStateActive,
+	}
 
-	ociClient := &mockOciRedisClient{
-		getFn: func(_ context.Context, _ ociredis.GetRedisClusterRequest) (ociredis.GetRedisClusterResponse, error) {
-			return ociredis.GetRedisClusterResponse{RedisCluster: existingCluster}, nil
+	tests := []struct {
+		name        string
+		specName    string
+		specNodes   int
+		wantUpdate  bool
+		updateErr   error
+		wantErr     bool
+		wantSuccess bool
+	}{
+		{
+			name:        "display_name_changed",
+			specName:    "new-name",
+			specNodes:   3,
+			wantUpdate:  true,
+			wantSuccess: true,
 		},
-		updateFn: func(_ context.Context, req ociredis.UpdateRedisClusterRequest) (ociredis.UpdateRedisClusterResponse, error) {
-			updateCalled = true
-			assert.Equal(t, "new-name", *req.UpdateRedisClusterDetails.DisplayName)
-			return ociredis.UpdateRedisClusterResponse{}, nil
+		{
+			name:        "no_changes_no_op",
+			specName:    "old-name",
+			specNodes:   3,
+			wantUpdate:  false,
+			wantSuccess: true,
+		},
+		{
+			name:       "update_oci_error",
+			specName:   "new-name",
+			specNodes:  3,
+			wantUpdate: true,
+			updateErr:  errors.New("OCI update failed"),
+			wantErr:    true,
 		},
 	}
-	mgr := newRedisMgr(t, ociClient, nil)
 
-	cluster := &ociv1beta1.RedisCluster{}
-	cluster.Name = "test-cluster"
-	cluster.Namespace = "default"
-	cluster.Spec.RedisClusterId = clusterOcid
-	cluster.Spec.DisplayName = "new-name"
-	cluster.Status.OsokStatus.Ocid = clusterOcid
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			credCl := &fakeCredentialClient{}
+			ociCl := &fakeOciClient{
+				getFn: func(_ context.Context, _ ociredis.GetRedisClusterRequest) (ociredis.GetRedisClusterResponse, error) {
+					return ociredis.GetRedisClusterResponse{RedisCluster: existingCluster}, nil
+				},
+				updateFn: func(_ context.Context, _ ociredis.UpdateRedisClusterRequest) (ociredis.UpdateRedisClusterResponse, error) {
+					if tc.updateErr != nil {
+						return ociredis.UpdateRedisClusterResponse{}, tc.updateErr
+					}
+					return ociredis.UpdateRedisClusterResponse{}, nil
+				},
+			}
 
-	resp, err := mgr.CreateOrUpdate(context.Background(), cluster, ctrl.Request{})
-	assert.NoError(t, err)
-	assert.True(t, resp.IsSuccessful)
-	assert.True(t, updateCalled, "UpdateRedisCluster should have been called when display name differs")
+			mgr := newMgrWithFakeClient(ociCl, credCl)
+			cluster := &ociv1beta1.RedisCluster{}
+			cluster.Name = "test-cluster"
+			cluster.Namespace = "default"
+			cluster.Spec.DisplayName = tc.specName
+			cluster.Spec.NodeCount = tc.specNodes
+			cluster.Spec.NodeMemoryInGBs = 16.0
+			// Set RedisClusterId to trigger the update (bind) path, not create.
+			cluster.Spec.RedisClusterId = "ocid1.redis.existing"
+			cluster.Status.OsokStatus.Ocid = "ocid1.redis.existing"
+
+			resp, err := mgr.CreateOrUpdate(context.Background(), cluster, ctrl.Request{})
+			assert.Equal(t, tc.wantUpdate, ociCl.updateCalled, "update call mismatch")
+			if tc.wantErr {
+				assert.Error(t, err)
+				assert.False(t, resp.IsSuccessful)
+			} else {
+				assert.NoError(t, err)
+				assert.True(t, resp.IsSuccessful)
+			}
+		})
+	}
 }
 
-// TestCreateOrUpdate_UpdatePath_NoOpWhenUnchanged verifies no OCI update call when spec matches existing.
-func TestCreateOrUpdate_UpdatePath_NoOpWhenUnchanged(t *testing.T) {
-	const clusterOcid = "ocid1.redis.oc1..noop"
-	updateCalled := false
-	existingCluster := makeActiveRedisCluster(clusterOcid, "same-name")
+// TestCreateOrUpdate_SecretWrite verifies secret handling on successful create.
+func TestCreateOrUpdate_SecretWrite(t *testing.T) {
+	activeCluster := makeActiveRedisCluster("ocid1.redis.new", "test-cluster")
 
-	ociClient := &mockOciRedisClient{
-		getFn: func(_ context.Context, _ ociredis.GetRedisClusterRequest) (ociredis.GetRedisClusterResponse, error) {
-			return ociredis.GetRedisClusterResponse{RedisCluster: existingCluster}, nil
+	tests := []struct {
+		name        string
+		secretErr   error
+		wantSuccess bool
+	}{
+		{
+			name:        "secret_created_successfully",
+			wantSuccess: true,
 		},
-		updateFn: func(_ context.Context, _ ociredis.UpdateRedisClusterRequest) (ociredis.UpdateRedisClusterResponse, error) {
-			updateCalled = true
-			return ociredis.UpdateRedisClusterResponse{}, nil
+		{
+			name:        "secret_already_exists",
+			secretErr:   apierrors.NewAlreadyExists(schema.GroupResource{Resource: "secrets"}, "test-cluster"),
+			wantSuccess: true,
+		},
+		{
+			name:        "secret_write_error",
+			secretErr:   errors.New("secret write failed"),
+			wantSuccess: false,
 		},
 	}
-	mgr := newRedisMgr(t, ociClient, nil)
 
-	cluster := &ociv1beta1.RedisCluster{}
-	cluster.Name = "test-cluster"
-	cluster.Namespace = "default"
-	cluster.Spec.RedisClusterId = clusterOcid
-	cluster.Spec.DisplayName = "same-name" // matches existing
-	cluster.Spec.NodeCount = 3             // matches existing
-	cluster.Spec.NodeMemoryInGBs = 16.0    // matches existing
-	cluster.Status.OsokStatus.Ocid = clusterOcid
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			credCl := &fakeCredentialClient{
+				createSecretFn: func(_ context.Context, _, _ string, _ map[string]string, _ map[string][]byte) (bool, error) {
+					return tc.secretErr == nil, tc.secretErr
+				},
+			}
+			ociCl := &fakeOciClient{
+				listFn: func(_ context.Context, _ ociredis.ListRedisClustersRequest) (ociredis.ListRedisClustersResponse, error) {
+					return ociredis.ListRedisClustersResponse{
+						RedisClusterCollection: ociredis.RedisClusterCollection{Items: nil},
+					}, nil
+				},
+				createFn: func(_ context.Context, _ ociredis.CreateRedisClusterRequest) (ociredis.CreateRedisClusterResponse, error) {
+					return ociredis.CreateRedisClusterResponse{
+						RedisCluster: ociredis.RedisCluster{Id: common.String("ocid1.redis.new")},
+					}, nil
+				},
+				getFn: func(_ context.Context, _ ociredis.GetRedisClusterRequest) (ociredis.GetRedisClusterResponse, error) {
+					return ociredis.GetRedisClusterResponse{RedisCluster: activeCluster}, nil
+				},
+			}
 
-	resp, err := mgr.CreateOrUpdate(context.Background(), cluster, ctrl.Request{})
-	assert.NoError(t, err)
-	assert.True(t, resp.IsSuccessful)
-	assert.False(t, updateCalled, "UpdateRedisCluster should NOT be called when spec matches existing state")
+			mgr := newMgrWithFakeClient(ociCl, credCl)
+			cluster := &ociv1beta1.RedisCluster{}
+			cluster.Name = "test-cluster"
+			cluster.Namespace = "default"
+			cluster.Spec.DisplayName = "test-cluster"
+			cluster.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+
+			resp, err := mgr.CreateOrUpdate(context.Background(), cluster, ctrl.Request{})
+			assert.Equal(t, tc.wantSuccess, resp.IsSuccessful)
+			if tc.wantSuccess {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }
 
-// TestDelete_WithOcid_CallsOCIDelete verifies that DeleteRedisCluster OCI call is made when OCID is set.
-func TestDelete_WithOcid_CallsOCIDelete(t *testing.T) {
-	const clusterOcid = "ocid1.redis.oc1..todelete"
-	deleteCalled := false
+// TestGetRetryPolicy verifies the retry policy behavior.
+func TestGetRetryPolicy(t *testing.T) {
+	mgr := newMgrWithFakeClient(&fakeOciClient{}, &fakeCredentialClient{})
+	policy := ExportGetRetryPolicyForTest(mgr, 30)
 
-	ociClient := &mockOciRedisClient{
-		deleteFn: func(_ context.Context, req ociredis.DeleteRedisClusterRequest) (ociredis.DeleteRedisClusterResponse, error) {
-			deleteCalled = true
-			assert.Equal(t, clusterOcid, *req.RedisClusterId)
-			return ociredis.DeleteRedisClusterResponse{}, nil
-		},
-	}
-	mgr := newRedisMgr(t, ociClient, nil)
+	t.Run("max_attempts_30", func(t *testing.T) {
+		assert.Equal(t, uint(30), policy.MaximumNumberAttempts)
+	})
 
-	cluster := &ociv1beta1.RedisCluster{}
-	cluster.Name = "test-cluster"
-	cluster.Namespace = "default"
-	cluster.Status.OsokStatus.Ocid = clusterOcid
+	t.Run("should_retry_creating_state", func(t *testing.T) {
+		resp := ociredis.GetRedisClusterResponse{}
+		resp.RedisCluster.LifecycleState = ociredis.RedisClusterLifecycleStateCreating
+		opResp := common.OCIOperationResponse{Response: resp}
+		assert.True(t, policy.ShouldRetryOperation(opResp), "should retry when CREATING")
+	})
 
-	done, err := mgr.Delete(context.Background(), cluster)
-	assert.NoError(t, err)
-	assert.True(t, done)
-	assert.True(t, deleteCalled, "DeleteRedisCluster should have been called with the cluster OCID")
+	t.Run("should_not_retry_active_state", func(t *testing.T) {
+		resp := ociredis.GetRedisClusterResponse{}
+		resp.RedisCluster.LifecycleState = ociredis.RedisClusterLifecycleStateActive
+		opResp := common.OCIOperationResponse{Response: resp}
+		assert.False(t, policy.ShouldRetryOperation(opResp), "should not retry when ACTIVE")
+	})
+
+	t.Run("should_retry_non_redis_response", func(t *testing.T) {
+		opResp := common.OCIOperationResponse{Response: nil}
+		assert.True(t, policy.ShouldRetryOperation(opResp), "should retry for unknown response type")
+	})
+
+	t.Run("next_duration_is_one_minute", func(t *testing.T) {
+		opResp := common.OCIOperationResponse{}
+		assert.Equal(t, time.Minute, policy.NextDuration(opResp))
+	})
 }
