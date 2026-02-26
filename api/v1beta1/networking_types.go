@@ -138,3 +138,225 @@ type OciSubnetList struct {
 func init() {
 	SchemeBuilder.Register(&OciSubnet{}, &OciSubnetList{})
 }
+
+// OciInternetGatewaySpec defines the desired state of OciInternetGateway
+type OciInternetGatewaySpec struct {
+	// InternetGatewayId is the OCID of an existing Internet Gateway to bind to (optional)
+	InternetGatewayId OCID `json:"id,omitempty"`
+
+	// CompartmentId is the OCID of the compartment in which to create the Internet Gateway
+	// +kubebuilder:validation:Required
+	CompartmentId OCID `json:"compartmentId"`
+
+	// VcnId is the OCID of the VCN that contains this Internet Gateway
+	// +kubebuilder:validation:Required
+	VcnId OCID `json:"vcnId"`
+
+	// DisplayName is a user-friendly name for the Internet Gateway
+	// +kubebuilder:validation:Required
+	DisplayName string `json:"displayName"`
+
+	// IsEnabled controls whether the Internet Gateway is enabled (default true)
+	IsEnabled bool `json:"isEnabled,omitempty"`
+
+	TagResources `json:",inline,omitempty"`
+}
+
+// OciInternetGatewayStatus defines the observed state of OciInternetGateway
+type OciInternetGatewayStatus struct {
+	OsokStatus OSOKStatus `json:"status"`
+}
+
+//+kubebuilder:object:root=true
+//+kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="DisplayName",type="string",JSONPath=".spec.displayName",priority=1
+// +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.status.conditions[-1].type",description="status of the OciInternetGateway",priority=0
+// +kubebuilder:printcolumn:name="Ocid",type="string",JSONPath=".status.status.ocid",description="Ocid of the OciInternetGateway",priority=1
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp",priority=0
+
+// OciInternetGateway is the Schema for the ociinternetgateways API
+type OciInternetGateway struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec   OciInternetGatewaySpec   `json:"spec,omitempty"`
+	Status OciInternetGatewayStatus `json:"status,omitempty"`
+}
+
+//+kubebuilder:object:root=true
+
+// OciInternetGatewayList contains a list of OciInternetGateway
+type OciInternetGatewayList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []OciInternetGateway `json:"items"`
+}
+
+func init() {
+	SchemeBuilder.Register(&OciInternetGateway{}, &OciInternetGatewayList{})
+}
+
+// OciNatGatewaySpec defines the desired state of OciNatGateway
+type OciNatGatewaySpec struct {
+	// NatGatewayId is the OCID of an existing NAT Gateway to bind to (optional)
+	NatGatewayId OCID `json:"id,omitempty"`
+
+	// CompartmentId is the OCID of the compartment in which to create the NAT Gateway
+	// +kubebuilder:validation:Required
+	CompartmentId OCID `json:"compartmentId"`
+
+	// VcnId is the OCID of the VCN that contains this NAT Gateway
+	// +kubebuilder:validation:Required
+	VcnId OCID `json:"vcnId"`
+
+	// DisplayName is a user-friendly name for the NAT Gateway
+	// +kubebuilder:validation:Required
+	DisplayName string `json:"displayName"`
+
+	// BlockTraffic controls whether the NAT Gateway blocks traffic (default false)
+	BlockTraffic bool `json:"blockTraffic,omitempty"`
+
+	TagResources `json:",inline,omitempty"`
+}
+
+// OciNatGatewayStatus defines the observed state of OciNatGateway
+type OciNatGatewayStatus struct {
+	OsokStatus OSOKStatus `json:"status"`
+}
+
+//+kubebuilder:object:root=true
+//+kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="DisplayName",type="string",JSONPath=".spec.displayName",priority=1
+// +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.status.conditions[-1].type",description="status of the OciNatGateway",priority=0
+// +kubebuilder:printcolumn:name="Ocid",type="string",JSONPath=".status.status.ocid",description="Ocid of the OciNatGateway",priority=1
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp",priority=0
+
+// OciNatGateway is the Schema for the ocinatgateways API
+type OciNatGateway struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec   OciNatGatewaySpec   `json:"spec,omitempty"`
+	Status OciNatGatewayStatus `json:"status,omitempty"`
+}
+
+//+kubebuilder:object:root=true
+
+// OciNatGatewayList contains a list of OciNatGateway
+type OciNatGatewayList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []OciNatGateway `json:"items"`
+}
+
+func init() {
+	SchemeBuilder.Register(&OciNatGateway{}, &OciNatGatewayList{})
+}
+
+// OciServiceGatewaySpec defines the desired state of OciServiceGateway
+type OciServiceGatewaySpec struct {
+	// ServiceGatewayId is the OCID of an existing Service Gateway to bind to (optional)
+	ServiceGatewayId OCID `json:"id,omitempty"`
+
+	// CompartmentId is the OCID of the compartment in which to create the Service Gateway
+	// +kubebuilder:validation:Required
+	CompartmentId OCID `json:"compartmentId"`
+
+	// VcnId is the OCID of the VCN that contains this Service Gateway
+	// +kubebuilder:validation:Required
+	VcnId OCID `json:"vcnId"`
+
+	// DisplayName is a user-friendly name for the Service Gateway
+	// +kubebuilder:validation:Required
+	DisplayName string `json:"displayName"`
+
+	// Services is the list of OCI service OCIDs to enable on this gateway
+	// +kubebuilder:validation:Required
+	Services []string `json:"services"`
+
+	TagResources `json:",inline,omitempty"`
+}
+
+// OciServiceGatewayStatus defines the observed state of OciServiceGateway
+type OciServiceGatewayStatus struct {
+	OsokStatus OSOKStatus `json:"status"`
+}
+
+//+kubebuilder:object:root=true
+//+kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="DisplayName",type="string",JSONPath=".spec.displayName",priority=1
+// +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.status.conditions[-1].type",description="status of the OciServiceGateway",priority=0
+// +kubebuilder:printcolumn:name="Ocid",type="string",JSONPath=".status.status.ocid",description="Ocid of the OciServiceGateway",priority=1
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp",priority=0
+
+// OciServiceGateway is the Schema for the ociservicegateways API
+type OciServiceGateway struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec   OciServiceGatewaySpec   `json:"spec,omitempty"`
+	Status OciServiceGatewayStatus `json:"status,omitempty"`
+}
+
+//+kubebuilder:object:root=true
+
+// OciServiceGatewayList contains a list of OciServiceGateway
+type OciServiceGatewayList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []OciServiceGateway `json:"items"`
+}
+
+func init() {
+	SchemeBuilder.Register(&OciServiceGateway{}, &OciServiceGatewayList{})
+}
+
+// OciDrgSpec defines the desired state of OciDrg
+type OciDrgSpec struct {
+	// DrgId is the OCID of an existing DRG to bind to (optional)
+	DrgId OCID `json:"id,omitempty"`
+
+	// CompartmentId is the OCID of the compartment in which to create the DRG
+	// +kubebuilder:validation:Required
+	CompartmentId OCID `json:"compartmentId"`
+
+	// DisplayName is a user-friendly name for the DRG
+	// +kubebuilder:validation:Required
+	DisplayName string `json:"displayName"`
+
+	TagResources `json:",inline,omitempty"`
+}
+
+// OciDrgStatus defines the observed state of OciDrg
+type OciDrgStatus struct {
+	OsokStatus OSOKStatus `json:"status"`
+}
+
+//+kubebuilder:object:root=true
+//+kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="DisplayName",type="string",JSONPath=".spec.displayName",priority=1
+// +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.status.conditions[-1].type",description="status of the OciDrg",priority=0
+// +kubebuilder:printcolumn:name="Ocid",type="string",JSONPath=".status.status.ocid",description="Ocid of the OciDrg",priority=1
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp",priority=0
+
+// OciDrg is the Schema for the ocidrgs API
+type OciDrg struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec   OciDrgSpec   `json:"spec,omitempty"`
+	Status OciDrgStatus `json:"status,omitempty"`
+}
+
+//+kubebuilder:object:root=true
+
+// OciDrgList contains a list of OciDrg
+type OciDrgList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []OciDrg `json:"items"`
+}
+
+func init() {
+	SchemeBuilder.Register(&OciDrg{}, &OciDrgList{})
+}

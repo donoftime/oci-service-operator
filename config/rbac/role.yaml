@@ -23,6 +23,7 @@ rules:
   - apigatewaydeployments
   - apigateways
   - autonomousdatabases
+  - computeinstances
   - containerinstances
   - dataflowapplications
   - functionsapplications
@@ -30,8 +31,14 @@ rules:
   - mysqldbsystems
   - nosqldatabases
   - objectstoragebuckets
+  - ocidrgs
+  - ociinternetgateways
+  - ocinatgateways
   - ociqueues
+  - ociservicegateways
+  - ocisubnets
   - ocivaults
+  - ocivcns
   - opensearchclusters
   - postgresdbsystems
   - redisclusters
@@ -50,6 +57,7 @@ rules:
   - apigatewaydeployments/finalizers
   - apigateways/finalizers
   - autonomousdatabases/finalizers
+  - computeinstances/finalizers
   - containerinstances/finalizers
   - dataflowapplications/finalizers
   - functionsapplications/finalizers
@@ -57,8 +65,14 @@ rules:
   - mysqldbsystems/finalizers
   - nosqldatabases/finalizers
   - objectstoragebuckets/finalizers
+  - ocidrgs/finalizers
+  - ociinternetgateways/finalizers
+  - ocinatgateways/finalizers
   - ociqueues/finalizers
+  - ociservicegateways/finalizers
+  - ocisubnets/finalizers
   - ocivaults/finalizers
+  - ocivcns/finalizers
   - opensearchclusters/finalizers
   - postgresdbsystems/finalizers
   - redisclusters/finalizers
@@ -71,6 +85,7 @@ rules:
   - apigatewaydeployments/status
   - apigateways/status
   - autonomousdatabases/status
+  - computeinstances/status
   - containerinstances/status
   - dataflowapplications/status
   - functionsapplications/status
@@ -78,8 +93,14 @@ rules:
   - mysqldbsystems/status
   - nosqldatabases/status
   - objectstoragebuckets/status
+  - ocidrgs/status
+  - ociinternetgateways/status
+  - ocinatgateways/status
   - ociqueues/status
+  - ociservicegateways/status
+  - ocisubnets/status
   - ocivaults/status
+  - ocivcns/status
   - opensearchclusters/status
   - postgresdbsystems/status
   - redisclusters/status

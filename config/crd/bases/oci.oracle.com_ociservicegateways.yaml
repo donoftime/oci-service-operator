@@ -1,0 +1,154 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.0
+  name: ociservicegateways.oci.oracle.com
+spec:
+  group: oci.oracle.com
+  names:
+    kind: OciServiceGateway
+    listKind: OciServiceGatewayList
+    plural: ociservicegateways
+    singular: ociservicegateway
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.displayName
+      name: DisplayName
+      priority: 1
+      type: string
+    - description: status of the OciServiceGateway
+      jsonPath: .status.status.conditions[-1].type
+      name: Status
+      type: string
+    - description: Ocid of the OciServiceGateway
+      jsonPath: .status.status.ocid
+      name: Ocid
+      priority: 1
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: OciServiceGateway is the Schema for the ociservicegateways API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: OciServiceGatewaySpec defines the desired state of OciServiceGateway
+            properties:
+              compartmentId:
+                description: CompartmentId is the OCID of the compartment in which
+                  to create the Service Gateway
+                maxLength: 255
+                minLength: 1
+                type: string
+              definedTags:
+                additionalProperties:
+                  additionalProperties:
+                    type: string
+                  type: object
+                type: object
+              displayName:
+                description: DisplayName is a user-friendly name for the Service Gateway
+                type: string
+              freeformTags:
+                additionalProperties:
+                  type: string
+                type: object
+              id:
+                description: ServiceGatewayId is the OCID of an existing Service Gateway
+                  to bind to (optional)
+                maxLength: 255
+                minLength: 1
+                type: string
+              services:
+                description: Services is the list of OCI service OCIDs to enable on
+                  this gateway
+                items:
+                  type: string
+                type: array
+              vcnId:
+                description: VcnId is the OCID of the VCN that contains this Service
+                  Gateway
+                maxLength: 255
+                minLength: 1
+                type: string
+            required:
+            - compartmentId
+            - displayName
+            - services
+            - vcnId
+            type: object
+          status:
+            description: OciServiceGatewayStatus defines the observed state of OciServiceGateway
+            properties:
+              status:
+                properties:
+                  conditions:
+                    items:
+                      properties:
+                        lastTransitionTime:
+                          format: date-time
+                          type: string
+                        message:
+                          type: string
+                        reason:
+                          type: string
+                        status:
+                          type: string
+                        type:
+                          type: string
+                      required:
+                      - status
+                      - type
+                      type: object
+                    type: array
+                  createdAt:
+                    format: date-time
+                    type: string
+                  deletedAt:
+                    format: date-time
+                    type: string
+                  message:
+                    type: string
+                  ocid:
+                    maxLength: 255
+                    minLength: 1
+                    type: string
+                  reason:
+                    type: string
+                  requestedAt:
+                    format: date-time
+                    type: string
+                  updatedAt:
+                    format: date-time
+                    type: string
+                type: object
+            required:
+            - status
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

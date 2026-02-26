@@ -25,6 +25,10 @@ resources:
 - bases/oci.oracle.com_redisclusters.yaml
 - bases/oci.oracle.com_ocivcns.yaml
 - bases/oci.oracle.com_ocisubnets.yaml
+- bases/oci.oracle.com_ociinternetgateways.yaml
+- bases/oci.oracle.com_ocinatgateways.yaml
+- bases/oci.oracle.com_ociservicegateways.yaml
+- bases/oci.oracle.com_ocidrgs.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patchesStrategicMerge:

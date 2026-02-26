@@ -434,6 +434,66 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err = (&controllers.OciInternetGatewayReconciler{
+		Reconciler: &core.BaseReconciler{
+			Client:             mgr.GetClient(),
+			OSOKServiceManager: ocinetworking.NewOciInternetGatewayServiceManager(provider, credClient, scheme, loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("service-manager").WithName("OciInternetGateway")}),
+			Finalizer:          core.NewBaseFinalizer(mgr.GetClient(), ctrl.Log),
+			Log:                loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("controllers").WithName("OciInternetGateway")},
+			Metrics:            metricsClient,
+			Recorder:           mgr.GetEventRecorderFor("OciInternetGateway"),
+			Scheme:             scheme,
+		},
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.ErrorLog(err, "unable to create controller", "controller", "OciInternetGateway")
+		os.Exit(1)
+	}
+
+	if err = (&controllers.OciNatGatewayReconciler{
+		Reconciler: &core.BaseReconciler{
+			Client:             mgr.GetClient(),
+			OSOKServiceManager: ocinetworking.NewOciNatGatewayServiceManager(provider, credClient, scheme, loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("service-manager").WithName("OciNatGateway")}),
+			Finalizer:          core.NewBaseFinalizer(mgr.GetClient(), ctrl.Log),
+			Log:                loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("controllers").WithName("OciNatGateway")},
+			Metrics:            metricsClient,
+			Recorder:           mgr.GetEventRecorderFor("OciNatGateway"),
+			Scheme:             scheme,
+		},
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.ErrorLog(err, "unable to create controller", "controller", "OciNatGateway")
+		os.Exit(1)
+	}
+
+	if err = (&controllers.OciServiceGatewayReconciler{
+		Reconciler: &core.BaseReconciler{
+			Client:             mgr.GetClient(),
+			OSOKServiceManager: ocinetworking.NewOciServiceGatewayServiceManager(provider, credClient, scheme, loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("service-manager").WithName("OciServiceGateway")}),
+			Finalizer:          core.NewBaseFinalizer(mgr.GetClient(), ctrl.Log),
+			Log:                loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("controllers").WithName("OciServiceGateway")},
+			Metrics:            metricsClient,
+			Recorder:           mgr.GetEventRecorderFor("OciServiceGateway"),
+			Scheme:             scheme,
+		},
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.ErrorLog(err, "unable to create controller", "controller", "OciServiceGateway")
+		os.Exit(1)
+	}
+
+	if err = (&controllers.OciDrgReconciler{
+		Reconciler: &core.BaseReconciler{
+			Client:             mgr.GetClient(),
+			OSOKServiceManager: ocinetworking.NewOciDrgServiceManager(provider, credClient, scheme, loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("service-manager").WithName("OciDrg")}),
+			Finalizer:          core.NewBaseFinalizer(mgr.GetClient(), ctrl.Log),
+			Log:                loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("controllers").WithName("OciDrg")},
+			Metrics:            metricsClient,
+			Recorder:           mgr.GetEventRecorderFor("OciDrg"),
+			Scheme:             scheme,
+		},
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.ErrorLog(err, "unable to create controller", "controller", "OciDrg")
+		os.Exit(1)
+	}
+
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("health", healthz.Ping); err != nil {
