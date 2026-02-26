@@ -53,8 +53,6 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
-MOCKS_DIR = $(CURDIR)/test/mocks
-
 all: build
 
 ##@ General
@@ -87,33 +85,19 @@ fmt: ## Run go fmt against code.
 vet: ## Run go vet against code.
 	go vet ./...
 
-$(MOCKS_DIR):
-	mkdir -p $(MOCKS_DIR)
-
-mocks: $(MOCKS_DIR) ## Generate mock objects.
-	mockgen -source=pkg/servicemanager/servicemesh/services/servicemesh_client.go -destination=$(MOCKS_DIR)/servicemesh/servicemesh_client.go -package mocks
-	mockgen -source=pkg/servicemanager/servicemesh/references/resolver.go -destination=$(MOCKS_DIR)/servicemesh/resolver.go -package mocks
-	mockgen -source=pkg/servicemanager/servicemesh/k8s/cache/cache_manager.go -destination=$(MOCKS_DIR)/servicemesh/custom_cache.go -package mocks
-
-
 ENVTEST_K8S_VERSION ?= 1.28.0
-SETUP_ENVTEST = $(shell pwd)/bin/setup-envtest
 
-setup-envtest: ## Download setup-envtest locally if necessary.
-	test -s $(SETUP_ENVTEST) || GOBIN=$(shell pwd)/bin go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
-
-test: manifests generate fmt vet setup-envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell $(SETUP_ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test ./... -coverprofile cover.out | tee unittests.cover
+test: manifests generate fmt vet ## Run tests.
+	KUBEBUILDER_ASSETS="$(shell go run sigs.k8s.io/controller-runtime/tools/setup-envtest@latest use $(ENVTEST_K8S_VERSION) -p path)" go test ./... -coverprofile cover.out | tee unittests.cover
 	go tool cover -func cover.out | grep total | awk '{print substr($$3, 1, length($$3)-1)}' > unittests.percent
 
-functionaltest: manifests generate mocks setup-envtest ## Run functionaltest.
-	KUBEBUILDER_ASSETS="$(shell $(SETUP_ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test -v -p 1 -timeout 15m ./test/servicemesh/functional... -coverprofile=cover.out -coverpkg=./api/...,./apis/...,./pkg/...,./controllers/...
-	go tool cover -func cover.out | grep total | awk '{print substr($$3, 1, length($$3)-1)}' > functionaltests.percent
+functionaltest: ## Run functionaltest (placeholder — no functional tests yet).
+	@echo "No functional tests available."
 
 ##@ Build Service
 
-test-sample: fmt vet setup-envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell $(SETUP_ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test -v ./... -coverprofile cover.out -args -ginkgo.v
+test-sample: fmt vet ## Run tests.
+	KUBEBUILDER_ASSETS="$(shell go run sigs.k8s.io/controller-runtime/tools/setup-envtest@latest use $(ENVTEST_K8S_VERSION) -p path)" go test -v ./... -coverprofile cover.out -args -ginkgo.v
 
 docker-build-sample: ## Build docker image with the manager.
 	docker build -t ${IMG} .
