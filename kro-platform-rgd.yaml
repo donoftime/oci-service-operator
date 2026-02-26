@@ -9,15 +9,16 @@ spec:
     spec:
       compartmentId: string
       availabilityDomain: string
-      subnetId: string
+      cidrBlock: string
+      subnetCidrBlock: string
       lbSubnetId: string
-      vcnId: string
       objectStorageNamespace: string
       mysqlCredentialsSecret: string
       adbAdminPasswordSecret: string
       adbDbName: string
       nosqlTableName: string
       containerImageUrl: string
+      imageId: string
 
   resources:
 
@@ -99,7 +100,35 @@ spec:
             secret:
               secretName: ${schema.spec.adbAdminPasswordSecret}
 
-    # ── 6. MySQL DB System ────────────────────────────────────────────────────
+    # ── 6. VCN ────────────────────────────────────────────────────────────────
+    - id: vcn
+      template:
+        apiVersion: oci.oracle.com/v1beta1
+        kind: OciVcn
+        metadata:
+          name: ${schema.metadata.name}-vcn
+        spec:
+          compartmentId: ${schema.spec.compartmentId}
+          displayName: ${schema.metadata.name}-vcn
+          cidrBlock: ${schema.spec.cidrBlock}
+          dnsLabel: platform
+
+    # ── 7. Subnet ─────────────────────────────────────────────────────────────
+    - id: subnet
+      template:
+        apiVersion: oci.oracle.com/v1beta1
+        kind: OciSubnet
+        metadata:
+          name: ${schema.metadata.name}-subnet
+        spec:
+          compartmentId: ${schema.spec.compartmentId}
+          displayName: ${schema.metadata.name}-subnet
+          vcnId: ${vcn.status.status.ocid}
+          cidrBlock: ${schema.spec.subnetCidrBlock}
+          dnsLabel: private
+          prohibitPublicIpOnVnic: true
+
+    # ── 8. MySQL DB System ────────────────────────────────────────────────────
     - id: mysql
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -110,7 +139,7 @@ spec:
           compartmentId: ${schema.spec.compartmentId}
           displayName: ${schema.metadata.name}-mysql
           shapeName: MySQL.VM.Standard.E3.1.8GB
-          subnetId: ${schema.spec.subnetId}
+          subnetId: ${subnet.status.status.ocid}
           availabilityDomain: ${schema.spec.availabilityDomain}
           mysqlVersion: "8.0.42"
           dataStorageSizeInGBs: 50
@@ -121,7 +150,7 @@ spec:
             secret:
               secretName: ${schema.spec.mysqlCredentialsSecret}
 
-    # ── 7. PostgreSQL DB System ───────────────────────────────────────────────
+    # ── 9. PostgreSQL DB System ───────────────────────────────────────────────
     - id: postgres
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -133,13 +162,13 @@ spec:
           displayName: ${schema.metadata.name}-postgres
           dbVersion: "14.10"
           shape: VM.Standard.E4.Flex
-          subnetId: ${schema.spec.subnetId}
+          subnetId: ${subnet.status.status.ocid}
           storageType: HighPerformance
           instanceCount: 1
           instanceOcpuCount: 2
           instanceMemoryInGBs: 32
 
-    # ── 8. NoSQL Table ────────────────────────────────────────────────────────
+    # ── 10. NoSQL Table ────────────────────────────────────────────────────────
     - id: nosqlTable
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -157,7 +186,7 @@ spec:
             maxWriteUnits: 50
             maxStorageInGBs: 1
 
-    # ── 9. OCI Cache with Redis ────────────────────────────────────────────────
+    # ── 11. OCI Cache with Redis ────────────────────────────────────────────────
     - id: redisCluster
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -170,9 +199,9 @@ spec:
           softwareVersion: V7_0_5
           nodeCount: 3
           nodeMemoryInGBs: 2
-          subnetId: ${schema.spec.subnetId}
+          subnetId: ${subnet.status.status.ocid}
 
-    # ── 10. OpenSearch Cluster ────────────────────────────────────────────────
+    # ── 12. OpenSearch Cluster ────────────────────────────────────────────────
     - id: opensearch
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -195,12 +224,12 @@ spec:
           opendashboardNodeCount: 1
           opendashboardNodeHostOcpuCount: 2
           opendashboardNodeHostMemoryGB: 32
-          vcnId: ${schema.spec.vcnId}
+          vcnId: ${vcn.status.status.ocid}
           vcnCompartmentId: ${schema.spec.compartmentId}
-          subnetId: ${schema.spec.subnetId}
+          subnetId: ${subnet.status.status.ocid}
           subnetCompartmentId: ${schema.spec.compartmentId}
 
-    # ── 11. API Gateway ───────────────────────────────────────────────────────
+    # ── 13. API Gateway ───────────────────────────────────────────────────────
     - id: apiGateway
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -213,7 +242,7 @@ spec:
           endpointType: PUBLIC
           subnetId: ${schema.spec.lbSubnetId}
 
-    # ── 12. API Gateway Deployment ────────────────────────────────────────────
+    # ── 14. API Gateway Deployment ────────────────────────────────────────────
     # Stock responses only — no function backend required.
     - id: apiGatewayDeployment
       template:
@@ -235,7 +264,7 @@ spec:
                 status: 200
                 body: '{"status":"ok"}'
 
-    # ── 13. Container Instance ────────────────────────────────────────────────
+    # ── 15. Container Instance ────────────────────────────────────────────────
     - id: containerInstance
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -255,6 +284,24 @@ spec:
               environmentVariables:
                 COMPARTMENT_ID: ${schema.spec.compartmentId}
           vnics:
-            - subnetId: ${schema.spec.subnetId}
+            - subnetId: ${subnet.status.status.ocid}
               displayName: primary-vnic
           containerRestartPolicy: ON_FAILURE
+
+    # ── 16. Compute Instance ──────────────────────────────────────────────────
+    - id: computeInstance
+      template:
+        apiVersion: oci.oracle.com/v1beta1
+        kind: ComputeInstance
+        metadata:
+          name: ${schema.metadata.name}-vm
+        spec:
+          compartmentId: ${schema.spec.compartmentId}
+          displayName: ${schema.metadata.name}-vm
+          availabilityDomain: ${schema.spec.availabilityDomain}
+          shape: VM.Standard.E4.Flex
+          shapeConfig:
+            ocpus: 1
+            memoryInGBs: 16
+          imageId: ${schema.spec.imageId}
+          subnetId: ${subnet.status.status.ocid}
