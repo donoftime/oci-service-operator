@@ -34,6 +34,7 @@ type DevopsProjectServiceManager struct {
 	CredentialClient credhelper.CredentialClient
 	Scheme           *runtime.Scheme
 	Log              loggerutil.OSOKLogger
+	ociClient        DevopsClientInterface
 }
 
 // NewDevopsProjectServiceManager creates a new DevopsProjectServiceManager.

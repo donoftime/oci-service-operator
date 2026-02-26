@@ -34,6 +34,7 @@ type DeploymentServiceManager struct {
 	CredentialClient credhelper.CredentialClient
 	Scheme           *runtime.Scheme
 	Log              loggerutil.OSOKLogger
+	ociClient        DeploymentClientInterface
 }
 
 // NewDeploymentServiceManager creates a new DeploymentServiceManager.

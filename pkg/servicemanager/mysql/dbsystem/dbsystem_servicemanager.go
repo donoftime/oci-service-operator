@@ -33,6 +33,7 @@ type DbSystemServiceManager struct {
 	CredentialClient credhelper.CredentialClient
 	Scheme           *runtime.Scheme
 	Log              loggerutil.OSOKLogger
+	ociClient        MySQLDbSystemClientInterface
 }
 
 func NewDbSystemServiceManager(provider common.ConfigurationProvider, credClient credhelper.CredentialClient,

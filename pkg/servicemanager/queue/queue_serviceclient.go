@@ -15,13 +15,30 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/util"
 )
 
+// QueueAdminClientInterface defines the OCI operations used by OciQueueServiceManager.
+type QueueAdminClientInterface interface {
+	CreateQueue(ctx context.Context, request ociqueue.CreateQueueRequest) (ociqueue.CreateQueueResponse, error)
+	GetQueue(ctx context.Context, request ociqueue.GetQueueRequest) (ociqueue.GetQueueResponse, error)
+	ListQueues(ctx context.Context, request ociqueue.ListQueuesRequest) (ociqueue.ListQueuesResponse, error)
+	UpdateQueue(ctx context.Context, request ociqueue.UpdateQueueRequest) (ociqueue.UpdateQueueResponse, error)
+	DeleteQueue(ctx context.Context, request ociqueue.DeleteQueueRequest) (ociqueue.DeleteQueueResponse, error)
+}
+
 func getQueueAdminClient(provider common.ConfigurationProvider) (ociqueue.QueueAdminClient, error) {
 	return ociqueue.NewQueueAdminClientWithConfigurationProvider(provider)
 }
 
+// getOCIClient returns the injected client if set, otherwise creates one from the provider.
+func (c *OciQueueServiceManager) getOCIClient() (QueueAdminClientInterface, error) {
+	if c.ociClient != nil {
+		return c.ociClient, nil
+	}
+	return getQueueAdminClient(c.Provider)
+}
+
 // CreateQueue calls the OCI API to create a new Queue and returns the work request ID.
 func (c *OciQueueServiceManager) CreateQueue(ctx context.Context, q ociv1beta1.OciQueue) (string, error) {
-	client, err := getQueueAdminClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return "", err
 	}
@@ -69,7 +86,7 @@ func (c *OciQueueServiceManager) CreateQueue(ctx context.Context, q ociv1beta1.O
 
 // GetQueue retrieves a Queue by OCID.
 func (c *OciQueueServiceManager) GetQueue(ctx context.Context, queueId ociv1beta1.OCID) (*ociqueue.Queue, error) {
-	client, err := getQueueAdminClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +105,7 @@ func (c *OciQueueServiceManager) GetQueue(ctx context.Context, queueId ociv1beta
 // GetQueueOcid looks up an existing Queue by display name and returns its OCID if found.
 // Returns nil if no matching queue in CREATING, UPDATING, or ACTIVE state is found.
 func (c *OciQueueServiceManager) GetQueueOcid(ctx context.Context, q ociv1beta1.OciQueue) (*ociv1beta1.OCID, error) {
-	client, err := getQueueAdminClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +136,7 @@ func (c *OciQueueServiceManager) GetQueueOcid(ctx context.Context, q ociv1beta1.
 
 // UpdateQueue updates an existing Queue.
 func (c *OciQueueServiceManager) UpdateQueue(ctx context.Context, q *ociv1beta1.OciQueue) error {
-	client, err := getQueueAdminClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return err
 	}
@@ -164,7 +181,7 @@ func (c *OciQueueServiceManager) UpdateQueue(ctx context.Context, q *ociv1beta1.
 
 // DeleteQueue deletes the Queue for the given OCID.
 func (c *OciQueueServiceManager) DeleteQueue(ctx context.Context, queueId ociv1beta1.OCID) error {
-	client, err := getQueueAdminClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return err
 	}

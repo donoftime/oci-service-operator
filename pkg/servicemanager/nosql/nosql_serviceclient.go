@@ -16,13 +16,30 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/util"
 )
 
+// NosqlClientInterface defines the OCI operations used by NoSQLDatabaseServiceManager.
+type NosqlClientInterface interface {
+	CreateTable(ctx context.Context, request nosql.CreateTableRequest) (nosql.CreateTableResponse, error)
+	GetTable(ctx context.Context, request nosql.GetTableRequest) (nosql.GetTableResponse, error)
+	ListTables(ctx context.Context, request nosql.ListTablesRequest) (nosql.ListTablesResponse, error)
+	UpdateTable(ctx context.Context, request nosql.UpdateTableRequest) (nosql.UpdateTableResponse, error)
+	DeleteTable(ctx context.Context, request nosql.DeleteTableRequest) (nosql.DeleteTableResponse, error)
+}
+
 func getNosqlClient(provider common.ConfigurationProvider) (nosql.NosqlClient, error) {
 	return nosql.NewNosqlClientWithConfigurationProvider(provider)
 }
 
+// getOCIClient returns the injected client if set, otherwise creates one from the provider.
+func (c *NoSQLDatabaseServiceManager) getOCIClient() (NosqlClientInterface, error) {
+	if c.ociClient != nil {
+		return c.ociClient, nil
+	}
+	return getNosqlClient(c.Provider)
+}
+
 // CreateTable calls the OCI API to create a new NoSQL table.
 func (c *NoSQLDatabaseServiceManager) CreateTable(ctx context.Context, db ociv1beta1.NoSQLDatabase) (nosql.CreateTableResponse, error) {
-	client, err := getNosqlClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return nosql.CreateTableResponse{}, err
 	}
@@ -57,7 +74,7 @@ func (c *NoSQLDatabaseServiceManager) CreateTable(ctx context.Context, db ociv1b
 
 // GetTable retrieves a NoSQL table by OCID.
 func (c *NoSQLDatabaseServiceManager) GetTable(ctx context.Context, tableId ociv1beta1.OCID, retryPolicy *common.RetryPolicy) (*nosql.Table, error) {
-	client, err := getNosqlClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +96,7 @@ func (c *NoSQLDatabaseServiceManager) GetTable(ctx context.Context, tableId ociv
 
 // GetTableOcid looks up an existing NoSQL table by name and returns its OCID if found.
 func (c *NoSQLDatabaseServiceManager) GetTableOcid(ctx context.Context, db ociv1beta1.NoSQLDatabase) (*ociv1beta1.OCID, error) {
-	client, err := getNosqlClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +127,7 @@ func (c *NoSQLDatabaseServiceManager) GetTableOcid(ctx context.Context, db ociv1
 
 // UpdateTable updates the DDL statement and limits for an existing NoSQL table.
 func (c *NoSQLDatabaseServiceManager) UpdateTable(ctx context.Context, db *ociv1beta1.NoSQLDatabase) error {
-	client, err := getNosqlClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return err
 	}
@@ -147,7 +164,7 @@ func (c *NoSQLDatabaseServiceManager) UpdateTable(ctx context.Context, db *ociv1
 
 // DeleteTable deletes the NoSQL table for the given OCID.
 func (c *NoSQLDatabaseServiceManager) DeleteTable(ctx context.Context, tableId ociv1beta1.OCID) error {
-	client, err := getNosqlClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return err
 	}

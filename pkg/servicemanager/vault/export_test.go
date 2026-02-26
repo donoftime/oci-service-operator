@@ -11,3 +11,13 @@ import "github.com/oracle/oci-go-sdk/v65/keymanagement"
 func GetCredentialMapForTest(v keymanagement.Vault) map[string][]byte {
 	return getCredentialMap(v)
 }
+
+// ExportSetVaultClientForTest sets the KMS vault client on the service manager for unit testing.
+func ExportSetVaultClientForTest(m *OciVaultServiceManager, c KmsVaultClientInterface) {
+	m.ociVaultClient = c
+}
+
+// ExportSetManagementClientForTest sets the KMS management client on the service manager for unit testing.
+func ExportSetManagementClientForTest(m *OciVaultServiceManager, c KmsManagementClientInterface) {
+	m.ociManagementClient = c
+}

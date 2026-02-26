@@ -3,9 +3,9 @@
   Licensed under the Universal Permissive License v 1.0 as shown at http://oss.oracle.com/licenses/upl.
 */
 
-package devops
+package nosql
 
 // ExportSetClientForTest sets the OCI client on the service manager for unit testing.
-func ExportSetClientForTest(m *DevopsProjectServiceManager, c DevopsClientInterface) {
+func ExportSetClientForTest(m *NoSQLDatabaseServiceManager, c NosqlClientInterface) {
 	m.ociClient = c
 }

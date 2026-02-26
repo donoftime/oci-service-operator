@@ -35,6 +35,7 @@ type ContainerInstanceServiceManager struct {
 	CredentialClient credhelper.CredentialClient
 	Scheme           *runtime.Scheme
 	Log              loggerutil.OSOKLogger
+	ociClient        ContainerInstanceClientInterface
 }
 
 // NewContainerInstanceServiceManager creates a new ContainerInstanceServiceManager.

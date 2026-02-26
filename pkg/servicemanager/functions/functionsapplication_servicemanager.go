@@ -34,6 +34,7 @@ type FunctionsApplicationServiceManager struct {
 	CredentialClient credhelper.CredentialClient
 	Scheme           *runtime.Scheme
 	Log              loggerutil.OSOKLogger
+	ociClient        FunctionsManagementClientInterface
 }
 
 // NewFunctionsApplicationServiceManager creates a new FunctionsApplicationServiceManager.

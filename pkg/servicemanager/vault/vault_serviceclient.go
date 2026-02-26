@@ -15,6 +15,23 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/util"
 )
 
+// KmsVaultClientInterface defines the OCI vault operations used by OciVaultServiceManager.
+type KmsVaultClientInterface interface {
+	CreateVault(ctx context.Context, request keymanagement.CreateVaultRequest) (keymanagement.CreateVaultResponse, error)
+	GetVault(ctx context.Context, request keymanagement.GetVaultRequest) (keymanagement.GetVaultResponse, error)
+	ListVaults(ctx context.Context, request keymanagement.ListVaultsRequest) (keymanagement.ListVaultsResponse, error)
+	UpdateVault(ctx context.Context, request keymanagement.UpdateVaultRequest) (keymanagement.UpdateVaultResponse, error)
+	ScheduleVaultDeletion(ctx context.Context, request keymanagement.ScheduleVaultDeletionRequest) (keymanagement.ScheduleVaultDeletionResponse, error)
+}
+
+// KmsManagementClientInterface defines the OCI key management operations used by OciVaultServiceManager.
+type KmsManagementClientInterface interface {
+	CreateKey(ctx context.Context, request keymanagement.CreateKeyRequest) (keymanagement.CreateKeyResponse, error)
+	GetKey(ctx context.Context, request keymanagement.GetKeyRequest) (keymanagement.GetKeyResponse, error)
+	ListKeys(ctx context.Context, request keymanagement.ListKeysRequest) (keymanagement.ListKeysResponse, error)
+	ScheduleKeyDeletion(ctx context.Context, request keymanagement.ScheduleKeyDeletionRequest) (keymanagement.ScheduleKeyDeletionResponse, error)
+}
+
 func getKmsVaultClient(provider common.ConfigurationProvider) (keymanagement.KmsVaultClient, error) {
 	return keymanagement.NewKmsVaultClientWithConfigurationProvider(provider)
 }
@@ -23,9 +40,25 @@ func getKmsManagementClient(provider common.ConfigurationProvider, managementEnd
 	return keymanagement.NewKmsManagementClientWithConfigurationProvider(provider, managementEndpoint)
 }
 
+// getVaultClient returns the injected vault client if set, otherwise creates one from the provider.
+func (c *OciVaultServiceManager) getVaultClient() (KmsVaultClientInterface, error) {
+	if c.ociVaultClient != nil {
+		return c.ociVaultClient, nil
+	}
+	return getKmsVaultClient(c.Provider)
+}
+
+// getMgmtClient returns the injected management client if set, otherwise creates one from the provider.
+func (c *OciVaultServiceManager) getMgmtClient(managementEndpoint string) (KmsManagementClientInterface, error) {
+	if c.ociManagementClient != nil {
+		return c.ociManagementClient, nil
+	}
+	return getKmsManagementClient(c.Provider, managementEndpoint)
+}
+
 // CreateVault calls the OCI API to create a new Vault.
 func (c *OciVaultServiceManager) CreateVault(ctx context.Context, v ociv1beta1.OciVault) (*keymanagement.Vault, error) {
-	client, err := getKmsVaultClient(c.Provider)
+	client, err := c.getVaultClient()
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +89,7 @@ func (c *OciVaultServiceManager) CreateVault(ctx context.Context, v ociv1beta1.O
 
 // GetVault retrieves a Vault by OCID.
 func (c *OciVaultServiceManager) GetVault(ctx context.Context, vaultId ociv1beta1.OCID) (*keymanagement.Vault, error) {
-	client, err := getKmsVaultClient(c.Provider)
+	client, err := c.getVaultClient()
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +108,7 @@ func (c *OciVaultServiceManager) GetVault(ctx context.Context, vaultId ociv1beta
 // GetVaultOcid looks up an existing Vault by display name and returns its OCID if found.
 // Returns nil if no matching vault in CREATING or ACTIVE state is found.
 func (c *OciVaultServiceManager) GetVaultOcid(ctx context.Context, v ociv1beta1.OciVault) (*ociv1beta1.OCID, error) {
-	client, err := getKmsVaultClient(c.Provider)
+	client, err := c.getVaultClient()
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +141,7 @@ func (c *OciVaultServiceManager) GetVaultOcid(ctx context.Context, v ociv1beta1.
 
 // UpdateVault updates the display name and tags of an existing Vault.
 func (c *OciVaultServiceManager) UpdateVault(ctx context.Context, v *ociv1beta1.OciVault) error {
-	client, err := getKmsVaultClient(c.Provider)
+	client, err := c.getVaultClient()
 	if err != nil {
 		return err
 	}
@@ -134,7 +167,7 @@ func (c *OciVaultServiceManager) UpdateVault(ctx context.Context, v *ociv1beta1.
 
 // ScheduleVaultDeletion schedules the Vault for deletion (minimum 7-day grace period).
 func (c *OciVaultServiceManager) ScheduleVaultDeletion(ctx context.Context, vaultId ociv1beta1.OCID) error {
-	client, err := getKmsVaultClient(c.Provider)
+	client, err := c.getVaultClient()
 	if err != nil {
 		return err
 	}
@@ -153,7 +186,7 @@ func (c *OciVaultServiceManager) CreateKey(ctx context.Context, v ociv1beta1.Oci
 		return nil, fmt.Errorf("no key spec provided")
 	}
 
-	client, err := getKmsManagementClient(c.Provider, managementEndpoint)
+	client, err := c.getMgmtClient(managementEndpoint)
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +220,7 @@ func (c *OciVaultServiceManager) CreateKey(ctx context.Context, v ociv1beta1.Oci
 
 // GetKey retrieves a key by OCID using the vault's management endpoint.
 func (c *OciVaultServiceManager) GetKey(ctx context.Context, keyId ociv1beta1.OCID, managementEndpoint string) (*keymanagement.Key, error) {
-	client, err := getKmsManagementClient(c.Provider, managementEndpoint)
+	client, err := c.getMgmtClient(managementEndpoint)
 	if err != nil {
 		return nil, err
 	}
@@ -209,7 +242,7 @@ func (c *OciVaultServiceManager) GetKeyOcid(ctx context.Context, v ociv1beta1.Oc
 		return nil, nil
 	}
 
-	client, err := getKmsManagementClient(c.Provider, managementEndpoint)
+	client, err := c.getMgmtClient(managementEndpoint)
 	if err != nil {
 		return nil, err
 	}
@@ -242,7 +275,7 @@ func (c *OciVaultServiceManager) GetKeyOcid(ctx context.Context, v ociv1beta1.Oc
 
 // ScheduleKeyDeletion schedules a key for deletion.
 func (c *OciVaultServiceManager) ScheduleKeyDeletion(ctx context.Context, keyId ociv1beta1.OCID, managementEndpoint string) error {
-	client, err := getKmsManagementClient(c.Provider, managementEndpoint)
+	client, err := c.getMgmtClient(managementEndpoint)
 	if err != nil {
 		return err
 	}

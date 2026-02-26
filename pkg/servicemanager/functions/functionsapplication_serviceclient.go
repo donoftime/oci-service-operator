@@ -15,13 +15,35 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/util"
 )
 
+// FunctionsManagementClientInterface defines the OCI operations used by Functions service managers.
+type FunctionsManagementClientInterface interface {
+	CreateApplication(ctx context.Context, request ocifunctions.CreateApplicationRequest) (ocifunctions.CreateApplicationResponse, error)
+	GetApplication(ctx context.Context, request ocifunctions.GetApplicationRequest) (ocifunctions.GetApplicationResponse, error)
+	ListApplications(ctx context.Context, request ocifunctions.ListApplicationsRequest) (ocifunctions.ListApplicationsResponse, error)
+	UpdateApplication(ctx context.Context, request ocifunctions.UpdateApplicationRequest) (ocifunctions.UpdateApplicationResponse, error)
+	DeleteApplication(ctx context.Context, request ocifunctions.DeleteApplicationRequest) (ocifunctions.DeleteApplicationResponse, error)
+	CreateFunction(ctx context.Context, request ocifunctions.CreateFunctionRequest) (ocifunctions.CreateFunctionResponse, error)
+	GetFunction(ctx context.Context, request ocifunctions.GetFunctionRequest) (ocifunctions.GetFunctionResponse, error)
+	ListFunctions(ctx context.Context, request ocifunctions.ListFunctionsRequest) (ocifunctions.ListFunctionsResponse, error)
+	UpdateFunction(ctx context.Context, request ocifunctions.UpdateFunctionRequest) (ocifunctions.UpdateFunctionResponse, error)
+	DeleteFunction(ctx context.Context, request ocifunctions.DeleteFunctionRequest) (ocifunctions.DeleteFunctionResponse, error)
+}
+
 func getFunctionsManagementClient(provider common.ConfigurationProvider) (ocifunctions.FunctionsManagementClient, error) {
 	return ocifunctions.NewFunctionsManagementClientWithConfigurationProvider(provider)
 }
 
+// getOCIClient returns the injected client if set, otherwise creates one from the provider.
+func (m *FunctionsApplicationServiceManager) getOCIClient() (FunctionsManagementClientInterface, error) {
+	if m.ociClient != nil {
+		return m.ociClient, nil
+	}
+	return getFunctionsManagementClient(m.Provider)
+}
+
 // CreateApplication calls the OCI API to create a new Functions application.
 func (m *FunctionsApplicationServiceManager) CreateApplication(ctx context.Context, app ociv1beta1.FunctionsApplication) (ocifunctions.CreateApplicationResponse, error) {
-	client, err := getFunctionsManagementClient(m.Provider)
+	client, err := m.getOCIClient()
 	if err != nil {
 		return ocifunctions.CreateApplicationResponse{}, err
 	}
@@ -62,7 +84,7 @@ func (m *FunctionsApplicationServiceManager) CreateApplication(ctx context.Conte
 
 // GetApplication retrieves a Functions application by OCID.
 func (m *FunctionsApplicationServiceManager) GetApplication(ctx context.Context, appId ociv1beta1.OCID, retryPolicy *common.RetryPolicy) (*ocifunctions.Application, error) {
-	client, err := getFunctionsManagementClient(m.Provider)
+	client, err := m.getOCIClient()
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +105,7 @@ func (m *FunctionsApplicationServiceManager) GetApplication(ctx context.Context,
 
 // GetApplicationOcid looks up an existing application by display name and returns its OCID if found.
 func (m *FunctionsApplicationServiceManager) GetApplicationOcid(ctx context.Context, app ociv1beta1.FunctionsApplication) (*ociv1beta1.OCID, error) {
-	client, err := getFunctionsManagementClient(m.Provider)
+	client, err := m.getOCIClient()
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +136,7 @@ func (m *FunctionsApplicationServiceManager) GetApplicationOcid(ctx context.Cont
 
 // UpdateApplication updates an existing Functions application.
 func (m *FunctionsApplicationServiceManager) UpdateApplication(ctx context.Context, app *ociv1beta1.FunctionsApplication) error {
-	client, err := getFunctionsManagementClient(m.Provider)
+	client, err := m.getOCIClient()
 	if err != nil {
 		return err
 	}
@@ -150,7 +172,7 @@ func (m *FunctionsApplicationServiceManager) UpdateApplication(ctx context.Conte
 
 // DeleteApplication deletes the Functions application for the given OCID.
 func (m *FunctionsApplicationServiceManager) DeleteApplication(ctx context.Context, appId ociv1beta1.OCID) error {
-	client, err := getFunctionsManagementClient(m.Provider)
+	client, err := m.getOCIClient()
 	if err != nil {
 		return err
 	}

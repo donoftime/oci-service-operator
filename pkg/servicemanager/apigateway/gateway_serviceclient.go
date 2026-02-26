@@ -16,13 +16,30 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/util"
 )
 
+// GatewayClientInterface defines the OCI operations used by GatewayServiceManager.
+type GatewayClientInterface interface {
+	CreateGateway(ctx context.Context, request apigateway.CreateGatewayRequest) (apigateway.CreateGatewayResponse, error)
+	GetGateway(ctx context.Context, request apigateway.GetGatewayRequest) (apigateway.GetGatewayResponse, error)
+	ListGateways(ctx context.Context, request apigateway.ListGatewaysRequest) (apigateway.ListGatewaysResponse, error)
+	UpdateGateway(ctx context.Context, request apigateway.UpdateGatewayRequest) (apigateway.UpdateGatewayResponse, error)
+	DeleteGateway(ctx context.Context, request apigateway.DeleteGatewayRequest) (apigateway.DeleteGatewayResponse, error)
+}
+
 func getGatewayClient(provider common.ConfigurationProvider) (apigateway.GatewayClient, error) {
 	return apigateway.NewGatewayClientWithConfigurationProvider(provider)
 }
 
+// getOCIClient returns the injected client if set, otherwise creates one from the provider.
+func (c *GatewayServiceManager) getOCIClient() (GatewayClientInterface, error) {
+	if c.ociClient != nil {
+		return c.ociClient, nil
+	}
+	return getGatewayClient(c.Provider)
+}
+
 // CreateGateway calls the OCI API to create a new API Gateway.
 func (c *GatewayServiceManager) CreateGateway(ctx context.Context, gw ociv1beta1.ApiGateway) (apigateway.CreateGatewayResponse, error) {
-	client, err := getGatewayClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return apigateway.CreateGatewayResponse{}, err
 	}
@@ -64,7 +81,7 @@ func (c *GatewayServiceManager) CreateGateway(ctx context.Context, gw ociv1beta1
 
 // GetGateway retrieves an API Gateway by OCID.
 func (c *GatewayServiceManager) GetGateway(ctx context.Context, gatewayId ociv1beta1.OCID, retryPolicy *common.RetryPolicy) (*apigateway.Gateway, error) {
-	client, err := getGatewayClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +102,7 @@ func (c *GatewayServiceManager) GetGateway(ctx context.Context, gatewayId ociv1b
 
 // GetGatewayOcid looks up an existing gateway by display name and compartment.
 func (c *GatewayServiceManager) GetGatewayOcid(ctx context.Context, gw ociv1beta1.ApiGateway) (*ociv1beta1.OCID, error) {
-	client, err := getGatewayClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +133,7 @@ func (c *GatewayServiceManager) GetGatewayOcid(ctx context.Context, gw ociv1beta
 
 // UpdateGateway updates an existing API Gateway.
 func (c *GatewayServiceManager) UpdateGateway(ctx context.Context, gw *ociv1beta1.ApiGateway) error {
-	client, err := getGatewayClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return err
 	}
@@ -164,7 +181,7 @@ func (c *GatewayServiceManager) UpdateGateway(ctx context.Context, gw *ociv1beta
 
 // DeleteGateway deletes the API Gateway for the given OCID.
 func (c *GatewayServiceManager) DeleteGateway(ctx context.Context, gatewayId ociv1beta1.OCID) error {
-	client, err := getGatewayClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return err
 	}

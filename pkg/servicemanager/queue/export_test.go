@@ -11,3 +11,8 @@ import ociqueue "github.com/oracle/oci-go-sdk/v65/queue"
 func GetCredentialMapForTest(q ociqueue.Queue) map[string][]byte {
 	return getCredentialMap(q)
 }
+
+// ExportSetClientForTest sets the OCI client on the service manager for unit testing.
+func ExportSetClientForTest(m *OciQueueServiceManager, c QueueAdminClientInterface) {
+	m.ociClient = c
+}

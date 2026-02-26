@@ -34,6 +34,7 @@ type GatewayServiceManager struct {
 	CredentialClient credhelper.CredentialClient
 	Scheme           *runtime.Scheme
 	Log              loggerutil.OSOKLogger
+	ociClient        GatewayClientInterface
 }
 
 // NewGatewayServiceManager creates a new GatewayServiceManager.

@@ -11,3 +11,8 @@ import "github.com/oracle/oci-go-sdk/v65/redis"
 func GetCredentialMapForTest(cluster redis.RedisCluster) map[string][]byte {
 	return getCredentialMap(cluster)
 }
+
+// ExportSetClientForTest sets the OCI client on the service manager for unit testing.
+func ExportSetClientForTest(m *RedisClusterServiceManager, c RedisClusterClientInterface) {
+	m.ociClient = c
+}

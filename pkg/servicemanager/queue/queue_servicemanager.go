@@ -35,6 +35,7 @@ type OciQueueServiceManager struct {
 	CredentialClient credhelper.CredentialClient
 	Scheme           *runtime.Scheme
 	Log              loggerutil.OSOKLogger
+	ociClient        QueueAdminClientInterface
 }
 
 // NewOciQueueServiceManager creates a new OciQueueServiceManager.

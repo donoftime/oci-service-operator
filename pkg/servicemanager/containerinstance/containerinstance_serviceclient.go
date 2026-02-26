@@ -16,13 +16,30 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/util"
 )
 
+// ContainerInstanceClientInterface defines the OCI operations used by ContainerInstanceServiceManager.
+type ContainerInstanceClientInterface interface {
+	CreateContainerInstance(ctx context.Context, request containerinstances.CreateContainerInstanceRequest) (containerinstances.CreateContainerInstanceResponse, error)
+	GetContainerInstance(ctx context.Context, request containerinstances.GetContainerInstanceRequest) (containerinstances.GetContainerInstanceResponse, error)
+	ListContainerInstances(ctx context.Context, request containerinstances.ListContainerInstancesRequest) (containerinstances.ListContainerInstancesResponse, error)
+	UpdateContainerInstance(ctx context.Context, request containerinstances.UpdateContainerInstanceRequest) (containerinstances.UpdateContainerInstanceResponse, error)
+	DeleteContainerInstance(ctx context.Context, request containerinstances.DeleteContainerInstanceRequest) (containerinstances.DeleteContainerInstanceResponse, error)
+}
+
 func getContainerInstanceClient(provider common.ConfigurationProvider) (containerinstances.ContainerInstanceClient, error) {
 	return containerinstances.NewContainerInstanceClientWithConfigurationProvider(provider)
 }
 
+// getOCIClient returns the injected client if set, otherwise creates one from the provider.
+func (c *ContainerInstanceServiceManager) getOCIClient() (ContainerInstanceClientInterface, error) {
+	if c.ociClient != nil {
+		return c.ociClient, nil
+	}
+	return getContainerInstanceClient(c.Provider)
+}
+
 // CreateContainerInstance calls the OCI API to create a new container instance.
 func (c *ContainerInstanceServiceManager) CreateContainerInstance(ctx context.Context, ci ociv1beta1.ContainerInstance) (containerinstances.CreateContainerInstanceResponse, error) {
-	client, err := getContainerInstanceClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return containerinstances.CreateContainerInstanceResponse{}, err
 	}
@@ -122,7 +139,7 @@ func (c *ContainerInstanceServiceManager) CreateContainerInstance(ctx context.Co
 
 // GetContainerInstance retrieves a container instance by OCID.
 func (c *ContainerInstanceServiceManager) GetContainerInstance(ctx context.Context, ciId ociv1beta1.OCID, retryPolicy *common.RetryPolicy) (*containerinstances.ContainerInstance, error) {
-	client, err := getContainerInstanceClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +164,7 @@ func (c *ContainerInstanceServiceManager) GetContainerInstanceOcid(ctx context.C
 		return nil, nil
 	}
 
-	client, err := getContainerInstanceClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return nil, err
 	}
@@ -179,7 +196,7 @@ func (c *ContainerInstanceServiceManager) GetContainerInstanceOcid(ctx context.C
 
 // UpdateContainerInstance updates an existing container instance's display name.
 func (c *ContainerInstanceServiceManager) UpdateContainerInstance(ctx context.Context, ci *ociv1beta1.ContainerInstance) error {
-	client, err := getContainerInstanceClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return err
 	}
@@ -212,7 +229,7 @@ func (c *ContainerInstanceServiceManager) UpdateContainerInstance(ctx context.Co
 
 // DeleteContainerInstance deletes the container instance for the given OCID.
 func (c *ContainerInstanceServiceManager) DeleteContainerInstance(ctx context.Context, ciId ociv1beta1.OCID) error {
-	client, err := getContainerInstanceClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return err
 	}

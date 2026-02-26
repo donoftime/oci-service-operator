@@ -15,9 +15,17 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/util"
 )
 
+// getOCIClient returns the injected client if set, otherwise creates one from the provider.
+func (m *FunctionsFunctionServiceManager) getOCIClient() (FunctionsManagementClientInterface, error) {
+	if m.ociClient != nil {
+		return m.ociClient, nil
+	}
+	return getFunctionsManagementClient(m.Provider)
+}
+
 // CreateFunction calls the OCI API to create a new Functions function.
 func (m *FunctionsFunctionServiceManager) CreateFunction(ctx context.Context, fn ociv1beta1.FunctionsFunction) (ocifunctions.CreateFunctionResponse, error) {
-	client, err := getFunctionsManagementClient(m.Provider)
+	client, err := m.getOCIClient()
 	if err != nil {
 		return ocifunctions.CreateFunctionResponse{}, err
 	}
@@ -53,7 +61,7 @@ func (m *FunctionsFunctionServiceManager) CreateFunction(ctx context.Context, fn
 
 // GetFunction retrieves a Functions function by OCID.
 func (m *FunctionsFunctionServiceManager) GetFunction(ctx context.Context, fnId ociv1beta1.OCID, retryPolicy *common.RetryPolicy) (*ocifunctions.Function, error) {
-	client, err := getFunctionsManagementClient(m.Provider)
+	client, err := m.getOCIClient()
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +82,7 @@ func (m *FunctionsFunctionServiceManager) GetFunction(ctx context.Context, fnId 
 
 // GetFunctionOcid looks up an existing function by display name in the given application and returns its OCID if found.
 func (m *FunctionsFunctionServiceManager) GetFunctionOcid(ctx context.Context, fn ociv1beta1.FunctionsFunction) (*ociv1beta1.OCID, error) {
-	client, err := getFunctionsManagementClient(m.Provider)
+	client, err := m.getOCIClient()
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +113,7 @@ func (m *FunctionsFunctionServiceManager) GetFunctionOcid(ctx context.Context, f
 
 // UpdateFunction updates an existing Functions function.
 func (m *FunctionsFunctionServiceManager) UpdateFunction(ctx context.Context, fn *ociv1beta1.FunctionsFunction) error {
-	client, err := getFunctionsManagementClient(m.Provider)
+	client, err := m.getOCIClient()
 	if err != nil {
 		return err
 	}
@@ -145,7 +153,7 @@ func (m *FunctionsFunctionServiceManager) UpdateFunction(ctx context.Context, fn
 
 // DeleteFunction deletes the Functions function for the given OCID.
 func (m *FunctionsFunctionServiceManager) DeleteFunction(ctx context.Context, fnId ociv1beta1.OCID) error {
-	client, err := getFunctionsManagementClient(m.Provider)
+	client, err := m.getOCIClient()
 	if err != nil {
 		return err
 	}

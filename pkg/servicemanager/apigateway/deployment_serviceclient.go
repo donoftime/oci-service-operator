@@ -16,8 +16,25 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/util"
 )
 
+// DeploymentClientInterface defines the OCI operations used by DeploymentServiceManager.
+type DeploymentClientInterface interface {
+	CreateDeployment(ctx context.Context, request apigateway.CreateDeploymentRequest) (apigateway.CreateDeploymentResponse, error)
+	GetDeployment(ctx context.Context, request apigateway.GetDeploymentRequest) (apigateway.GetDeploymentResponse, error)
+	ListDeployments(ctx context.Context, request apigateway.ListDeploymentsRequest) (apigateway.ListDeploymentsResponse, error)
+	UpdateDeployment(ctx context.Context, request apigateway.UpdateDeploymentRequest) (apigateway.UpdateDeploymentResponse, error)
+	DeleteDeployment(ctx context.Context, request apigateway.DeleteDeploymentRequest) (apigateway.DeleteDeploymentResponse, error)
+}
+
 func getDeploymentClient(provider common.ConfigurationProvider) (apigateway.DeploymentClient, error) {
 	return apigateway.NewDeploymentClientWithConfigurationProvider(provider)
+}
+
+// getOCIClient returns the injected client if set, otherwise creates one from the provider.
+func (c *DeploymentServiceManager) getOCIClient() (DeploymentClientInterface, error) {
+	if c.ociClient != nil {
+		return c.ociClient, nil
+	}
+	return getDeploymentClient(c.Provider)
 }
 
 // buildApiSpecification converts CRD route specs into the OCI SDK ApiSpecification type.
@@ -64,7 +81,7 @@ func buildApiSpecification(routes []ociv1beta1.ApiGatewayRoute) *apigateway.ApiS
 
 // CreateDeployment calls the OCI API to create a new API Gateway Deployment.
 func (c *DeploymentServiceManager) CreateDeployment(ctx context.Context, dep ociv1beta1.ApiGatewayDeployment) (apigateway.CreateDeploymentResponse, error) {
-	client, err := getDeploymentClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return apigateway.CreateDeploymentResponse{}, err
 	}
@@ -99,7 +116,7 @@ func (c *DeploymentServiceManager) CreateDeployment(ctx context.Context, dep oci
 
 // GetDeployment retrieves an API Gateway Deployment by OCID.
 func (c *DeploymentServiceManager) GetDeployment(ctx context.Context, deploymentId ociv1beta1.OCID, retryPolicy *common.RetryPolicy) (*apigateway.Deployment, error) {
-	client, err := getDeploymentClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +137,7 @@ func (c *DeploymentServiceManager) GetDeployment(ctx context.Context, deployment
 
 // GetDeploymentOcid looks up an existing deployment by display name, gateway and compartment.
 func (c *DeploymentServiceManager) GetDeploymentOcid(ctx context.Context, dep ociv1beta1.ApiGatewayDeployment) (*ociv1beta1.OCID, error) {
-	client, err := getDeploymentClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +169,7 @@ func (c *DeploymentServiceManager) GetDeploymentOcid(ctx context.Context, dep oc
 
 // UpdateDeployment updates an existing API Gateway Deployment.
 func (c *DeploymentServiceManager) UpdateDeployment(ctx context.Context, dep *ociv1beta1.ApiGatewayDeployment) error {
-	client, err := getDeploymentClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return err
 	}
@@ -184,7 +201,7 @@ func (c *DeploymentServiceManager) UpdateDeployment(ctx context.Context, dep *oc
 
 // DeleteDeployment deletes the API Gateway Deployment for the given OCID.
 func (c *DeploymentServiceManager) DeleteDeployment(ctx context.Context, deploymentId ociv1beta1.OCID) error {
-	client, err := getDeploymentClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return err
 	}

@@ -33,6 +33,7 @@ type OpenSearchClusterServiceManager struct {
 	Scheme           *runtime.Scheme
 	Log              loggerutil.OSOKLogger
 	Metrics          *metrics.Metrics
+	ociClient        OpensearchClusterClientInterface
 }
 
 func NewOpenSearchClusterServiceManager(provider common.ConfigurationProvider, credClient credhelper.CredentialClient,

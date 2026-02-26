@@ -11,3 +11,13 @@ import ocifunctions "github.com/oracle/oci-go-sdk/v65/functions"
 func GetFunctionCredentialMapForTest(fn ocifunctions.Function) map[string][]byte {
 	return getFunctionCredentialMap(fn)
 }
+
+// ExportSetApplicationClientForTest sets the OCI client on the application service manager for unit testing.
+func ExportSetApplicationClientForTest(m *FunctionsApplicationServiceManager, c FunctionsManagementClientInterface) {
+	m.ociClient = c
+}
+
+// ExportSetFunctionClientForTest sets the OCI client on the function service manager for unit testing.
+func ExportSetFunctionClientForTest(m *FunctionsFunctionServiceManager, c FunctionsManagementClientInterface) {
+	m.ociClient = c
+}

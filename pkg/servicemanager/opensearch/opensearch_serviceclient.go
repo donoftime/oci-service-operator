@@ -15,12 +15,29 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/util"
 )
 
+// OpensearchClusterClientInterface defines the OCI operations used by OpenSearchClusterServiceManager.
+type OpensearchClusterClientInterface interface {
+	CreateOpensearchCluster(ctx context.Context, request opensearch.CreateOpensearchClusterRequest) (opensearch.CreateOpensearchClusterResponse, error)
+	GetOpensearchCluster(ctx context.Context, request opensearch.GetOpensearchClusterRequest) (opensearch.GetOpensearchClusterResponse, error)
+	ListOpensearchClusters(ctx context.Context, request opensearch.ListOpensearchClustersRequest) (opensearch.ListOpensearchClustersResponse, error)
+	UpdateOpensearchCluster(ctx context.Context, request opensearch.UpdateOpensearchClusterRequest) (opensearch.UpdateOpensearchClusterResponse, error)
+	DeleteOpensearchCluster(ctx context.Context, request opensearch.DeleteOpensearchClusterRequest) (opensearch.DeleteOpensearchClusterResponse, error)
+}
+
 func getOpenSearchClusterClient(provider common.ConfigurationProvider) (opensearch.OpensearchClusterClient, error) {
 	return opensearch.NewOpensearchClusterClientWithConfigurationProvider(provider)
 }
 
+// getOCIClient returns the injected client if set, otherwise creates one from the provider.
+func (c *OpenSearchClusterServiceManager) getOCIClient() (OpensearchClusterClientInterface, error) {
+	if c.ociClient != nil {
+		return c.ociClient, nil
+	}
+	return getOpenSearchClusterClient(c.Provider)
+}
+
 func (c *OpenSearchClusterServiceManager) CreateOpenSearchCluster(ctx context.Context, cluster ociv1beta1.OpenSearchCluster) (opensearch.CreateOpensearchClusterResponse, error) {
-	client, err := getOpenSearchClusterClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return opensearch.CreateOpensearchClusterResponse{}, err
 	}
@@ -76,7 +93,7 @@ func (c *OpenSearchClusterServiceManager) CreateOpenSearchCluster(ctx context.Co
 }
 
 func (c *OpenSearchClusterServiceManager) GetOpenSearchCluster(ctx context.Context, clusterId ociv1beta1.OCID, retryPolicy *common.RetryPolicy) (*opensearch.OpensearchCluster, error) {
-	client, err := getOpenSearchClusterClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +113,7 @@ func (c *OpenSearchClusterServiceManager) GetOpenSearchCluster(ctx context.Conte
 }
 
 func (c *OpenSearchClusterServiceManager) UpdateOpenSearchCluster(ctx context.Context, cluster *ociv1beta1.OpenSearchCluster) error {
-	client, err := getOpenSearchClusterClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return err
 	}
@@ -122,7 +139,7 @@ func (c *OpenSearchClusterServiceManager) UpdateOpenSearchCluster(ctx context.Co
 }
 
 func (c *OpenSearchClusterServiceManager) DeleteOpenSearchCluster(ctx context.Context, clusterId ociv1beta1.OCID) error {
-	client, err := getOpenSearchClusterClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return err
 	}
@@ -134,7 +151,7 @@ func (c *OpenSearchClusterServiceManager) DeleteOpenSearchCluster(ctx context.Co
 }
 
 func (c *OpenSearchClusterServiceManager) GetOpenSearchClusterOCID(ctx context.Context, cluster ociv1beta1.OpenSearchCluster) (*ociv1beta1.OCID, error) {
-	client, err := getOpenSearchClusterClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return nil, err
 	}

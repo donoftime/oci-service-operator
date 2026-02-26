@@ -16,13 +16,30 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/util"
 )
 
+// DevopsClientInterface defines the OCI operations used by DevopsProjectServiceManager.
+type DevopsClientInterface interface {
+	CreateProject(ctx context.Context, request ocidevops.CreateProjectRequest) (ocidevops.CreateProjectResponse, error)
+	GetProject(ctx context.Context, request ocidevops.GetProjectRequest) (ocidevops.GetProjectResponse, error)
+	ListProjects(ctx context.Context, request ocidevops.ListProjectsRequest) (ocidevops.ListProjectsResponse, error)
+	UpdateProject(ctx context.Context, request ocidevops.UpdateProjectRequest) (ocidevops.UpdateProjectResponse, error)
+	DeleteProject(ctx context.Context, request ocidevops.DeleteProjectRequest) (ocidevops.DeleteProjectResponse, error)
+}
+
 func getDevopsClient(provider common.ConfigurationProvider) (ocidevops.DevopsClient, error) {
 	return ocidevops.NewDevopsClientWithConfigurationProvider(provider)
 }
 
+// getOCIClient returns the injected client if set, otherwise creates one from the provider.
+func (c *DevopsProjectServiceManager) getOCIClient() (DevopsClientInterface, error) {
+	if c.ociClient != nil {
+		return c.ociClient, nil
+	}
+	return getDevopsClient(c.Provider)
+}
+
 // CreateDevopsProject calls the OCI API to create a new DevOps project.
 func (c *DevopsProjectServiceManager) CreateDevopsProject(ctx context.Context, project ociv1beta1.DevopsProject) (ocidevops.CreateProjectResponse, error) {
-	client, err := getDevopsClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return ocidevops.CreateProjectResponse{}, err
 	}
@@ -55,7 +72,7 @@ func (c *DevopsProjectServiceManager) CreateDevopsProject(ctx context.Context, p
 
 // GetDevopsProject retrieves a DevOps project by OCID.
 func (c *DevopsProjectServiceManager) GetDevopsProject(ctx context.Context, projectId ociv1beta1.OCID, retryPolicy *common.RetryPolicy) (*ocidevops.Project, error) {
-	client, err := getDevopsClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +93,7 @@ func (c *DevopsProjectServiceManager) GetDevopsProject(ctx context.Context, proj
 
 // GetDevopsProjectOcid looks up an existing DevOps project by name and returns its OCID if found.
 func (c *DevopsProjectServiceManager) GetDevopsProjectOcid(ctx context.Context, project ociv1beta1.DevopsProject) (*ociv1beta1.OCID, error) {
-	client, err := getDevopsClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +124,7 @@ func (c *DevopsProjectServiceManager) GetDevopsProjectOcid(ctx context.Context, 
 
 // UpdateDevopsProject updates an existing DevOps project.
 func (c *DevopsProjectServiceManager) UpdateDevopsProject(ctx context.Context, project *ociv1beta1.DevopsProject) error {
-	client, err := getDevopsClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return err
 	}
@@ -150,7 +167,7 @@ func (c *DevopsProjectServiceManager) UpdateDevopsProject(ctx context.Context, p
 
 // DeleteDevopsProject deletes the DevOps project for the given OCID.
 func (c *DevopsProjectServiceManager) DeleteDevopsProject(ctx context.Context, projectId ociv1beta1.OCID) error {
-	client, err := getDevopsClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return err
 	}

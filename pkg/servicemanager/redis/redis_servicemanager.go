@@ -36,6 +36,7 @@ type RedisClusterServiceManager struct {
 	CredentialClient credhelper.CredentialClient
 	Scheme           *runtime.Scheme
 	Log              loggerutil.OSOKLogger
+	ociClient        RedisClusterClientInterface
 }
 
 // NewRedisClusterServiceManager creates a new RedisClusterServiceManager.

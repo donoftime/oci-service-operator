@@ -31,10 +31,12 @@ var _ servicemanager.OSOKServiceManager = &OciVaultServiceManager{}
 
 // OciVaultServiceManager implements OSOKServiceManager for OCI Vault (Key Management).
 type OciVaultServiceManager struct {
-	Provider         common.ConfigurationProvider
-	CredentialClient credhelper.CredentialClient
-	Scheme           *runtime.Scheme
-	Log              loggerutil.OSOKLogger
+	Provider            common.ConfigurationProvider
+	CredentialClient    credhelper.CredentialClient
+	Scheme              *runtime.Scheme
+	Log                 loggerutil.OSOKLogger
+	ociVaultClient      KmsVaultClientInterface
+	ociManagementClient KmsManagementClientInterface
 }
 
 // NewOciVaultServiceManager creates a new OciVaultServiceManager.

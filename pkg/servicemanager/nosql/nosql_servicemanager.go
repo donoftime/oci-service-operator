@@ -35,6 +35,7 @@ type NoSQLDatabaseServiceManager struct {
 	CredentialClient credhelper.CredentialClient
 	Scheme           *runtime.Scheme
 	Log              loggerutil.OSOKLogger
+	ociClient        NosqlClientInterface
 }
 
 // NewNoSQLDatabaseServiceManager creates a new NoSQLDatabaseServiceManager.

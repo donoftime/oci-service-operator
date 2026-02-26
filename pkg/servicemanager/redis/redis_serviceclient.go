@@ -16,13 +16,30 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/util"
 )
 
+// RedisClusterClientInterface defines the OCI operations used by RedisClusterServiceManager.
+type RedisClusterClientInterface interface {
+	CreateRedisCluster(ctx context.Context, request redis.CreateRedisClusterRequest) (redis.CreateRedisClusterResponse, error)
+	GetRedisCluster(ctx context.Context, request redis.GetRedisClusterRequest) (redis.GetRedisClusterResponse, error)
+	ListRedisClusters(ctx context.Context, request redis.ListRedisClustersRequest) (redis.ListRedisClustersResponse, error)
+	UpdateRedisCluster(ctx context.Context, request redis.UpdateRedisClusterRequest) (redis.UpdateRedisClusterResponse, error)
+	DeleteRedisCluster(ctx context.Context, request redis.DeleteRedisClusterRequest) (redis.DeleteRedisClusterResponse, error)
+}
+
 func getRedisClusterClient(provider common.ConfigurationProvider) (redis.RedisClusterClient, error) {
 	return redis.NewRedisClusterClientWithConfigurationProvider(provider)
 }
 
+// getOCIClient returns the injected client if set, otherwise creates one from the provider.
+func (c *RedisClusterServiceManager) getOCIClient() (RedisClusterClientInterface, error) {
+	if c.ociClient != nil {
+		return c.ociClient, nil
+	}
+	return getRedisClusterClient(c.Provider)
+}
+
 // CreateRedisCluster calls the OCI API to create a new Redis cluster.
 func (c *RedisClusterServiceManager) CreateRedisCluster(ctx context.Context, cluster ociv1beta1.RedisCluster) (redis.CreateRedisClusterResponse, error) {
-	client, err := getRedisClusterClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return redis.CreateRedisClusterResponse{}, err
 	}
@@ -54,7 +71,7 @@ func (c *RedisClusterServiceManager) CreateRedisCluster(ctx context.Context, clu
 
 // GetRedisCluster retrieves a Redis cluster by OCID.
 func (c *RedisClusterServiceManager) GetRedisCluster(ctx context.Context, clusterId ociv1beta1.OCID, retryPolicy *common.RetryPolicy) (*redis.RedisCluster, error) {
-	client, err := getRedisClusterClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +92,7 @@ func (c *RedisClusterServiceManager) GetRedisCluster(ctx context.Context, cluste
 
 // GetRedisClusterOcid looks up an existing Redis cluster by display name and returns its OCID if found.
 func (c *RedisClusterServiceManager) GetRedisClusterOcid(ctx context.Context, cluster ociv1beta1.RedisCluster) (*ociv1beta1.OCID, error) {
-	client, err := getRedisClusterClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +123,7 @@ func (c *RedisClusterServiceManager) GetRedisClusterOcid(ctx context.Context, cl
 
 // UpdateRedisCluster updates an existing Redis cluster.
 func (c *RedisClusterServiceManager) UpdateRedisCluster(ctx context.Context, cluster *ociv1beta1.RedisCluster) error {
-	client, err := getRedisClusterClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return err
 	}
@@ -149,7 +166,7 @@ func (c *RedisClusterServiceManager) UpdateRedisCluster(ctx context.Context, clu
 
 // DeleteRedisCluster deletes the Redis cluster for the given OCID.
 func (c *RedisClusterServiceManager) DeleteRedisCluster(ctx context.Context, clusterId ociv1beta1.OCID) error {
-	client, err := getRedisClusterClient(c.Provider)
+	client, err := c.getOCIClient()
 	if err != nil {
 		return err
 	}
