@@ -318,6 +318,10 @@ spec:
           containers:
             - imageUrl: ${schema.spec.containerImageUrl}
               displayName: app
+              command:
+                - /bin/sh
+                - -c
+                - sleep infinity
               environmentVariables:
                 COMPARTMENT_ID: ${schema.spec.compartmentId}
           vnics:
