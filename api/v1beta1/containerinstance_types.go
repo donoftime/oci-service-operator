@@ -42,6 +42,38 @@ type ContainerVnicDetails struct {
 	NsgIds []OCID `json:"nsgIds,omitempty"`
 }
 
+// ContainerVolumeMount defines a volume mount for a container.
+type ContainerVolumeMount struct {
+	// MountPath is the path inside the container where the volume is mounted.
+	// +kubebuilder:validation:Required
+	MountPath string `json:"mountPath"`
+
+	// VolumeName is the name of the volume to mount.
+	// +kubebuilder:validation:Required
+	VolumeName string `json:"volumeName"`
+
+	// SubPath is an optional path within the volume to mount.
+	SubPath *string `json:"subPath,omitempty"`
+
+	// IsReadOnly mounts the volume as read-only when true.
+	IsReadOnly *bool `json:"isReadOnly,omitempty"`
+}
+
+// ContainerImagePullSecret holds credentials for pulling images from a private registry.
+type ContainerImagePullSecret struct {
+	// RegistryEndpoint is the registry hostname (e.g. "registry.example.com").
+	// +kubebuilder:validation:Required
+	RegistryEndpoint string `json:"registryEndpoint"`
+
+	// Username is the registry username.
+	// +kubebuilder:validation:Required
+	Username string `json:"username"`
+
+	// Password is the registry password.
+	// +kubebuilder:validation:Required
+	Password string `json:"password"`
+}
+
 // ContainerDetails defines a single container in the instance.
 type ContainerDetails struct {
 	// ImageUrl is the container image URL (e.g. "busybox:latest").
@@ -65,6 +97,9 @@ type ContainerDetails struct {
 
 	// ResourceConfig sets per-container resource limits.
 	ResourceConfig *ContainerResourceConfig `json:"resourceConfig,omitempty"`
+
+	// VolumeMounts defines volume mounts for this container.
+	VolumeMounts []ContainerVolumeMount `json:"volumeMounts,omitempty"`
 }
 
 // ContainerInstanceSpec defines the desired state of ContainerInstance
@@ -109,6 +144,9 @@ type ContainerInstanceSpec struct {
 
 	// ContainerRestartPolicy controls container restart behaviour (ALWAYS, NEVER, ON_FAILURE).
 	ContainerRestartPolicy *string `json:"containerRestartPolicy,omitempty"`
+
+	// ImagePullSecrets provides credentials for pulling images from private registries.
+	ImagePullSecrets []ContainerImagePullSecret `json:"imagePullSecrets,omitempty"`
 
 	TagResources `json:",inline,omitempty"`
 }

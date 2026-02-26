@@ -76,6 +76,23 @@ func (c *ContainerInstanceServiceManager) CreateContainerInstance(ctx context.Co
 			}
 			cd.ResourceConfig = rc
 		}
+		if len(ctr.VolumeMounts) > 0 {
+			mounts := make([]containerinstances.CreateVolumeMountDetails, 0, len(ctr.VolumeMounts))
+			for _, vm := range ctr.VolumeMounts {
+				vmd := containerinstances.CreateVolumeMountDetails{
+					MountPath:  common.String(vm.MountPath),
+					VolumeName: common.String(vm.VolumeName),
+				}
+				if vm.SubPath != nil {
+					vmd.SubPath = vm.SubPath
+				}
+				if vm.IsReadOnly != nil {
+					vmd.IsReadOnly = vm.IsReadOnly
+				}
+				mounts = append(mounts, vmd)
+			}
+			cd.VolumeMounts = mounts
+		}
 		containers = append(containers, cd)
 	}
 
@@ -128,6 +145,17 @@ func (c *ContainerInstanceServiceManager) CreateContainerInstance(ctx context.Co
 	}
 	if ci.Spec.DefinedTags != nil {
 		details.DefinedTags = *util.ConvertToOciDefinedTags(&ci.Spec.DefinedTags)
+	}
+	if len(ci.Spec.ImagePullSecrets) > 0 {
+		secrets := make([]containerinstances.CreateImagePullSecretDetails, 0, len(ci.Spec.ImagePullSecrets))
+		for _, s := range ci.Spec.ImagePullSecrets {
+			secrets = append(secrets, containerinstances.CreateBasicImagePullSecretDetails{
+				RegistryEndpoint: common.String(s.RegistryEndpoint),
+				Username:         common.String(s.Username),
+				Password:         common.String(s.Password),
+			})
+		}
+		details.ImagePullSecrets = secrets
 	}
 
 	req := containerinstances.CreateContainerInstanceRequest{
@@ -219,8 +247,8 @@ func (c *ContainerInstanceServiceManager) UpdateContainerInstance(ctx context.Co
 	}
 
 	req := containerinstances.UpdateContainerInstanceRequest{
-		ContainerInstanceId:             common.String(string(ci.Status.OsokStatus.Ocid)),
-		UpdateContainerInstanceDetails:  updateDetails,
+		ContainerInstanceId:            common.String(string(ci.Status.OsokStatus.Ocid)),
+		UpdateContainerInstanceDetails: updateDetails,
 	}
 
 	_, err = client.UpdateContainerInstance(ctx, req)

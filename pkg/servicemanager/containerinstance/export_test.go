@@ -5,7 +5,14 @@
 
 package containerinstance
 
+import "github.com/oracle/oci-go-sdk/v65/common"
+
 // ExportSetClientForTest sets the OCI client on the service manager for unit testing.
 func ExportSetClientForTest(m *ContainerInstanceServiceManager, c ContainerInstanceClientInterface) {
 	m.ociClient = c
+}
+
+// GetRetryPolicyForTest exports getRetryPolicy for unit testing.
+func GetRetryPolicyForTest(c *ContainerInstanceServiceManager, attempts uint) common.RetryPolicy {
+	return c.getRetryPolicy(attempts)
 }
