@@ -5,7 +5,14 @@
 
 package dbsystem
 
+import "github.com/oracle/oci-go-sdk/v65/mysql"
+
 // ExportSetClientForTest sets the OCI client on the service manager for unit testing.
 func ExportSetClientForTest(m *DbSystemServiceManager, c MySQLDbSystemClientInterface) {
 	m.ociClient = c
+}
+
+// GetCredentialMapForTest exports getCredentialMap for unit testing.
+func GetCredentialMapForTest(dbSystem mysql.DbSystem) (map[string][]byte, error) {
+	return getCredentialMap(dbSystem)
 }
