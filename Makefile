@@ -227,6 +227,7 @@ delete-crds:
 	kubectl delete crd redisclusters.oci.oracle.com &
 	kubectl delete crd ocivaults.oci.oracle.com &
 	kubectl delete crd dataflowapplications.oci.oracle.com &
+	kubectl delete crd objectstoragebuckets.oci.oracle.com &
 
 delete-operator:
 	kubectl delete ns $(OPERATOR_NAMESPACE)

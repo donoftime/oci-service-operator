@@ -19,6 +19,7 @@ OSOK is based on the [Operator Framework](https://operatorframework.io/), an ope
 1. [Vault (Key Management)](https://www.oracle.com/security/cloud-security/key-management/) — [OSOK docs](docs/vault.md)
 1. [Container Instances](https://www.oracle.com/cloud/cloud-native/container-instances/) — [OSOK docs](docs/containerinstances.md)
 1. [OCI Data Flow](https://www.oracle.com/big-data/data-flow/) — [OSOK docs](docs/dataflow.md)
+1. [OCI Object Storage](https://www.oracle.com/cloud/storage/object-storage/) — [OSOK docs](docs/objectstorage.md)
 
 ## Installation
 

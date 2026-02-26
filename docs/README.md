@@ -83,6 +83,13 @@
     - [Examples](dataflow.md#examples)
     - [Deletion](dataflow.md#deletion)
     - [Binding to Existing Applications](dataflow.md#binding-to-existing-applications)
+  - [OCI Object Storage](objectstorage.md#oci-object-storage)
+    - [Overview](objectstorage.md#overview)
+    - [Prerequisites](objectstorage.md#prerequisites)
+    - [ObjectStorageBucket CRD](objectstorage.md#objectstoragebucket-crd)
+    - [Connection Secret](objectstorage.md#connection-secret)
+    - [Example](objectstorage.md#example)
+    - [Deletion](objectstorage.md#deletion)
 
 ## Introduction
 

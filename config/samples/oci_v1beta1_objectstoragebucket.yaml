@@ -1,0 +1,11 @@
+apiVersion: oci.oracle.com/v1beta1
+kind: ObjectStorageBucket
+metadata:
+  name: sample-bucket
+  namespace: default
+spec:
+  compartmentId: ocid1.compartment.oc1..aaaaaaaaxxx
+  name: my-osok-bucket
+  accessType: NoPublicAccess
+  storageType: Standard
+  versioning: Enabled

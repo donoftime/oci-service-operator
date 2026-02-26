@@ -29,6 +29,7 @@ rules:
   - functionsfunctions
   - mysqldbsystems
   - nosqldatabases
+  - objectstoragebuckets
   - ociqueues
   - ocivaults
   - opensearchclusters
@@ -54,6 +55,7 @@ rules:
   - functionsfunctions/finalizers
   - mysqldbsystems/finalizers
   - nosqldatabases/finalizers
+  - objectstoragebuckets/finalizers
   - ociqueues/finalizers
   - ocivaults/finalizers
   - opensearchclusters/finalizers
@@ -73,6 +75,7 @@ rules:
   - functionsfunctions/status
   - mysqldbsystems/status
   - nosqldatabases/status
+  - objectstoragebuckets/status
   - ociqueues/status
   - ocivaults/status
   - opensearchclusters/status

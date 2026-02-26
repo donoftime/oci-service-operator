@@ -40,6 +40,7 @@ import (
 	ocifunctions "github.com/oracle/oci-service-operator/pkg/servicemanager/functions"
 	"github.com/oracle/oci-service-operator/pkg/servicemanager/mysql/dbsystem"
 	"github.com/oracle/oci-service-operator/pkg/servicemanager/nosql"
+	ociobjectstorage "github.com/oracle/oci-service-operator/pkg/servicemanager/objectstorage"
 	opensearchmanager "github.com/oracle/oci-service-operator/pkg/servicemanager/opensearch"
 	ociqueue "github.com/oracle/oci-service-operator/pkg/servicemanager/queue"
 	ociredis "github.com/oracle/oci-service-operator/pkg/servicemanager/redis"
@@ -279,6 +280,22 @@ func main() {
 		setupLog.ErrorLog(err, "unable to create controller", "controller", "OciQueue")
 		os.Exit(1)
 	}
+
+	if err = (&controllers.ObjectStorageBucketReconciler{
+		Reconciler: &core.BaseReconciler{
+			Client:             mgr.GetClient(),
+			OSOKServiceManager: ociobjectstorage.NewObjectStorageBucketServiceManager(provider, credClient, scheme, loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("service-manager").WithName("ObjectStorageBucket")}),
+			Finalizer:          core.NewBaseFinalizer(mgr.GetClient(), ctrl.Log),
+			Log:                loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("controllers").WithName("ObjectStorageBucket")},
+			Metrics:            metricsClient,
+			Recorder:           mgr.GetEventRecorderFor("ObjectStorageBucket"),
+			Scheme:             scheme,
+		},
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.ErrorLog(err, "unable to create controller", "controller", "ObjectStorageBucket")
+		os.Exit(1)
+	}
+
 
 	if err = (&controllers.FunctionsApplicationReconciler{
 		Reconciler: &core.BaseReconciler{

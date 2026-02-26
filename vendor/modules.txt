@@ -153,6 +153,7 @@ github.com/oracle/oci-go-sdk/v65/identity
 github.com/oracle/oci-go-sdk/v65/keymanagement
 github.com/oracle/oci-go-sdk/v65/mysql
 github.com/oracle/oci-go-sdk/v65/nosql
+github.com/oracle/oci-go-sdk/v65/objectstorage
 github.com/oracle/oci-go-sdk/v65/opensearch
 github.com/oracle/oci-go-sdk/v65/queue
 github.com/oracle/oci-go-sdk/v65/redis
