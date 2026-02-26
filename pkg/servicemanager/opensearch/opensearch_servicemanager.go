@@ -33,7 +33,7 @@ type OpenSearchClusterServiceManager struct {
 	Scheme           *runtime.Scheme
 	Log              loggerutil.OSOKLogger
 	Metrics          *metrics.Metrics
-	ociClient        OpensearchClusterClientInterface
+	ociClient        OpensearchClusterClientInterface // injectable for testing; nil uses Provider
 }
 
 func NewOpenSearchClusterServiceManager(provider common.ConfigurationProvider, credClient credhelper.CredentialClient,
@@ -61,8 +61,10 @@ func (c *OpenSearchClusterServiceManager) CreateOrUpdate(ctx context.Context, ob
 		clusterOcid, err := c.GetOpenSearchClusterOCID(ctx, *clusterObj)
 		if err != nil {
 			c.Log.ErrorLog(err, "Error while looking up OpenSearch cluster")
-			c.Metrics.AddCRFaultMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
-				"Failed to get OpenSearch cluster", req.Name, req.Namespace)
+			if c.Metrics != nil {
+				c.Metrics.AddCRFaultMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
+					"Failed to get OpenSearch cluster", req.Name, req.Namespace)
+			}
 			return servicemanager.OSOKResponse{IsSuccessful: false}, err
 		}
 
@@ -71,15 +73,19 @@ func (c *OpenSearchClusterServiceManager) CreateOrUpdate(ctx context.Context, ob
 			clusterInstance, err = c.GetOpenSearchCluster(ctx, *clusterOcid, nil)
 			if err != nil {
 				c.Log.ErrorLog(err, "Error fetching existing OpenSearch cluster")
-				c.Metrics.AddCRFaultMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
-					"Error fetching OpenSearch cluster", req.Name, req.Namespace)
+				if c.Metrics != nil {
+					c.Metrics.AddCRFaultMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
+						"Error fetching OpenSearch cluster", req.Name, req.Namespace)
+				}
 				return servicemanager.OSOKResponse{IsSuccessful: false}, err
 			}
 			if isValidUpdate(*clusterObj, *clusterInstance) {
 				if err = c.UpdateOpenSearchCluster(ctx, clusterObj); err != nil {
 					c.Log.ErrorLog(err, "Error while updating OpenSearch cluster")
-					c.Metrics.AddCRFaultMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
-						"Error while updating OpenSearch cluster", req.Name, req.Namespace)
+					if c.Metrics != nil {
+						c.Metrics.AddCRFaultMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
+							"Error while updating OpenSearch cluster", req.Name, req.Namespace)
+					}
 					return servicemanager.OSOKResponse{IsSuccessful: false}, err
 				}
 				clusterObj.Status.OsokStatus = util.UpdateOSOKStatusCondition(clusterObj.Status.OsokStatus,
@@ -93,8 +99,10 @@ func (c *OpenSearchClusterServiceManager) CreateOrUpdate(ctx context.Context, ob
 				clusterObj.Status.OsokStatus = util.UpdateOSOKStatusCondition(clusterObj.Status.OsokStatus,
 					ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), c.Log)
 				c.Log.ErrorLog(err, "Error creating OpenSearch cluster")
-				c.Metrics.AddCRFaultMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
-					"Error creating OpenSearch cluster", req.Name, req.Namespace)
+				if c.Metrics != nil {
+					c.Metrics.AddCRFaultMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
+						"Error creating OpenSearch cluster", req.Name, req.Namespace)
+				}
 				return servicemanager.OSOKResponse{IsSuccessful: false}, err
 			}
 			// Create returns a work request ID, not a cluster OCID.
@@ -109,16 +117,20 @@ func (c *OpenSearchClusterServiceManager) CreateOrUpdate(ctx context.Context, ob
 		clusterInstance, err = c.GetOpenSearchCluster(ctx, clusterObj.Spec.OpenSearchClusterId, nil)
 		if err != nil {
 			c.Log.ErrorLog(err, "Error fetching OpenSearch cluster by ID")
-			c.Metrics.AddCRFaultMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
-				"Error fetching OpenSearch cluster", req.Name, req.Namespace)
+			if c.Metrics != nil {
+				c.Metrics.AddCRFaultMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
+					"Error fetching OpenSearch cluster", req.Name, req.Namespace)
+			}
 			return servicemanager.OSOKResponse{IsSuccessful: false}, err
 		}
 
 		if isValidUpdate(*clusterObj, *clusterInstance) {
 			if err = c.UpdateOpenSearchCluster(ctx, clusterObj); err != nil {
 				c.Log.ErrorLog(err, "Error while updating OpenSearch cluster")
-				c.Metrics.AddCRFaultMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
-					"Error while updating OpenSearch cluster", req.Name, req.Namespace)
+				if c.Metrics != nil {
+					c.Metrics.AddCRFaultMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
+						"Error while updating OpenSearch cluster", req.Name, req.Namespace)
+				}
 				return servicemanager.OSOKResponse{IsSuccessful: false}, err
 			}
 			clusterObj.Status.OsokStatus = util.UpdateOSOKStatusCondition(clusterObj.Status.OsokStatus,
@@ -146,14 +158,18 @@ func (c *OpenSearchClusterServiceManager) CreateOrUpdate(ctx context.Context, ob
 		clusterObj.Status.OsokStatus = util.UpdateOSOKStatusCondition(clusterObj.Status.OsokStatus,
 			ociv1beta1.Failed, v1.ConditionFalse, "",
 			fmt.Sprintf("OpenSearch cluster %s creation failed", *clusterInstance.DisplayName), c.Log)
-		c.Metrics.AddCRFaultMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
-			"OpenSearch cluster creation failed", req.Name, req.Namespace)
+		if c.Metrics != nil {
+			c.Metrics.AddCRFaultMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
+				"OpenSearch cluster creation failed", req.Name, req.Namespace)
+		}
 	case opensearch.OpensearchClusterLifecycleStateActive:
 		clusterObj.Status.OsokStatus = util.UpdateOSOKStatusCondition(clusterObj.Status.OsokStatus,
 			ociv1beta1.Active, v1.ConditionTrue, "",
 			fmt.Sprintf("OpenSearch cluster %s is Active", *clusterInstance.DisplayName), c.Log)
-		c.Metrics.AddCRSuccessMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
-			"OpenSearch cluster is Active", req.Name, req.Namespace)
+		if c.Metrics != nil {
+			c.Metrics.AddCRSuccessMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
+				"OpenSearch cluster is Active", req.Name, req.Namespace)
+		}
 	default:
 		clusterObj.Status.OsokStatus = util.UpdateOSOKStatusCondition(clusterObj.Status.OsokStatus,
 			ociv1beta1.Provisioning, v1.ConditionTrue, "",

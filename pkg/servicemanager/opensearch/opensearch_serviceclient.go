@@ -16,6 +16,7 @@ import (
 )
 
 // OpensearchClusterClientInterface defines the OCI operations used by OpenSearchClusterServiceManager.
+// It is satisfied by opensearch.OpensearchClusterClient and enables injection of fakes in tests.
 type OpensearchClusterClientInterface interface {
 	CreateOpensearchCluster(ctx context.Context, request opensearch.CreateOpensearchClusterRequest) (opensearch.CreateOpensearchClusterResponse, error)
 	GetOpensearchCluster(ctx context.Context, request opensearch.GetOpensearchClusterRequest) (opensearch.GetOpensearchClusterResponse, error)
@@ -24,7 +25,7 @@ type OpensearchClusterClientInterface interface {
 	DeleteOpensearchCluster(ctx context.Context, request opensearch.DeleteOpensearchClusterRequest) (opensearch.DeleteOpensearchClusterResponse, error)
 }
 
-func getOpenSearchClusterClient(provider common.ConfigurationProvider) (opensearch.OpensearchClusterClient, error) {
+func getOpenSearchClusterClient(provider common.ConfigurationProvider) (OpensearchClusterClientInterface, error) {
 	return opensearch.NewOpensearchClusterClientWithConfigurationProvider(provider)
 }
 

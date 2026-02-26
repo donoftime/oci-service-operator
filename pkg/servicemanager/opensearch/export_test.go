@@ -5,7 +5,7 @@
 
 package opensearch
 
-// ExportSetClientForTest sets the OCI client on the service manager for unit testing.
-func ExportSetClientForTest(m *OpenSearchClusterServiceManager, c OpensearchClusterClientInterface) {
-	m.ociClient = c
+// SetClientForTest injects a fake OCI client into the service manager for unit testing.
+func SetClientForTest(mgr *OpenSearchClusterServiceManager, client OpensearchClusterClientInterface) {
+	mgr.ociClient = client
 }

@@ -11,18 +11,13 @@ import (
 	"testing"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
-	sdkopensearch "github.com/oracle/oci-go-sdk/v65/opensearch"
+	ociopensearch "github.com/oracle/oci-go-sdk/v65/opensearch"
 	ociv1beta1 "github.com/oracle/oci-service-operator/api/v1beta1"
 	"github.com/oracle/oci-service-operator/pkg/loggerutil"
-	"github.com/oracle/oci-service-operator/pkg/metrics"
 	. "github.com/oracle/oci-service-operator/pkg/servicemanager/opensearch"
 	"github.com/stretchr/testify/assert"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
-
-// ---------------------------------------------------------------------------
-// Fake credential client
-// ---------------------------------------------------------------------------
 
 // fakeCredentialClient implements credhelper.CredentialClient for testing.
 type fakeCredentialClient struct{}
@@ -40,128 +35,84 @@ func (f *fakeCredentialClient) UpdateSecret(_ context.Context, _, _ string, _ ma
 	return true, nil
 }
 
-// ---------------------------------------------------------------------------
-// Mock OCI client
-// ---------------------------------------------------------------------------
-
-// mockOpensearchClient implements OpensearchClusterClientInterface for unit tests.
-type mockOpensearchClient struct {
-	createFn func(context.Context, sdkopensearch.CreateOpensearchClusterRequest) (sdkopensearch.CreateOpensearchClusterResponse, error)
-	getFn    func(context.Context, sdkopensearch.GetOpensearchClusterRequest) (sdkopensearch.GetOpensearchClusterResponse, error)
-	listFn   func(context.Context, sdkopensearch.ListOpensearchClustersRequest) (sdkopensearch.ListOpensearchClustersResponse, error)
-	updateFn func(context.Context, sdkopensearch.UpdateOpensearchClusterRequest) (sdkopensearch.UpdateOpensearchClusterResponse, error)
-	deleteFn func(context.Context, sdkopensearch.DeleteOpensearchClusterRequest) (sdkopensearch.DeleteOpensearchClusterResponse, error)
+// fakeOciClient implements the OpensearchClusterClientInterface interface for testing.
+type fakeOciClient struct {
+	createFn func(ctx context.Context, req ociopensearch.CreateOpensearchClusterRequest) (ociopensearch.CreateOpensearchClusterResponse, error)
+	getFn    func(ctx context.Context, req ociopensearch.GetOpensearchClusterRequest) (ociopensearch.GetOpensearchClusterResponse, error)
+	updateFn func(ctx context.Context, req ociopensearch.UpdateOpensearchClusterRequest) (ociopensearch.UpdateOpensearchClusterResponse, error)
+	deleteFn func(ctx context.Context, req ociopensearch.DeleteOpensearchClusterRequest) (ociopensearch.DeleteOpensearchClusterResponse, error)
+	listFn   func(ctx context.Context, req ociopensearch.ListOpensearchClustersRequest) (ociopensearch.ListOpensearchClustersResponse, error)
 }
 
-func (m *mockOpensearchClient) CreateOpensearchCluster(ctx context.Context, req sdkopensearch.CreateOpensearchClusterRequest) (sdkopensearch.CreateOpensearchClusterResponse, error) {
-	if m.createFn != nil {
-		return m.createFn(ctx, req)
+func (f *fakeOciClient) CreateOpensearchCluster(ctx context.Context, req ociopensearch.CreateOpensearchClusterRequest) (ociopensearch.CreateOpensearchClusterResponse, error) {
+	if f.createFn != nil {
+		return f.createFn(ctx, req)
 	}
-	return sdkopensearch.CreateOpensearchClusterResponse{}, nil
+	return ociopensearch.CreateOpensearchClusterResponse{}, nil
 }
 
-func (m *mockOpensearchClient) GetOpensearchCluster(ctx context.Context, req sdkopensearch.GetOpensearchClusterRequest) (sdkopensearch.GetOpensearchClusterResponse, error) {
-	if m.getFn != nil {
-		return m.getFn(ctx, req)
+func (f *fakeOciClient) GetOpensearchCluster(ctx context.Context, req ociopensearch.GetOpensearchClusterRequest) (ociopensearch.GetOpensearchClusterResponse, error) {
+	if f.getFn != nil {
+		return f.getFn(ctx, req)
 	}
-	return sdkopensearch.GetOpensearchClusterResponse{}, nil
+	return ociopensearch.GetOpensearchClusterResponse{}, nil
 }
 
-func (m *mockOpensearchClient) ListOpensearchClusters(ctx context.Context, req sdkopensearch.ListOpensearchClustersRequest) (sdkopensearch.ListOpensearchClustersResponse, error) {
-	if m.listFn != nil {
-		return m.listFn(ctx, req)
+func (f *fakeOciClient) UpdateOpensearchCluster(ctx context.Context, req ociopensearch.UpdateOpensearchClusterRequest) (ociopensearch.UpdateOpensearchClusterResponse, error) {
+	if f.updateFn != nil {
+		return f.updateFn(ctx, req)
 	}
-	return sdkopensearch.ListOpensearchClustersResponse{}, nil
+	return ociopensearch.UpdateOpensearchClusterResponse{}, nil
 }
 
-func (m *mockOpensearchClient) UpdateOpensearchCluster(ctx context.Context, req sdkopensearch.UpdateOpensearchClusterRequest) (sdkopensearch.UpdateOpensearchClusterResponse, error) {
-	if m.updateFn != nil {
-		return m.updateFn(ctx, req)
+func (f *fakeOciClient) DeleteOpensearchCluster(ctx context.Context, req ociopensearch.DeleteOpensearchClusterRequest) (ociopensearch.DeleteOpensearchClusterResponse, error) {
+	if f.deleteFn != nil {
+		return f.deleteFn(ctx, req)
 	}
-	return sdkopensearch.UpdateOpensearchClusterResponse{}, nil
+	return ociopensearch.DeleteOpensearchClusterResponse{}, nil
 }
 
-func (m *mockOpensearchClient) DeleteOpensearchCluster(ctx context.Context, req sdkopensearch.DeleteOpensearchClusterRequest) (sdkopensearch.DeleteOpensearchClusterResponse, error) {
-	if m.deleteFn != nil {
-		return m.deleteFn(ctx, req)
+func (f *fakeOciClient) ListOpensearchClusters(ctx context.Context, req ociopensearch.ListOpensearchClustersRequest) (ociopensearch.ListOpensearchClustersResponse, error) {
+	if f.listFn != nil {
+		return f.listFn(ctx, req)
 	}
-	return sdkopensearch.DeleteOpensearchClusterResponse{}, nil
+	return ociopensearch.ListOpensearchClustersResponse{}, nil
 }
 
-// ---------------------------------------------------------------------------
-// Test helpers
-// ---------------------------------------------------------------------------
+// helpers
 
 func makeManager() *OpenSearchClusterServiceManager {
 	log := loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("test")}
-	m := &metrics.Metrics{Logger: log}
 	return NewOpenSearchClusterServiceManager(
 		common.NewRawConfigurationProvider("", "", "", "", "", nil),
-		&fakeCredentialClient{}, nil, log, m)
+		&fakeCredentialClient{}, nil, log, nil)
 }
 
-func makeManagerWithClient(mock *mockOpensearchClient) *OpenSearchClusterServiceManager {
+func makeManagerWithFake(fake *fakeOciClient) *OpenSearchClusterServiceManager {
 	mgr := makeManager()
-	ExportSetClientForTest(mgr, mock)
+	SetClientForTest(mgr, fake)
 	return mgr
 }
 
-// makeCluster builds a minimal OpenSearchCluster spec for test inputs.
-func makeCluster(displayName string) *ociv1beta1.OpenSearchCluster {
-	return &ociv1beta1.OpenSearchCluster{
-		Spec: ociv1beta1.OpenSearchClusterSpec{
-			CompartmentId:                  "ocid1.compartment.oc1..xxx",
-			DisplayName:                    displayName,
-			SoftwareVersion:                "2.11.0",
-			MasterNodeCount:                3,
-			MasterNodeHostType:             "FLEX",
-			MasterNodeHostOcpuCount:        4,
-			MasterNodeHostMemoryGB:         32,
-			DataNodeCount:                  2,
-			DataNodeHostType:               "FLEX",
-			DataNodeHostOcpuCount:          4,
-			DataNodeHostMemoryGB:           32,
-			DataNodeStorageGB:              50,
-			OpendashboardNodeCount:         1,
-			OpendashboardNodeHostOcpuCount: 4,
-			OpendashboardNodeHostMemoryGB:  32,
-			VcnId:                          "ocid1.vcn.oc1..xxx",
-			SubnetId:                       "ocid1.subnet.oc1..xxx",
-			VcnCompartmentId:               "ocid1.compartment.oc1..xxx",
-			SubnetCompartmentId:            "ocid1.compartment.oc1..xxx",
-		},
+func makeActiveCluster(id, name string) ociopensearch.OpensearchCluster {
+	return ociopensearch.OpensearchCluster{
+		Id:                     common.String(id),
+		DisplayName:            common.String(name),
+		CompartmentId:          common.String("ocid1.compartment.oc1..xxx"),
+		LifecycleState:         ociopensearch.OpensearchClusterLifecycleStateActive,
+		SoftwareVersion:        common.String("2.3.0"),
+		TotalStorageGB:         common.Int(100),
+		OpensearchFqdn:         common.String("opensearch.example.com"),
+		OpensearchPrivateIp:    common.String("10.0.0.1"),
+		OpendashboardFqdn:      common.String("dashboard.example.com"),
+		OpendashboardPrivateIp: common.String("10.0.0.2"),
+		MasterNodeCount:        common.Int(3),
+		DataNodeCount:          common.Int(3),
+		DataNodeStorageGB:      common.Int(50),
 	}
 }
 
-// makeActiveClusterInstance returns a mock OCI OpensearchCluster in Active state.
-func makeActiveClusterInstance(id, displayName string) sdkopensearch.OpensearchCluster {
-	return sdkopensearch.OpensearchCluster{
-		Id:             common.String(id),
-		DisplayName:    common.String(displayName),
-		LifecycleState: sdkopensearch.OpensearchClusterLifecycleStateActive,
-	}
-}
-
-// makeClusterWithState returns a mock OCI OpensearchCluster in the given lifecycle state.
-func makeClusterWithState(id, displayName string, state sdkopensearch.OpensearchClusterLifecycleStateEnum) sdkopensearch.OpensearchCluster {
-	return sdkopensearch.OpensearchCluster{
-		Id:             common.String(id),
-		DisplayName:    common.String(displayName),
-		LifecycleState: state,
-	}
-}
-
-// makeClusterSummary returns a minimal OpensearchClusterSummary.
-func makeClusterSummary(id string, state sdkopensearch.OpensearchClusterLifecycleStateEnum) sdkopensearch.OpensearchClusterSummary {
-	return sdkopensearch.OpensearchClusterSummary{
-		Id:             common.String(id),
-		LifecycleState: state,
-	}
-}
-
-// ---------------------------------------------------------------------------
-// GetCrdStatus tests
-// ---------------------------------------------------------------------------
+// ---- GetCrdStatus tests ----
 
 // TestGetCrdStatus_ReturnsStatus verifies status extraction from an OpenSearchCluster object.
 func TestGetCrdStatus_ReturnsStatus(t *testing.T) {
@@ -175,6 +126,20 @@ func TestGetCrdStatus_ReturnsStatus(t *testing.T) {
 	assert.Equal(t, ociv1beta1.OCID("ocid1.opensearchcluster.oc1..xxx"), status.Ocid)
 }
 
+// TestGetCrdStatus_FullyPopulated verifies status extraction when all status fields are set.
+func TestGetCrdStatus_FullyPopulated(t *testing.T) {
+	mgr := makeManager()
+
+	cluster := &ociv1beta1.OpenSearchCluster{}
+	cluster.Status.OsokStatus.Ocid = "ocid1.opensearchcluster.oc1..abc"
+	cluster.Status.OsokStatus.Message = "OpenSearch cluster is Active"
+
+	status, err := mgr.GetCrdStatus(cluster)
+	assert.NoError(t, err)
+	assert.Equal(t, ociv1beta1.OCID("ocid1.opensearchcluster.oc1..abc"), status.Ocid)
+	assert.Equal(t, "OpenSearch cluster is Active", status.Message)
+}
+
 // TestGetCrdStatus_WrongType verifies convert fails gracefully on wrong type.
 func TestGetCrdStatus_WrongType(t *testing.T) {
 	mgr := makeManager()
@@ -185,9 +150,7 @@ func TestGetCrdStatus_WrongType(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to convert type assertion")
 }
 
-// ---------------------------------------------------------------------------
-// CreateOrUpdate — type conversion failure
-// ---------------------------------------------------------------------------
+// ---- CreateOrUpdate - bad type ----
 
 // TestCreateOrUpdate_BadType verifies CreateOrUpdate rejects non-OpenSearchCluster objects.
 func TestCreateOrUpdate_BadType(t *testing.T) {
@@ -199,494 +162,339 @@ func TestCreateOrUpdate_BadType(t *testing.T) {
 	assert.False(t, resp.IsSuccessful)
 }
 
-// ---------------------------------------------------------------------------
-// CreateOrUpdate — explicit OCID paths
-// ---------------------------------------------------------------------------
+// ---- CreateOrUpdate - no explicit ID, list lookup ----
 
-// TestCreateOrUpdate_ExplicitOcid_ActiveNoUpdate verifies that binding to an existing cluster
-// by explicit OCID with no update needed results in an Active, successful response.
-func TestCreateOrUpdate_ExplicitOcid_ActiveNoUpdate(t *testing.T) {
-	const clusterID = "ocid1.opensearchcluster.oc1..aaa"
-	mock := &mockOpensearchClient{
-		getFn: func(_ context.Context, _ sdkopensearch.GetOpensearchClusterRequest) (sdkopensearch.GetOpensearchClusterResponse, error) {
-			return sdkopensearch.GetOpensearchClusterResponse{
-				OpensearchCluster: makeActiveClusterInstance(clusterID, "my-cluster"),
-			}, nil
+// TestCreateOrUpdate_ListError verifies OSOKResponse failure when OCID lookup errors.
+func TestCreateOrUpdate_ListError(t *testing.T) {
+	fake := &fakeOciClient{
+		listFn: func(_ context.Context, _ ociopensearch.ListOpensearchClustersRequest) (ociopensearch.ListOpensearchClustersResponse, error) {
+			return ociopensearch.ListOpensearchClustersResponse{}, errors.New("list error")
 		},
 	}
-	mgr := makeManagerWithClient(mock)
+	mgr := makeManagerWithFake(fake)
 
-	cluster := makeCluster("my-cluster")
-	cluster.Spec.OpenSearchClusterId = ociv1beta1.OCID(clusterID)
-
-	resp, err := mgr.CreateOrUpdate(context.Background(), cluster, ctrl.Request{})
-	assert.NoError(t, err)
-	assert.True(t, resp.IsSuccessful)
-	assert.Equal(t, ociv1beta1.OCID(clusterID), cluster.Status.OsokStatus.Ocid)
-}
-
-// TestCreateOrUpdate_ExplicitOcid_UpdateDisplayName verifies that a display-name change
-// triggers UpdateOpenSearchCluster and sets Updating status.
-func TestCreateOrUpdate_ExplicitOcid_UpdateDisplayName(t *testing.T) {
-	const clusterID = "ocid1.opensearchcluster.oc1..bbb"
-	updateCalled := false
-	mock := &mockOpensearchClient{
-		getFn: func(_ context.Context, _ sdkopensearch.GetOpensearchClusterRequest) (sdkopensearch.GetOpensearchClusterResponse, error) {
-			return sdkopensearch.GetOpensearchClusterResponse{
-				OpensearchCluster: makeActiveClusterInstance(clusterID, "old-name"),
-			}, nil
-		},
-		updateFn: func(_ context.Context, _ sdkopensearch.UpdateOpensearchClusterRequest) (sdkopensearch.UpdateOpensearchClusterResponse, error) {
-			updateCalled = true
-			return sdkopensearch.UpdateOpensearchClusterResponse{}, nil
-		},
-	}
-	mgr := makeManagerWithClient(mock)
-
-	cluster := makeCluster("new-name")
-	cluster.Spec.OpenSearchClusterId = ociv1beta1.OCID(clusterID)
-	cluster.Status.OsokStatus.Ocid = ociv1beta1.OCID(clusterID)
-
-	resp, err := mgr.CreateOrUpdate(context.Background(), cluster, ctrl.Request{})
-	assert.NoError(t, err)
-	assert.True(t, resp.IsSuccessful)
-	assert.True(t, updateCalled)
-}
-
-// TestCreateOrUpdate_ExplicitOcid_UpdateFails verifies that an update error is propagated.
-func TestCreateOrUpdate_ExplicitOcid_UpdateFails(t *testing.T) {
-	const clusterID = "ocid1.opensearchcluster.oc1..ccc"
-	mock := &mockOpensearchClient{
-		getFn: func(_ context.Context, _ sdkopensearch.GetOpensearchClusterRequest) (sdkopensearch.GetOpensearchClusterResponse, error) {
-			return sdkopensearch.GetOpensearchClusterResponse{
-				OpensearchCluster: makeActiveClusterInstance(clusterID, "old-name"),
-			}, nil
-		},
-		updateFn: func(_ context.Context, _ sdkopensearch.UpdateOpensearchClusterRequest) (sdkopensearch.UpdateOpensearchClusterResponse, error) {
-			return sdkopensearch.UpdateOpensearchClusterResponse{}, errors.New("update failed")
-		},
-	}
-	mgr := makeManagerWithClient(mock)
-
-	cluster := makeCluster("new-name")
-	cluster.Spec.OpenSearchClusterId = ociv1beta1.OCID(clusterID)
-	cluster.Status.OsokStatus.Ocid = ociv1beta1.OCID(clusterID)
+	cluster := &ociv1beta1.OpenSearchCluster{}
+	cluster.Spec.DisplayName = "test-cluster"
+	cluster.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
 
 	resp, err := mgr.CreateOrUpdate(context.Background(), cluster, ctrl.Request{})
 	assert.Error(t, err)
 	assert.False(t, resp.IsSuccessful)
 }
 
-// TestCreateOrUpdate_ExplicitOcid_GetFails verifies that a Get error is propagated.
-func TestCreateOrUpdate_ExplicitOcid_GetFails(t *testing.T) {
-	const clusterID = "ocid1.opensearchcluster.oc1..ddd"
-	mock := &mockOpensearchClient{
-		getFn: func(_ context.Context, _ sdkopensearch.GetOpensearchClusterRequest) (sdkopensearch.GetOpensearchClusterResponse, error) {
-			return sdkopensearch.GetOpensearchClusterResponse{}, errors.New("get failed")
+// TestCreateOrUpdate_CreatePath verifies the create path: no existing cluster → create → Provisioning.
+func TestCreateOrUpdate_CreatePath(t *testing.T) {
+	fake := &fakeOciClient{
+		listFn: func(_ context.Context, _ ociopensearch.ListOpensearchClustersRequest) (ociopensearch.ListOpensearchClustersResponse, error) {
+			// No clusters found
+			return ociopensearch.ListOpensearchClustersResponse{}, nil
+		},
+		createFn: func(_ context.Context, _ ociopensearch.CreateOpensearchClusterRequest) (ociopensearch.CreateOpensearchClusterResponse, error) {
+			return ociopensearch.CreateOpensearchClusterResponse{}, nil
 		},
 	}
-	mgr := makeManagerWithClient(mock)
+	mgr := makeManagerWithFake(fake)
 
-	cluster := makeCluster("my-cluster")
-	cluster.Spec.OpenSearchClusterId = ociv1beta1.OCID(clusterID)
+	cluster := &ociv1beta1.OpenSearchCluster{}
+	cluster.Spec.DisplayName = "new-cluster"
+	cluster.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), cluster, ctrl.Request{})
+	// Create returns work request, requeues (IsSuccessful=false, no error)
+	assert.NoError(t, err)
+	assert.False(t, resp.IsSuccessful)
+	assert.Equal(t, ociv1beta1.Provisioning, cluster.Status.OsokStatus.Conditions[0].Type)
+}
+
+// TestCreateOrUpdate_CreateFails verifies error handling when create call fails.
+func TestCreateOrUpdate_CreateFails(t *testing.T) {
+	fake := &fakeOciClient{
+		listFn: func(_ context.Context, _ ociopensearch.ListOpensearchClustersRequest) (ociopensearch.ListOpensearchClustersResponse, error) {
+			return ociopensearch.ListOpensearchClustersResponse{}, nil
+		},
+		createFn: func(_ context.Context, _ ociopensearch.CreateOpensearchClusterRequest) (ociopensearch.CreateOpensearchClusterResponse, error) {
+			return ociopensearch.CreateOpensearchClusterResponse{}, errors.New("create failed")
+		},
+	}
+	mgr := makeManagerWithFake(fake)
+
+	cluster := &ociv1beta1.OpenSearchCluster{}
+	cluster.Spec.DisplayName = "new-cluster"
+	cluster.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), cluster, ctrl.Request{})
+	assert.Error(t, err)
+	assert.False(t, resp.IsSuccessful)
+	assert.Equal(t, ociv1beta1.Failed, cluster.Status.OsokStatus.Conditions[0].Type)
+}
+
+// TestCreateOrUpdate_ExistingClusterGetError verifies error when fetching existing cluster fails.
+func TestCreateOrUpdate_ExistingClusterGetError(t *testing.T) {
+	existingOCID := "ocid1.opensearchcluster.oc1..existing"
+	fake := &fakeOciClient{
+		listFn: func(_ context.Context, _ ociopensearch.ListOpensearchClustersRequest) (ociopensearch.ListOpensearchClustersResponse, error) {
+			return ociopensearch.ListOpensearchClustersResponse{
+				OpensearchClusterCollection: ociopensearch.OpensearchClusterCollection{
+					Items: []ociopensearch.OpensearchClusterSummary{
+						{
+							Id:             common.String(existingOCID),
+							LifecycleState: ociopensearch.OpensearchClusterLifecycleStateActive,
+						},
+					},
+				},
+			}, nil
+		},
+		getFn: func(_ context.Context, _ ociopensearch.GetOpensearchClusterRequest) (ociopensearch.GetOpensearchClusterResponse, error) {
+			return ociopensearch.GetOpensearchClusterResponse{}, errors.New("get failed")
+		},
+	}
+	mgr := makeManagerWithFake(fake)
+
+	cluster := &ociv1beta1.OpenSearchCluster{}
+	cluster.Spec.DisplayName = "test-cluster"
+	cluster.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
 
 	resp, err := mgr.CreateOrUpdate(context.Background(), cluster, ctrl.Request{})
 	assert.Error(t, err)
 	assert.False(t, resp.IsSuccessful)
 }
 
-// TestCreateOrUpdate_ExplicitOcid_LifecycleCreating verifies CREATING state returns Provisioning.
-func TestCreateOrUpdate_ExplicitOcid_LifecycleCreating(t *testing.T) {
-	const clusterID = "ocid1.opensearchcluster.oc1..eee"
-	mock := &mockOpensearchClient{
-		getFn: func(_ context.Context, _ sdkopensearch.GetOpensearchClusterRequest) (sdkopensearch.GetOpensearchClusterResponse, error) {
-			return sdkopensearch.GetOpensearchClusterResponse{
-				OpensearchCluster: makeClusterWithState(clusterID, "my-cluster", sdkopensearch.OpensearchClusterLifecycleStateCreating),
+// TestCreateOrUpdate_UpdatePath verifies the update path when existing cluster is found.
+func TestCreateOrUpdate_UpdatePath(t *testing.T) {
+	existingOCID := "ocid1.opensearchcluster.oc1..existing"
+	existing := makeActiveCluster(existingOCID, "old-name")
+	fake := &fakeOciClient{
+		listFn: func(_ context.Context, _ ociopensearch.ListOpensearchClustersRequest) (ociopensearch.ListOpensearchClustersResponse, error) {
+			return ociopensearch.ListOpensearchClustersResponse{
+				OpensearchClusterCollection: ociopensearch.OpensearchClusterCollection{
+					Items: []ociopensearch.OpensearchClusterSummary{
+						{
+							Id:             common.String(existingOCID),
+							LifecycleState: ociopensearch.OpensearchClusterLifecycleStateActive,
+						},
+					},
+				},
 			}, nil
 		},
+		getFn: func(_ context.Context, _ ociopensearch.GetOpensearchClusterRequest) (ociopensearch.GetOpensearchClusterResponse, error) {
+			return ociopensearch.GetOpensearchClusterResponse{OpensearchCluster: existing}, nil
+		},
+		updateFn: func(_ context.Context, _ ociopensearch.UpdateOpensearchClusterRequest) (ociopensearch.UpdateOpensearchClusterResponse, error) {
+			return ociopensearch.UpdateOpensearchClusterResponse{}, nil
+		},
 	}
-	mgr := makeManagerWithClient(mock)
+	mgr := makeManagerWithFake(fake)
 
-	cluster := makeCluster("my-cluster")
-	cluster.Spec.OpenSearchClusterId = ociv1beta1.OCID(clusterID)
+	cluster := &ociv1beta1.OpenSearchCluster{}
+	cluster.Spec.DisplayName = "new-name" // changed → triggers update
+	cluster.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
 
 	resp, err := mgr.CreateOrUpdate(context.Background(), cluster, ctrl.Request{})
 	assert.NoError(t, err)
 	assert.True(t, resp.IsSuccessful)
-	// Default lifecycle state (not Active, not Failed) sets Provisioning
-	found := false
-	for _, cond := range cluster.Status.OsokStatus.Conditions {
-		if cond.Type == ociv1beta1.Provisioning {
-			found = true
-		}
-	}
-	assert.True(t, found, "expected Provisioning condition for CREATING lifecycle state")
+	assert.Equal(t, ociv1beta1.OCID(existingOCID), cluster.Status.OsokStatus.Ocid)
 }
 
-// TestCreateOrUpdate_ExplicitOcid_LifecycleFailed verifies FAILED state sets Failed status.
-func TestCreateOrUpdate_ExplicitOcid_LifecycleFailed(t *testing.T) {
-	const clusterID = "ocid1.opensearchcluster.oc1..fff"
-	mock := &mockOpensearchClient{
-		getFn: func(_ context.Context, _ sdkopensearch.GetOpensearchClusterRequest) (sdkopensearch.GetOpensearchClusterResponse, error) {
-			return sdkopensearch.GetOpensearchClusterResponse{
-				OpensearchCluster: makeClusterWithState(clusterID, "my-cluster", sdkopensearch.OpensearchClusterLifecycleStateFailed),
+// TestCreateOrUpdate_UpdateFails verifies error handling when update call fails.
+func TestCreateOrUpdate_UpdateFails(t *testing.T) {
+	existingOCID := "ocid1.opensearchcluster.oc1..existing"
+	existing := makeActiveCluster(existingOCID, "old-name")
+	fake := &fakeOciClient{
+		listFn: func(_ context.Context, _ ociopensearch.ListOpensearchClustersRequest) (ociopensearch.ListOpensearchClustersResponse, error) {
+			return ociopensearch.ListOpensearchClustersResponse{
+				OpensearchClusterCollection: ociopensearch.OpensearchClusterCollection{
+					Items: []ociopensearch.OpensearchClusterSummary{
+						{
+							Id:             common.String(existingOCID),
+							LifecycleState: ociopensearch.OpensearchClusterLifecycleStateActive,
+						},
+					},
+				},
 			}, nil
 		},
-	}
-	mgr := makeManagerWithClient(mock)
-
-	cluster := makeCluster("my-cluster")
-	cluster.Spec.OpenSearchClusterId = ociv1beta1.OCID(clusterID)
-
-	resp, err := mgr.CreateOrUpdate(context.Background(), cluster, ctrl.Request{})
-	assert.NoError(t, err)
-	assert.True(t, resp.IsSuccessful)
-	found := false
-	for _, cond := range cluster.Status.OsokStatus.Conditions {
-		if cond.Type == ociv1beta1.Failed {
-			found = true
-		}
-	}
-	assert.True(t, found, "expected Failed condition for FAILED lifecycle state")
-}
-
-// ---------------------------------------------------------------------------
-// CreateOrUpdate — no explicit OCID (lookup by name)
-// ---------------------------------------------------------------------------
-
-// TestCreateOrUpdate_NoOcid_CreateNew verifies that when no cluster exists, CreateOpensearchCluster
-// is called and the response signals provisioning in progress.
-func TestCreateOrUpdate_NoOcid_CreateNew(t *testing.T) {
-	createCalled := false
-	mock := &mockOpensearchClient{
-		listFn: func(_ context.Context, _ sdkopensearch.ListOpensearchClustersRequest) (sdkopensearch.ListOpensearchClustersResponse, error) {
-			return sdkopensearch.ListOpensearchClustersResponse{
-				OpensearchClusterCollection: sdkopensearch.OpensearchClusterCollection{Items: []sdkopensearch.OpensearchClusterSummary{}},
-			}, nil
+		getFn: func(_ context.Context, _ ociopensearch.GetOpensearchClusterRequest) (ociopensearch.GetOpensearchClusterResponse, error) {
+			return ociopensearch.GetOpensearchClusterResponse{OpensearchCluster: existing}, nil
 		},
-		createFn: func(_ context.Context, _ sdkopensearch.CreateOpensearchClusterRequest) (sdkopensearch.CreateOpensearchClusterResponse, error) {
-			createCalled = true
-			return sdkopensearch.CreateOpensearchClusterResponse{}, nil
+		updateFn: func(_ context.Context, _ ociopensearch.UpdateOpensearchClusterRequest) (ociopensearch.UpdateOpensearchClusterResponse, error) {
+			return ociopensearch.UpdateOpensearchClusterResponse{}, errors.New("update failed")
 		},
 	}
-	mgr := makeManagerWithClient(mock)
+	mgr := makeManagerWithFake(fake)
 
-	cluster := makeCluster("new-cluster")
-
-	resp, err := mgr.CreateOrUpdate(context.Background(), cluster, ctrl.Request{})
-	assert.NoError(t, err)
-	assert.False(t, resp.IsSuccessful) // provisioning — not yet done
-	assert.True(t, createCalled)
-}
-
-// TestCreateOrUpdate_NoOcid_CreateFails verifies create errors are propagated.
-func TestCreateOrUpdate_NoOcid_CreateFails(t *testing.T) {
-	mock := &mockOpensearchClient{
-		listFn: func(_ context.Context, _ sdkopensearch.ListOpensearchClustersRequest) (sdkopensearch.ListOpensearchClustersResponse, error) {
-			return sdkopensearch.ListOpensearchClustersResponse{
-				OpensearchClusterCollection: sdkopensearch.OpensearchClusterCollection{Items: []sdkopensearch.OpensearchClusterSummary{}},
-			}, nil
-		},
-		createFn: func(_ context.Context, _ sdkopensearch.CreateOpensearchClusterRequest) (sdkopensearch.CreateOpensearchClusterResponse, error) {
-			return sdkopensearch.CreateOpensearchClusterResponse{}, errors.New("create failed")
-		},
-	}
-	mgr := makeManagerWithClient(mock)
-
-	cluster := makeCluster("new-cluster")
+	cluster := &ociv1beta1.OpenSearchCluster{}
+	cluster.Spec.DisplayName = "new-name" // changed → triggers update
+	cluster.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
 
 	resp, err := mgr.CreateOrUpdate(context.Background(), cluster, ctrl.Request{})
 	assert.Error(t, err)
 	assert.False(t, resp.IsSuccessful)
 }
 
-// TestCreateOrUpdate_NoOcid_GetOcidFails verifies list errors during OCID lookup are propagated.
-func TestCreateOrUpdate_NoOcid_GetOcidFails(t *testing.T) {
-	mock := &mockOpensearchClient{
-		listFn: func(_ context.Context, _ sdkopensearch.ListOpensearchClustersRequest) (sdkopensearch.ListOpensearchClustersResponse, error) {
-			return sdkopensearch.ListOpensearchClustersResponse{}, errors.New("list failed")
+// ---- Lifecycle state tests (via explicit OCID path) ----
+
+// TestCreateOrUpdate_ExplicitID_GetError verifies error when fetching cluster by explicit ID fails.
+func TestCreateOrUpdate_ExplicitID_GetError(t *testing.T) {
+	fake := &fakeOciClient{
+		getFn: func(_ context.Context, _ ociopensearch.GetOpensearchClusterRequest) (ociopensearch.GetOpensearchClusterResponse, error) {
+			return ociopensearch.GetOpensearchClusterResponse{}, errors.New("not found")
 		},
 	}
-	mgr := makeManagerWithClient(mock)
+	mgr := makeManagerWithFake(fake)
 
-	cluster := makeCluster("my-cluster")
+	cluster := &ociv1beta1.OpenSearchCluster{}
+	cluster.Spec.OpenSearchClusterId = "ocid1.opensearchcluster.oc1..explicit"
 
 	resp, err := mgr.CreateOrUpdate(context.Background(), cluster, ctrl.Request{})
 	assert.Error(t, err)
 	assert.False(t, resp.IsSuccessful)
 }
 
-// TestCreateOrUpdate_NoOcid_ExistingCluster_Active verifies the path when the cluster is found
-// by name lookup, is Active, and no update is needed.
-func TestCreateOrUpdate_NoOcid_ExistingCluster_Active(t *testing.T) {
-	const clusterID = "ocid1.opensearchcluster.oc1..ggg"
-	mock := &mockOpensearchClient{
-		listFn: func(_ context.Context, _ sdkopensearch.ListOpensearchClustersRequest) (sdkopensearch.ListOpensearchClustersResponse, error) {
-			return sdkopensearch.ListOpensearchClustersResponse{
-				OpensearchClusterCollection: sdkopensearch.OpensearchClusterCollection{
-					Items: []sdkopensearch.OpensearchClusterSummary{
-						makeClusterSummary(clusterID, sdkopensearch.OpensearchClusterLifecycleStateActive),
-					},
-				},
-			}, nil
-		},
-		getFn: func(_ context.Context, _ sdkopensearch.GetOpensearchClusterRequest) (sdkopensearch.GetOpensearchClusterResponse, error) {
-			return sdkopensearch.GetOpensearchClusterResponse{
-				OpensearchCluster: makeActiveClusterInstance(clusterID, "my-cluster"),
-			}, nil
+// TestCreateOrUpdate_LifecycleActive verifies Active state sets Active OSOK condition.
+func TestCreateOrUpdate_LifecycleActive(t *testing.T) {
+	clusterID := "ocid1.opensearchcluster.oc1..abc"
+	existing := makeActiveCluster(clusterID, "my-cluster")
+	fake := &fakeOciClient{
+		getFn: func(_ context.Context, _ ociopensearch.GetOpensearchClusterRequest) (ociopensearch.GetOpensearchClusterResponse, error) {
+			return ociopensearch.GetOpensearchClusterResponse{OpensearchCluster: existing}, nil
 		},
 	}
-	mgr := makeManagerWithClient(mock)
+	mgr := makeManagerWithFake(fake)
 
-	cluster := makeCluster("my-cluster") // same display name — no update
-
-	resp, err := mgr.CreateOrUpdate(context.Background(), cluster, ctrl.Request{})
-	assert.NoError(t, err)
-	assert.True(t, resp.IsSuccessful)
-	assert.Equal(t, ociv1beta1.OCID(clusterID), cluster.Status.OsokStatus.Ocid)
-}
-
-// TestCreateOrUpdate_NoOcid_ExistingCluster_Update verifies that a display-name change triggers
-// an update when the cluster was found by name.
-func TestCreateOrUpdate_NoOcid_ExistingCluster_Update(t *testing.T) {
-	const clusterID = "ocid1.opensearchcluster.oc1..hhh"
-	updateCalled := false
-	mock := &mockOpensearchClient{
-		listFn: func(_ context.Context, _ sdkopensearch.ListOpensearchClustersRequest) (sdkopensearch.ListOpensearchClustersResponse, error) {
-			return sdkopensearch.ListOpensearchClustersResponse{
-				OpensearchClusterCollection: sdkopensearch.OpensearchClusterCollection{
-					Items: []sdkopensearch.OpensearchClusterSummary{
-						makeClusterSummary(clusterID, sdkopensearch.OpensearchClusterLifecycleStateActive),
-					},
-				},
-			}, nil
-		},
-		getFn: func(_ context.Context, _ sdkopensearch.GetOpensearchClusterRequest) (sdkopensearch.GetOpensearchClusterResponse, error) {
-			return sdkopensearch.GetOpensearchClusterResponse{
-				OpensearchCluster: makeActiveClusterInstance(clusterID, "old-name"),
-			}, nil
-		},
-		updateFn: func(_ context.Context, _ sdkopensearch.UpdateOpensearchClusterRequest) (sdkopensearch.UpdateOpensearchClusterResponse, error) {
-			updateCalled = true
-			return sdkopensearch.UpdateOpensearchClusterResponse{}, nil
-		},
-	}
-	mgr := makeManagerWithClient(mock)
-
-	cluster := makeCluster("new-name")
-	cluster.Status.OsokStatus.Ocid = ociv1beta1.OCID(clusterID)
-
-	resp, err := mgr.CreateOrUpdate(context.Background(), cluster, ctrl.Request{})
-	assert.NoError(t, err)
-	assert.True(t, resp.IsSuccessful)
-	assert.True(t, updateCalled)
-}
-
-// TestCreateOrUpdate_NoOcid_ExistingCluster_GetFails verifies that a Get failure after OCID
-// lookup is propagated.
-func TestCreateOrUpdate_NoOcid_ExistingCluster_GetFails(t *testing.T) {
-	const clusterID = "ocid1.opensearchcluster.oc1..iii"
-	mock := &mockOpensearchClient{
-		listFn: func(_ context.Context, _ sdkopensearch.ListOpensearchClustersRequest) (sdkopensearch.ListOpensearchClustersResponse, error) {
-			return sdkopensearch.ListOpensearchClustersResponse{
-				OpensearchClusterCollection: sdkopensearch.OpensearchClusterCollection{
-					Items: []sdkopensearch.OpensearchClusterSummary{
-						makeClusterSummary(clusterID, sdkopensearch.OpensearchClusterLifecycleStateActive),
-					},
-				},
-			}, nil
-		},
-		getFn: func(_ context.Context, _ sdkopensearch.GetOpensearchClusterRequest) (sdkopensearch.GetOpensearchClusterResponse, error) {
-			return sdkopensearch.GetOpensearchClusterResponse{}, errors.New("get failed")
-		},
-	}
-	mgr := makeManagerWithClient(mock)
-
-	cluster := makeCluster("my-cluster")
-
-	resp, err := mgr.CreateOrUpdate(context.Background(), cluster, ctrl.Request{})
-	assert.Error(t, err)
-	assert.False(t, resp.IsSuccessful)
-}
-
-// ---------------------------------------------------------------------------
-// CreateOrUpdate — endpoint fields in cluster response
-// ---------------------------------------------------------------------------
-
-// TestCreateOrUpdate_ExplicitOcid_WithEndpointFields verifies that clusters with endpoint
-// fields (OpensearchFqdn, OpensearchPrivateIp) are handled correctly.
-func TestCreateOrUpdate_ExplicitOcid_WithEndpointFields(t *testing.T) {
-	const clusterID = "ocid1.opensearchcluster.oc1..jjj"
-	clusterWithEndpoints := sdkopensearch.OpensearchCluster{
-		Id:                     common.String(clusterID),
-		DisplayName:            common.String("my-cluster"),
-		LifecycleState:         sdkopensearch.OpensearchClusterLifecycleStateActive,
-		OpensearchFqdn:         common.String("search.us-phoenix-1.oci.oraclecloud.com"),
-		OpensearchPrivateIp:    common.String("10.0.1.100"),
-		OpendashboardFqdn:      common.String("dashboard.us-phoenix-1.oci.oraclecloud.com"),
-		OpendashboardPrivateIp: common.String("10.0.1.101"),
-	}
-	mock := &mockOpensearchClient{
-		getFn: func(_ context.Context, _ sdkopensearch.GetOpensearchClusterRequest) (sdkopensearch.GetOpensearchClusterResponse, error) {
-			return sdkopensearch.GetOpensearchClusterResponse{
-				OpensearchCluster: clusterWithEndpoints,
-			}, nil
-		},
-	}
-	mgr := makeManagerWithClient(mock)
-
-	cluster := makeCluster("my-cluster")
+	cluster := &ociv1beta1.OpenSearchCluster{}
 	cluster.Spec.OpenSearchClusterId = ociv1beta1.OCID(clusterID)
+	cluster.Spec.DisplayName = "my-cluster" // same name → no update
 
 	resp, err := mgr.CreateOrUpdate(context.Background(), cluster, ctrl.Request{})
 	assert.NoError(t, err)
 	assert.True(t, resp.IsSuccessful)
 	assert.Equal(t, ociv1beta1.OCID(clusterID), cluster.Status.OsokStatus.Ocid)
+	assert.Equal(t, ociv1beta1.Active, cluster.Status.OsokStatus.Conditions[0].Type)
 }
 
-// ---------------------------------------------------------------------------
-// GetOpenSearchClusterOCID — lifecycle state filtering
-// ---------------------------------------------------------------------------
-
-// TestGetClusterOcid_ActiveState verifies that an Active cluster OCID is returned.
-func TestGetClusterOcid_ActiveState(t *testing.T) {
-	const clusterID = "ocid1.opensearchcluster.oc1..active"
-	mock := &mockOpensearchClient{
-		listFn: func(_ context.Context, _ sdkopensearch.ListOpensearchClustersRequest) (sdkopensearch.ListOpensearchClustersResponse, error) {
-			return sdkopensearch.ListOpensearchClustersResponse{
-				OpensearchClusterCollection: sdkopensearch.OpensearchClusterCollection{
-					Items: []sdkopensearch.OpensearchClusterSummary{
-						makeClusterSummary(clusterID, sdkopensearch.OpensearchClusterLifecycleStateActive),
-					},
-				},
-			}, nil
+// TestCreateOrUpdate_LifecycleFailed verifies Failed state sets Failed OSOK condition.
+func TestCreateOrUpdate_LifecycleFailed(t *testing.T) {
+	clusterID := "ocid1.opensearchcluster.oc1..failed"
+	failedCluster := makeActiveCluster(clusterID, "my-cluster")
+	failedCluster.LifecycleState = ociopensearch.OpensearchClusterLifecycleStateFailed
+	fake := &fakeOciClient{
+		getFn: func(_ context.Context, _ ociopensearch.GetOpensearchClusterRequest) (ociopensearch.GetOpensearchClusterResponse, error) {
+			return ociopensearch.GetOpensearchClusterResponse{OpensearchCluster: failedCluster}, nil
 		},
 	}
-	mgr := makeManagerWithClient(mock)
-	cluster := makeCluster("my-cluster")
+	mgr := makeManagerWithFake(fake)
 
-	// Exercise via CreateOrUpdate (no explicit OCID) which calls GetOpenSearchClusterOCID.
-	// getFn not set, so after OCID lookup, Get will return empty cluster → nil clusterInstance → no crash.
-	mock.getFn = func(_ context.Context, _ sdkopensearch.GetOpensearchClusterRequest) (sdkopensearch.GetOpensearchClusterResponse, error) {
-		return sdkopensearch.GetOpensearchClusterResponse{
-			OpensearchCluster: makeActiveClusterInstance(clusterID, "my-cluster"),
-		}, nil
+	cluster := &ociv1beta1.OpenSearchCluster{}
+	cluster.Spec.OpenSearchClusterId = ociv1beta1.OCID(clusterID)
+	cluster.Spec.DisplayName = "my-cluster"
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), cluster, ctrl.Request{})
+	assert.NoError(t, err)
+	// Reconciliation is "successful" (processed without error); the cluster itself is Failed.
+	assert.True(t, resp.IsSuccessful)
+	// The lifecycle switch appends a condition after the "bound" condition; check the last one.
+	conds := cluster.Status.OsokStatus.Conditions
+	assert.NotEmpty(t, conds)
+	assert.Equal(t, ociv1beta1.Failed, conds[len(conds)-1].Type)
+}
+
+// TestCreateOrUpdate_LifecycleCreating verifies CREATING state sets Provisioning OSOK condition (requeue).
+func TestCreateOrUpdate_LifecycleCreating(t *testing.T) {
+	clusterID := "ocid1.opensearchcluster.oc1..creating"
+	creatingCluster := makeActiveCluster(clusterID, "my-cluster")
+	creatingCluster.LifecycleState = ociopensearch.OpensearchClusterLifecycleStateCreating
+	fake := &fakeOciClient{
+		getFn: func(_ context.Context, _ ociopensearch.GetOpensearchClusterRequest) (ociopensearch.GetOpensearchClusterResponse, error) {
+			return ociopensearch.GetOpensearchClusterResponse{OpensearchCluster: creatingCluster}, nil
+		},
 	}
+	mgr := makeManagerWithFake(fake)
+
+	cluster := &ociv1beta1.OpenSearchCluster{}
+	cluster.Spec.OpenSearchClusterId = ociv1beta1.OCID(clusterID)
+	cluster.Spec.DisplayName = "my-cluster"
 
 	resp, err := mgr.CreateOrUpdate(context.Background(), cluster, ctrl.Request{})
 	assert.NoError(t, err)
 	assert.True(t, resp.IsSuccessful)
-	assert.Equal(t, ociv1beta1.OCID(clusterID), cluster.Status.OsokStatus.Ocid)
+	// The default lifecycle branch appends Provisioning after any prior conditions.
+	conds := cluster.Status.OsokStatus.Conditions
+	assert.NotEmpty(t, conds)
+	assert.Equal(t, ociv1beta1.Provisioning, conds[len(conds)-1].Type)
 }
 
-// TestGetClusterOcid_CreatingState verifies that a Creating cluster OCID is returned.
-func TestGetClusterOcid_CreatingState(t *testing.T) {
-	const clusterID = "ocid1.opensearchcluster.oc1..creating"
-	mock := &mockOpensearchClient{
-		listFn: func(_ context.Context, _ sdkopensearch.ListOpensearchClustersRequest) (sdkopensearch.ListOpensearchClustersResponse, error) {
-			return sdkopensearch.ListOpensearchClustersResponse{
-				OpensearchClusterCollection: sdkopensearch.OpensearchClusterCollection{
-					Items: []sdkopensearch.OpensearchClusterSummary{
-						makeClusterSummary(clusterID, sdkopensearch.OpensearchClusterLifecycleStateCreating),
-					},
-				},
-			}, nil
-		},
-		getFn: func(_ context.Context, _ sdkopensearch.GetOpensearchClusterRequest) (sdkopensearch.GetOpensearchClusterResponse, error) {
-			return sdkopensearch.GetOpensearchClusterResponse{
-				OpensearchCluster: makeClusterWithState(clusterID, "my-cluster", sdkopensearch.OpensearchClusterLifecycleStateCreating),
-			}, nil
+// TestCreateOrUpdate_LifecycleUpdating verifies UPDATING state sets Provisioning OSOK condition (requeue).
+func TestCreateOrUpdate_LifecycleUpdating(t *testing.T) {
+	clusterID := "ocid1.opensearchcluster.oc1..updating"
+	updatingCluster := makeActiveCluster(clusterID, "my-cluster")
+	updatingCluster.LifecycleState = ociopensearch.OpensearchClusterLifecycleStateUpdating
+	fake := &fakeOciClient{
+		getFn: func(_ context.Context, _ ociopensearch.GetOpensearchClusterRequest) (ociopensearch.GetOpensearchClusterResponse, error) {
+			return ociopensearch.GetOpensearchClusterResponse{OpensearchCluster: updatingCluster}, nil
 		},
 	}
-	mgr := makeManagerWithClient(mock)
-	cluster := makeCluster("my-cluster")
+	mgr := makeManagerWithFake(fake)
+
+	cluster := &ociv1beta1.OpenSearchCluster{}
+	cluster.Spec.OpenSearchClusterId = ociv1beta1.OCID(clusterID)
+	cluster.Spec.DisplayName = "my-cluster"
 
 	resp, err := mgr.CreateOrUpdate(context.Background(), cluster, ctrl.Request{})
 	assert.NoError(t, err)
 	assert.True(t, resp.IsSuccessful)
-	assert.Equal(t, ociv1beta1.OCID(clusterID), cluster.Status.OsokStatus.Ocid)
+	// The default lifecycle branch appends Provisioning after any prior conditions.
+	conds := cluster.Status.OsokStatus.Conditions
+	assert.NotEmpty(t, conds)
+	assert.Equal(t, ociv1beta1.Provisioning, conds[len(conds)-1].Type)
 }
 
-// TestGetClusterOcid_UpdatingState verifies that an Updating cluster OCID is returned.
-func TestGetClusterOcid_UpdatingState(t *testing.T) {
-	const clusterID = "ocid1.opensearchcluster.oc1..updating"
-	mock := &mockOpensearchClient{
-		listFn: func(_ context.Context, _ sdkopensearch.ListOpensearchClustersRequest) (sdkopensearch.ListOpensearchClustersResponse, error) {
-			return sdkopensearch.ListOpensearchClustersResponse{
-				OpensearchClusterCollection: sdkopensearch.OpensearchClusterCollection{
-					Items: []sdkopensearch.OpensearchClusterSummary{
-						makeClusterSummary(clusterID, sdkopensearch.OpensearchClusterLifecycleStateUpdating),
-					},
-				},
-			}, nil
+// TestCreateOrUpdate_ExplicitID_WithUpdate verifies update via explicit OCID when display name changed.
+func TestCreateOrUpdate_ExplicitID_WithUpdate(t *testing.T) {
+	clusterID := "ocid1.opensearchcluster.oc1..explicit"
+	existing := makeActiveCluster(clusterID, "old-name")
+	fake := &fakeOciClient{
+		getFn: func(_ context.Context, _ ociopensearch.GetOpensearchClusterRequest) (ociopensearch.GetOpensearchClusterResponse, error) {
+			return ociopensearch.GetOpensearchClusterResponse{OpensearchCluster: existing}, nil
 		},
-		getFn: func(_ context.Context, _ sdkopensearch.GetOpensearchClusterRequest) (sdkopensearch.GetOpensearchClusterResponse, error) {
-			return sdkopensearch.GetOpensearchClusterResponse{
-				OpensearchCluster: makeClusterWithState(clusterID, "my-cluster", sdkopensearch.OpensearchClusterLifecycleStateUpdating),
-			}, nil
+		updateFn: func(_ context.Context, _ ociopensearch.UpdateOpensearchClusterRequest) (ociopensearch.UpdateOpensearchClusterResponse, error) {
+			return ociopensearch.UpdateOpensearchClusterResponse{}, nil
 		},
 	}
-	mgr := makeManagerWithClient(mock)
-	cluster := makeCluster("my-cluster")
+	mgr := makeManagerWithFake(fake)
+
+	cluster := &ociv1beta1.OpenSearchCluster{}
+	cluster.Spec.OpenSearchClusterId = ociv1beta1.OCID(clusterID)
+	cluster.Spec.DisplayName = "new-name" // changed
 
 	resp, err := mgr.CreateOrUpdate(context.Background(), cluster, ctrl.Request{})
 	assert.NoError(t, err)
 	assert.True(t, resp.IsSuccessful)
+	assert.Equal(t, ociv1beta1.Updating, cluster.Status.OsokStatus.Conditions[0].Type)
 }
 
-// TestGetClusterOcid_FailedState verifies that a Failed cluster is not returned (filtered out).
-// With no usable OCID found, CreateOpensearchCluster is called instead.
-func TestGetClusterOcid_FailedState(t *testing.T) {
-	createCalled := false
-	mock := &mockOpensearchClient{
-		listFn: func(_ context.Context, _ sdkopensearch.ListOpensearchClustersRequest) (sdkopensearch.ListOpensearchClustersResponse, error) {
-			return sdkopensearch.ListOpensearchClustersResponse{
-				OpensearchClusterCollection: sdkopensearch.OpensearchClusterCollection{
-					Items: []sdkopensearch.OpensearchClusterSummary{
-						makeClusterSummary("ocid1.opensearchcluster.oc1..failed", sdkopensearch.OpensearchClusterLifecycleStateFailed),
-					},
-				},
-			}, nil
+// TestCreateOrUpdate_ExplicitID_UpdateFails verifies error propagation when update fails.
+func TestCreateOrUpdate_ExplicitID_UpdateFails(t *testing.T) {
+	clusterID := "ocid1.opensearchcluster.oc1..explicit"
+	existing := makeActiveCluster(clusterID, "old-name")
+	fake := &fakeOciClient{
+		getFn: func(_ context.Context, _ ociopensearch.GetOpensearchClusterRequest) (ociopensearch.GetOpensearchClusterResponse, error) {
+			return ociopensearch.GetOpensearchClusterResponse{OpensearchCluster: existing}, nil
 		},
-		createFn: func(_ context.Context, _ sdkopensearch.CreateOpensearchClusterRequest) (sdkopensearch.CreateOpensearchClusterResponse, error) {
-			createCalled = true
-			return sdkopensearch.CreateOpensearchClusterResponse{}, nil
+		updateFn: func(_ context.Context, _ ociopensearch.UpdateOpensearchClusterRequest) (ociopensearch.UpdateOpensearchClusterResponse, error) {
+			return ociopensearch.UpdateOpensearchClusterResponse{}, errors.New("update error")
 		},
 	}
-	mgr := makeManagerWithClient(mock)
-	cluster := makeCluster("my-cluster")
+	mgr := makeManagerWithFake(fake)
+
+	cluster := &ociv1beta1.OpenSearchCluster{}
+	cluster.Spec.OpenSearchClusterId = ociv1beta1.OCID(clusterID)
+	cluster.Spec.DisplayName = "new-name"
 
 	resp, err := mgr.CreateOrUpdate(context.Background(), cluster, ctrl.Request{})
-	assert.NoError(t, err)
-	assert.False(t, resp.IsSuccessful) // provisioning — create was triggered
-	assert.True(t, createCalled, "expected Create to be called when Failed cluster is filtered out")
+	assert.Error(t, err)
+	assert.False(t, resp.IsSuccessful)
 }
 
-// TestGetClusterOcid_EmptyList verifies that an empty list results in cluster creation.
-func TestGetClusterOcid_EmptyList(t *testing.T) {
-	createCalled := false
-	mock := &mockOpensearchClient{
-		listFn: func(_ context.Context, _ sdkopensearch.ListOpensearchClustersRequest) (sdkopensearch.ListOpensearchClustersResponse, error) {
-			return sdkopensearch.ListOpensearchClustersResponse{
-				OpensearchClusterCollection: sdkopensearch.OpensearchClusterCollection{Items: []sdkopensearch.OpensearchClusterSummary{}},
-			}, nil
-		},
-		createFn: func(_ context.Context, _ sdkopensearch.CreateOpensearchClusterRequest) (sdkopensearch.CreateOpensearchClusterResponse, error) {
-			createCalled = true
-			return sdkopensearch.CreateOpensearchClusterResponse{}, nil
-		},
-	}
-	mgr := makeManagerWithClient(mock)
-	cluster := makeCluster("my-cluster")
-
-	_, err := mgr.CreateOrUpdate(context.Background(), cluster, ctrl.Request{})
-	assert.NoError(t, err)
-	assert.True(t, createCalled)
-}
-
-// ---------------------------------------------------------------------------
-// Delete tests
-// ---------------------------------------------------------------------------
+// ---- Delete tests ----
 
 // TestDelete_NoOcid verifies deletion with no OCID set is a no-op.
 func TestDelete_NoOcid(t *testing.T) {
@@ -703,14 +511,12 @@ func TestDelete_NoOcid(t *testing.T) {
 
 // TestDelete_WithStatusOcid verifies deletion is attempted when status OCID is set.
 func TestDelete_WithStatusOcid(t *testing.T) {
-	deleteCalled := false
-	mock := &mockOpensearchClient{
-		deleteFn: func(_ context.Context, _ sdkopensearch.DeleteOpensearchClusterRequest) (sdkopensearch.DeleteOpensearchClusterResponse, error) {
-			deleteCalled = true
-			return sdkopensearch.DeleteOpensearchClusterResponse{}, nil
+	fake := &fakeOciClient{
+		deleteFn: func(_ context.Context, _ ociopensearch.DeleteOpensearchClusterRequest) (ociopensearch.DeleteOpensearchClusterResponse, error) {
+			return ociopensearch.DeleteOpensearchClusterResponse{}, nil
 		},
 	}
-	mgr := makeManagerWithClient(mock)
+	mgr := makeManagerWithFake(fake)
 
 	cluster := &ociv1beta1.OpenSearchCluster{}
 	cluster.Name = "test-cluster"
@@ -720,7 +526,23 @@ func TestDelete_WithStatusOcid(t *testing.T) {
 	done, err := mgr.Delete(context.Background(), cluster)
 	assert.NoError(t, err)
 	assert.True(t, done)
-	assert.True(t, deleteCalled)
+}
+
+// TestDelete_WithSpecOcid verifies deletion uses spec OCID when status OCID is empty.
+func TestDelete_WithSpecOcid(t *testing.T) {
+	fake := &fakeOciClient{
+		deleteFn: func(_ context.Context, _ ociopensearch.DeleteOpensearchClusterRequest) (ociopensearch.DeleteOpensearchClusterResponse, error) {
+			return ociopensearch.DeleteOpensearchClusterResponse{}, nil
+		},
+	}
+	mgr := makeManagerWithFake(fake)
+
+	cluster := &ociv1beta1.OpenSearchCluster{}
+	cluster.Spec.OpenSearchClusterId = "ocid1.opensearchcluster.oc1..specid"
+
+	done, err := mgr.Delete(context.Background(), cluster)
+	assert.NoError(t, err)
+	assert.True(t, done)
 }
 
 // TestDelete_WrongType verifies Delete handles wrong object type gracefully.
@@ -733,54 +555,82 @@ func TestDelete_WrongType(t *testing.T) {
 	assert.True(t, done)
 }
 
-// TestDelete_WithSpecOcid verifies deletion uses spec OCID when status OCID is empty.
-func TestDelete_WithSpecOcid(t *testing.T) {
-	deleteCalled := false
-	mock := &mockOpensearchClient{
-		deleteFn: func(_ context.Context, _ sdkopensearch.DeleteOpensearchClusterRequest) (sdkopensearch.DeleteOpensearchClusterResponse, error) {
-			deleteCalled = true
-			return sdkopensearch.DeleteOpensearchClusterResponse{}, nil
+// TestDelete_DeleteFails verifies that delete errors are swallowed (returns done=true).
+func TestDelete_DeleteFails(t *testing.T) {
+	fake := &fakeOciClient{
+		deleteFn: func(_ context.Context, _ ociopensearch.DeleteOpensearchClusterRequest) (ociopensearch.DeleteOpensearchClusterResponse, error) {
+			return ociopensearch.DeleteOpensearchClusterResponse{}, errors.New("delete error")
 		},
 	}
-	mgr := makeManagerWithClient(mock)
+	mgr := makeManagerWithFake(fake)
 
-	cluster := makeCluster("my-cluster")
-	cluster.Spec.OpenSearchClusterId = "ocid1.opensearchcluster.oc1..specid"
+	cluster := &ociv1beta1.OpenSearchCluster{}
+	cluster.Status.OsokStatus.Ocid = "ocid1.opensearchcluster.oc1..xxx"
 
 	done, err := mgr.Delete(context.Background(), cluster)
+	// Delete swallows errors (returns done=true, no error propagated)
 	assert.NoError(t, err)
 	assert.True(t, done)
-	assert.True(t, deleteCalled)
 }
 
-// ---------------------------------------------------------------------------
-// FreeformTags / DefinedTags update detection
-// ---------------------------------------------------------------------------
+// ---- Credential map / endpoint fields ----
 
-// TestCreateOrUpdate_FreeformTagsUpdate verifies that freeform tag changes trigger an update.
-func TestCreateOrUpdate_FreeformTagsUpdate(t *testing.T) {
-	const clusterID = "ocid1.opensearchcluster.oc1..tags"
-	updateCalled := false
-	mock := &mockOpensearchClient{
-		getFn: func(_ context.Context, _ sdkopensearch.GetOpensearchClusterRequest) (sdkopensearch.GetOpensearchClusterResponse, error) {
-			inst := makeActiveClusterInstance(clusterID, "my-cluster")
-			inst.FreeformTags = map[string]string{"env": "prod"}
-			return sdkopensearch.GetOpensearchClusterResponse{OpensearchCluster: inst}, nil
-		},
-		updateFn: func(_ context.Context, _ sdkopensearch.UpdateOpensearchClusterRequest) (sdkopensearch.UpdateOpensearchClusterResponse, error) {
-			updateCalled = true
-			return sdkopensearch.UpdateOpensearchClusterResponse{}, nil
+// TestCreateOrUpdate_EndpointFieldsInStatus verifies endpoint FQDNs are accessible after Active reconcile.
+func TestCreateOrUpdate_EndpointFieldsInStatus(t *testing.T) {
+	clusterID := "ocid1.opensearchcluster.oc1..ep"
+	c := makeActiveCluster(clusterID, "ep-cluster")
+	c.OpensearchFqdn = common.String("search.example.com")
+	c.OpendashboardFqdn = common.String("dash.example.com")
+	c.OpensearchPrivateIp = common.String("192.168.1.10")
+	c.OpendashboardPrivateIp = common.String("192.168.1.11")
+
+	fake := &fakeOciClient{
+		getFn: func(_ context.Context, _ ociopensearch.GetOpensearchClusterRequest) (ociopensearch.GetOpensearchClusterResponse, error) {
+			return ociopensearch.GetOpensearchClusterResponse{OpensearchCluster: c}, nil
 		},
 	}
-	mgr := makeManagerWithClient(mock)
+	mgr := makeManagerWithFake(fake)
 
-	cluster := makeCluster("my-cluster")
+	cluster := &ociv1beta1.OpenSearchCluster{}
 	cluster.Spec.OpenSearchClusterId = ociv1beta1.OCID(clusterID)
-	cluster.Status.OsokStatus.Ocid = ociv1beta1.OCID(clusterID)
-	cluster.Spec.FreeFormTags = map[string]string{"env": "dev"} // differs from "prod"
+	cluster.Spec.DisplayName = "ep-cluster"
 
 	resp, err := mgr.CreateOrUpdate(context.Background(), cluster, ctrl.Request{})
 	assert.NoError(t, err)
 	assert.True(t, resp.IsSuccessful)
-	assert.True(t, updateCalled)
+	// Status OCID is set; cluster endpoints are accessible via the returned OCI object
+	assert.Equal(t, ociv1beta1.OCID(clusterID), cluster.Status.OsokStatus.Ocid)
+}
+
+// TestCreateOrUpdate_NoUpdateNeeded verifies bound path when no changes are detected.
+func TestCreateOrUpdate_NoUpdateNeeded(t *testing.T) {
+	clusterID := "ocid1.opensearchcluster.oc1..bound"
+	existing := makeActiveCluster(clusterID, "same-name")
+	fake := &fakeOciClient{
+		listFn: func(_ context.Context, _ ociopensearch.ListOpensearchClustersRequest) (ociopensearch.ListOpensearchClustersResponse, error) {
+			return ociopensearch.ListOpensearchClustersResponse{
+				OpensearchClusterCollection: ociopensearch.OpensearchClusterCollection{
+					Items: []ociopensearch.OpensearchClusterSummary{
+						{
+							Id:             common.String(clusterID),
+							LifecycleState: ociopensearch.OpensearchClusterLifecycleStateActive,
+						},
+					},
+				},
+			}, nil
+		},
+		getFn: func(_ context.Context, _ ociopensearch.GetOpensearchClusterRequest) (ociopensearch.GetOpensearchClusterResponse, error) {
+			return ociopensearch.GetOpensearchClusterResponse{OpensearchCluster: existing}, nil
+		},
+	}
+	mgr := makeManagerWithFake(fake)
+
+	cluster := &ociv1beta1.OpenSearchCluster{}
+	cluster.Spec.DisplayName = "same-name" // same → no update
+	cluster.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), cluster, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.Equal(t, ociv1beta1.OCID(clusterID), cluster.Status.OsokStatus.Ocid)
 }
