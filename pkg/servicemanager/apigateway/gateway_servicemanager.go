@@ -20,6 +20,7 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/servicemanager"
 	"github.com/oracle/oci-service-operator/pkg/util"
 	v1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -122,6 +123,14 @@ func (c *GatewayServiceManager) CreateOrUpdate(ctx context.Context, obj runtime.
 		gw.Status.OsokStatus.CreatedAt = &now
 	}
 
+	if gwInstance.LifecycleState == apigateway.GatewayLifecycleStateCreating {
+		gw.Status.OsokStatus = util.UpdateOSOKStatusCondition(gw.Status.OsokStatus,
+			ociv1beta1.Provisioning, v1.ConditionTrue, "",
+			fmt.Sprintf("ApiGateway %s is still Creating", *gwInstance.DisplayName), c.Log)
+		c.Log.InfoLog(fmt.Sprintf("ApiGateway %s is still Creating, requeueing", *gwInstance.DisplayName))
+		return servicemanager.OSOKResponse{IsSuccessful: false, ShouldRequeue: true}, nil
+	}
+
 	if gwInstance.LifecycleState == apigateway.GatewayLifecycleStateFailed {
 		gw.Status.OsokStatus = util.UpdateOSOKStatusCondition(gw.Status.OsokStatus,
 			ociv1beta1.Failed, v1.ConditionFalse, "",
@@ -134,6 +143,13 @@ func (c *GatewayServiceManager) CreateOrUpdate(ctx context.Context, obj runtime.
 		ociv1beta1.Active, v1.ConditionTrue, "",
 		fmt.Sprintf("ApiGateway %s is %s", *gwInstance.DisplayName, gwInstance.LifecycleState), c.Log)
 	c.Log.InfoLog(fmt.Sprintf("ApiGateway %s is Active", *gwInstance.DisplayName))
+
+	if _, err := c.addToSecret(ctx, gw.Namespace, gw.Name, *gwInstance); err != nil {
+		if !apierrors.IsAlreadyExists(err) {
+			c.Log.InfoLog("ApiGateway secret creation failed")
+			return servicemanager.OSOKResponse{IsSuccessful: false}, err
+		}
+	}
 
 	return servicemanager.OSOKResponse{IsSuccessful: true}, nil
 }

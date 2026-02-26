@@ -19,12 +19,25 @@ import (
 )
 
 // fakeCredentialClient implements credhelper.CredentialClient for testing.
-type fakeCredentialClient struct{}
+type fakeCredentialClient struct {
+	createSecretFn func(ctx context.Context, name, ns string, labels map[string]string, data map[string][]byte) (bool, error)
+	deleteSecretFn func(ctx context.Context, name, ns string) (bool, error)
+	createCalled   bool
+	deleteCalled   bool
+}
 
 func (f *fakeCredentialClient) CreateSecret(ctx context.Context, name, ns string, labels map[string]string, data map[string][]byte) (bool, error) {
+	f.createCalled = true
+	if f.createSecretFn != nil {
+		return f.createSecretFn(ctx, name, ns, labels, data)
+	}
 	return true, nil
 }
 func (f *fakeCredentialClient) DeleteSecret(ctx context.Context, name, ns string) (bool, error) {
+	f.deleteCalled = true
+	if f.deleteSecretFn != nil {
+		return f.deleteSecretFn(ctx, name, ns)
+	}
 	return true, nil
 }
 func (f *fakeCredentialClient) GetSecret(ctx context.Context, name, ns string) (map[string][]byte, error) {
