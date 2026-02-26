@@ -10,7 +10,6 @@ resources:
 - oci_v1beta1_mysqldbsystem.yaml
 - oci_v1beta1_nosqldatabase.yaml
 - oci_v1beta1_redis.yaml
-- oci_v1beta1_devopsproject.yaml
 - oci_v1beta1_vault.yaml
 - oci_v1beta1_containerinstance.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

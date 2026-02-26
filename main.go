@@ -36,7 +36,6 @@ import (
 	ociapigw "github.com/oracle/oci-service-operator/pkg/servicemanager/apigateway"
 	"github.com/oracle/oci-service-operator/pkg/servicemanager/autonomousdatabases/adb"
 	ocicontainerinstance "github.com/oracle/oci-service-operator/pkg/servicemanager/containerinstance"
-	ocidevops "github.com/oracle/oci-service-operator/pkg/servicemanager/devops"
 	ocifunctions "github.com/oracle/oci-service-operator/pkg/servicemanager/functions"
 	"github.com/oracle/oci-service-operator/pkg/servicemanager/mysql/dbsystem"
 	"github.com/oracle/oci-service-operator/pkg/servicemanager/nosql"
@@ -277,21 +276,6 @@ func main() {
 		},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.ErrorLog(err, "unable to create controller", "controller", "OciQueue")
-		os.Exit(1)
-	}
-
-	if err = (&controllers.DevopsProjectReconciler{
-		Reconciler: &core.BaseReconciler{
-			Client:             mgr.GetClient(),
-			OSOKServiceManager: ocidevops.NewDevopsProjectServiceManager(provider, credClient, scheme, loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("service-manager").WithName("DevopsProject")}),
-			Finalizer:          core.NewBaseFinalizer(mgr.GetClient(), ctrl.Log),
-			Log:                loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("controllers").WithName("DevopsProject")},
-			Metrics:            metricsClient,
-			Recorder:           mgr.GetEventRecorderFor("DevopsProject"),
-			Scheme:             scheme,
-		},
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.ErrorLog(err, "unable to create controller", "controller", "DevopsProject")
 		os.Exit(1)
 	}
 

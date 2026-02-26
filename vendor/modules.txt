@@ -148,16 +148,15 @@ github.com/oracle/oci-go-sdk/v65/common/auth
 github.com/oracle/oci-go-sdk/v65/common/utils
 github.com/oracle/oci-go-sdk/v65/containerinstances
 github.com/oracle/oci-go-sdk/v65/database
-github.com/oracle/oci-go-sdk/v65/devops
 github.com/oracle/oci-go-sdk/v65/functions
 github.com/oracle/oci-go-sdk/v65/identity
+github.com/oracle/oci-go-sdk/v65/keymanagement
 github.com/oracle/oci-go-sdk/v65/mysql
 github.com/oracle/oci-go-sdk/v65/nosql
 github.com/oracle/oci-go-sdk/v65/opensearch
 github.com/oracle/oci-go-sdk/v65/queue
 github.com/oracle/oci-go-sdk/v65/redis
 github.com/oracle/oci-go-sdk/v65/streaming
-github.com/oracle/oci-go-sdk/v65/keymanagement
 github.com/oracle/oci-go-sdk/v65/vault
 # github.com/pkg/errors v0.9.1
 ## explicit

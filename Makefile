@@ -219,7 +219,6 @@ delete-crds:
 	kubectl delete crd apigatewaydeployments.oci.oracle.com &
 	kubectl delete crd apigateways.oci.oracle.com &
 	kubectl delete crd containerinstances.oci.oracle.com &
-	kubectl delete crd devopsprojects.oci.oracle.com &
 	kubectl delete crd functionsapplications.oci.oracle.com &
 	kubectl delete crd functionsfunctions.oci.oracle.com &
 	kubectl delete crd nosqldatabases.oci.oracle.com &
@@ -239,7 +238,6 @@ delete-crds-force:
 	kubectl patch crd/apigatewaydeployments.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge &
 	kubectl patch crd/apigateways.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge &
 	kubectl patch crd/containerinstances.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge &
-	kubectl patch crd/devopsprojects.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge &
 	kubectl patch crd/functionsapplications.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge &
 	kubectl patch crd/functionsfunctions.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge &
 	kubectl patch crd/nosqldatabases.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge &
