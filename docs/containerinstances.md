@@ -28,7 +28,8 @@ The `ContainerInstance` CRD maps to an OCI Container Instance.
 | `containers` | array | Yes | List of containers (at least one required) |
 | `vnics` | array | Yes | List of VNIC configurations (at least one required) |
 | `id` | string (OCID) | No | Bind to an existing instance instead of creating one |
-| `displayName` | string | No | User-friendly display name |
+| `displayName` | string | No | User-friendly display name. **Required for idempotency** — OSOK uses this to look up existing instances by name, preventing a new instance from being created on every reconcile cycle. |
+| `gcPolicy.maxInstances` | integer | No | Maximum number of historical instances to retain (default: 3). Older instances (by creation time) are deleted when the limit is exceeded. Set to `1` for most quota-efficient operation (only the active instance is kept). |
 | `faultDomain` | string | No | Fault domain for the instance |
 | `gracefulShutdownTimeoutInSeconds` | integer | No | Graceful shutdown timeout |
 | `containerRestartPolicy` | string | No | Restart policy: `ALWAYS`, `NEVER`, or `ON_FAILURE` |
@@ -122,6 +123,37 @@ When you delete a `ContainerInstance` resource, the operator will call the OCI A
 ```bash
 kubectl delete containerinstance my-container-instance
 ```
+
+## Idempotency and displayName
+
+Always set `displayName` on your `ContainerInstance` spec. OSOK's `GetContainerInstanceOcid`
+looks up existing instances by display name before creating a new one. Without this field,
+OSOK cannot find an existing instance and will create a new OCI Container Instance on every
+reconcile cycle, leaking quota.
+
+```yaml
+spec:
+  displayName: my-container-instance   # Required for idempotency
+  compartmentId: ocid1.compartment.oc1..xxx
+  # ...
+```
+
+## Garbage Collection
+
+When a container instance enters the `FAILED` state, OSOK creates a replacement but cannot
+automatically delete the failed instance (it is excluded from the active-instance lookup).
+The `gcPolicy` field controls how many historical instances are retained:
+
+```yaml
+spec:
+  displayName: my-container-instance
+  gcPolicy:
+    maxInstances: 3   # keep the 3 most recent instances; default 3
+```
+
+- **`maxInstances: 1`** — most quota-efficient: only the current active instance is kept.
+  Any instance beyond the first (oldest first) is deleted after a new one becomes active.
+- **`maxInstances: 3`** (default) — keeps up to 3 instances for debugging failed runs.
 
 ## Binding to an Existing Instance
 

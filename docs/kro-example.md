@@ -444,6 +444,12 @@ spec:
                 body: '{"status":"ok"}'
 
     # ── 17. Container Instance ────────────────────────────────────────────────
+    # displayName is required for idempotency: OSOK uses it to look up existing
+    # instances so that reconcile does not create a new instance on every cycle.
+    # gcPolicy (optional): controls how many historical instances are retained.
+    #   gcPolicy:
+    #     maxInstances: 3  # keep the 3 most recent instances; default 3
+    # Setting maxInstances: 1 is most quota-efficient (only the active instance).
     - id: containerInstance
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -453,6 +459,7 @@ spec:
         spec:
           compartmentId: ${schema.spec.compartmentId}
           availabilityDomain: ${schema.spec.availabilityDomain}
+          displayName: ${schema.metadata.name}-ci
           shape: CI.Standard.E4.Flex
           shapeConfig:
             ocpus: 1
