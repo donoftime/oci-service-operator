@@ -34,3 +34,18 @@ func ExportSetServiceGatewayClientForTest(m *OciServiceGatewayServiceManager, c 
 func ExportSetDrgClientForTest(m *OciDrgServiceManager, c VirtualNetworkClientInterface) {
 	m.ociClient = c
 }
+
+// ExportSetSecurityListClientForTest sets the OCI client on SecurityListServiceManager for unit testing.
+func ExportSetSecurityListClientForTest(m *OciSecurityListServiceManager, c VirtualNetworkClientInterface) {
+	m.ociClient = c
+}
+
+// ExportSetNSGClientForTest sets the OCI client on NetworkSecurityGroupServiceManager for unit testing.
+func ExportSetNSGClientForTest(m *OciNetworkSecurityGroupServiceManager, c VirtualNetworkClientInterface) {
+	m.ociClient = c
+}
+
+// ExportSetRouteTableClientForTest sets the OCI client on RouteTableServiceManager for unit testing.
+func ExportSetRouteTableClientForTest(m *OciRouteTableServiceManager, c VirtualNetworkClientInterface) {
+	m.ociClient = c
+}

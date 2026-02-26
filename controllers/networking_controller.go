@@ -170,3 +170,81 @@ func (r *OciDrgReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Complete(r)
 }
+
+// OciSecurityListReconciler reconciles an OciSecurityList object
+type OciSecurityListReconciler struct {
+	Reconciler *core.BaseReconciler
+}
+
+// +kubebuilder:rbac:groups=oci.oracle.com,resources=ocisecuritylists,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=oci.oracle.com,resources=ocisecuritylists/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=oci.oracle.com,resources=ocisecuritylists/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",resources=events,verbs=get;list;watch;create;update;patch;delete
+
+// Reconcile is part of the main kubernetes reconciliation loop which aims to
+// move the current state of the cluster closer to the desired state.
+func (r *OciSecurityListReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	sl := &ociv1beta1.OciSecurityList{}
+	return r.Reconciler.Reconcile(ctx, req, sl)
+}
+
+// SetupWithManager sets up the controller with the Manager.
+func (r *OciSecurityListReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&ociv1beta1.OciSecurityList{}).
+		WithOptions(controller.Options{MaxConcurrentReconciles: 3}).
+		WithEventFilter(predicate.GenerationChangedPredicate{}).
+		Complete(r)
+}
+
+// OciNetworkSecurityGroupReconciler reconciles an OciNetworkSecurityGroup object
+type OciNetworkSecurityGroupReconciler struct {
+	Reconciler *core.BaseReconciler
+}
+
+// +kubebuilder:rbac:groups=oci.oracle.com,resources=ocinetworksecuritygroups,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=oci.oracle.com,resources=ocinetworksecuritygroups/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=oci.oracle.com,resources=ocinetworksecuritygroups/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",resources=events,verbs=get;list;watch;create;update;patch;delete
+
+// Reconcile is part of the main kubernetes reconciliation loop which aims to
+// move the current state of the cluster closer to the desired state.
+func (r *OciNetworkSecurityGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	nsg := &ociv1beta1.OciNetworkSecurityGroup{}
+	return r.Reconciler.Reconcile(ctx, req, nsg)
+}
+
+// SetupWithManager sets up the controller with the Manager.
+func (r *OciNetworkSecurityGroupReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&ociv1beta1.OciNetworkSecurityGroup{}).
+		WithOptions(controller.Options{MaxConcurrentReconciles: 3}).
+		WithEventFilter(predicate.GenerationChangedPredicate{}).
+		Complete(r)
+}
+
+// OciRouteTableReconciler reconciles an OciRouteTable object
+type OciRouteTableReconciler struct {
+	Reconciler *core.BaseReconciler
+}
+
+// +kubebuilder:rbac:groups=oci.oracle.com,resources=ociroutetables,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=oci.oracle.com,resources=ociroutetables/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=oci.oracle.com,resources=ociroutetables/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",resources=events,verbs=get;list;watch;create;update;patch;delete
+
+// Reconcile is part of the main kubernetes reconciliation loop which aims to
+// move the current state of the cluster closer to the desired state.
+func (r *OciRouteTableReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	rt := &ociv1beta1.OciRouteTable{}
+	return r.Reconciler.Reconcile(ctx, req, rt)
+}
+
+// SetupWithManager sets up the controller with the Manager.
+func (r *OciRouteTableReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&ociv1beta1.OciRouteTable{}).
+		WithOptions(controller.Options{MaxConcurrentReconciles: 3}).
+		WithEventFilter(predicate.GenerationChangedPredicate{}).
+		Complete(r)
+}

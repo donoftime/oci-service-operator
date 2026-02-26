@@ -51,6 +51,24 @@ type VirtualNetworkClientInterface interface {
 	ListDrgs(ctx context.Context, request ocicore.ListDrgsRequest) (ocicore.ListDrgsResponse, error)
 	UpdateDrg(ctx context.Context, request ocicore.UpdateDrgRequest) (ocicore.UpdateDrgResponse, error)
 	DeleteDrg(ctx context.Context, request ocicore.DeleteDrgRequest) (ocicore.DeleteDrgResponse, error)
+	// Security List
+	CreateSecurityList(ctx context.Context, request ocicore.CreateSecurityListRequest) (ocicore.CreateSecurityListResponse, error)
+	GetSecurityList(ctx context.Context, request ocicore.GetSecurityListRequest) (ocicore.GetSecurityListResponse, error)
+	ListSecurityLists(ctx context.Context, request ocicore.ListSecurityListsRequest) (ocicore.ListSecurityListsResponse, error)
+	UpdateSecurityList(ctx context.Context, request ocicore.UpdateSecurityListRequest) (ocicore.UpdateSecurityListResponse, error)
+	DeleteSecurityList(ctx context.Context, request ocicore.DeleteSecurityListRequest) (ocicore.DeleteSecurityListResponse, error)
+	// Network Security Group
+	CreateNetworkSecurityGroup(ctx context.Context, request ocicore.CreateNetworkSecurityGroupRequest) (ocicore.CreateNetworkSecurityGroupResponse, error)
+	GetNetworkSecurityGroup(ctx context.Context, request ocicore.GetNetworkSecurityGroupRequest) (ocicore.GetNetworkSecurityGroupResponse, error)
+	ListNetworkSecurityGroups(ctx context.Context, request ocicore.ListNetworkSecurityGroupsRequest) (ocicore.ListNetworkSecurityGroupsResponse, error)
+	UpdateNetworkSecurityGroup(ctx context.Context, request ocicore.UpdateNetworkSecurityGroupRequest) (ocicore.UpdateNetworkSecurityGroupResponse, error)
+	DeleteNetworkSecurityGroup(ctx context.Context, request ocicore.DeleteNetworkSecurityGroupRequest) (ocicore.DeleteNetworkSecurityGroupResponse, error)
+	// Route Table
+	CreateRouteTable(ctx context.Context, request ocicore.CreateRouteTableRequest) (ocicore.CreateRouteTableResponse, error)
+	GetRouteTable(ctx context.Context, request ocicore.GetRouteTableRequest) (ocicore.GetRouteTableResponse, error)
+	ListRouteTables(ctx context.Context, request ocicore.ListRouteTablesRequest) (ocicore.ListRouteTablesResponse, error)
+	UpdateRouteTable(ctx context.Context, request ocicore.UpdateRouteTableRequest) (ocicore.UpdateRouteTableResponse, error)
+	DeleteRouteTable(ctx context.Context, request ocicore.DeleteRouteTableRequest) (ocicore.DeleteRouteTableResponse, error)
 }
 
 func getVirtualNetworkClient(provider common.ConfigurationProvider) (ocicore.VirtualNetworkClient, error) {
@@ -839,5 +857,492 @@ func (c *OciDrgServiceManager) DeleteDrg(ctx context.Context, drgId ociv1beta1.O
 	}
 
 	_, err = client.DeleteDrg(ctx, ocicore.DeleteDrgRequest{DrgId: common.String(string(drgId))})
+	return err
+}
+
+// getOCIClient returns the injected client if set, otherwise creates one from the provider.
+func (c *OciSecurityListServiceManager) getOCIClient() (VirtualNetworkClientInterface, error) {
+	if c.ociClient != nil {
+		return c.ociClient, nil
+	}
+	return getVirtualNetworkClient(c.Provider)
+}
+
+// getOCIClient returns the injected client if set, otherwise creates one from the provider.
+func (c *OciNetworkSecurityGroupServiceManager) getOCIClient() (VirtualNetworkClientInterface, error) {
+	if c.ociClient != nil {
+		return c.ociClient, nil
+	}
+	return getVirtualNetworkClient(c.Provider)
+}
+
+// getOCIClient returns the injected client if set, otherwise creates one from the provider.
+func (c *OciRouteTableServiceManager) getOCIClient() (VirtualNetworkClientInterface, error) {
+	if c.ociClient != nil {
+		return c.ociClient, nil
+	}
+	return getVirtualNetworkClient(c.Provider)
+}
+
+// --- Security List CRUD ---
+
+func buildIngressRules(rules []ociv1beta1.IngressSecurityRule) []ocicore.IngressSecurityRule {
+	result := make([]ocicore.IngressSecurityRule, len(rules))
+	for i, r := range rules {
+		rule := ocicore.IngressSecurityRule{
+			Protocol:    common.String(r.Protocol),
+			Source:      common.String(r.Source),
+			IsStateless: common.Bool(r.IsStateless),
+		}
+		if r.Description != "" {
+			rule.Description = common.String(r.Description)
+		}
+		if r.TcpOptions != nil {
+			tcpOpts := &ocicore.TcpOptions{}
+			if r.TcpOptions.DestinationPortRange != nil {
+				tcpOpts.DestinationPortRange = &ocicore.PortRange{
+					Min: common.Int(r.TcpOptions.DestinationPortRange.Min),
+					Max: common.Int(r.TcpOptions.DestinationPortRange.Max),
+				}
+			}
+			if r.TcpOptions.SourcePortRange != nil {
+				tcpOpts.SourcePortRange = &ocicore.PortRange{
+					Min: common.Int(r.TcpOptions.SourcePortRange.Min),
+					Max: common.Int(r.TcpOptions.SourcePortRange.Max),
+				}
+			}
+			rule.TcpOptions = tcpOpts
+		}
+		if r.UdpOptions != nil {
+			udpOpts := &ocicore.UdpOptions{}
+			if r.UdpOptions.DestinationPortRange != nil {
+				udpOpts.DestinationPortRange = &ocicore.PortRange{
+					Min: common.Int(r.UdpOptions.DestinationPortRange.Min),
+					Max: common.Int(r.UdpOptions.DestinationPortRange.Max),
+				}
+			}
+			if r.UdpOptions.SourcePortRange != nil {
+				udpOpts.SourcePortRange = &ocicore.PortRange{
+					Min: common.Int(r.UdpOptions.SourcePortRange.Min),
+					Max: common.Int(r.UdpOptions.SourcePortRange.Max),
+				}
+			}
+			rule.UdpOptions = udpOpts
+		}
+		result[i] = rule
+	}
+	return result
+}
+
+func buildEgressRules(rules []ociv1beta1.EgressSecurityRule) []ocicore.EgressSecurityRule {
+	result := make([]ocicore.EgressSecurityRule, len(rules))
+	for i, r := range rules {
+		rule := ocicore.EgressSecurityRule{
+			Protocol:    common.String(r.Protocol),
+			Destination: common.String(r.Destination),
+			IsStateless: common.Bool(r.IsStateless),
+		}
+		if r.Description != "" {
+			rule.Description = common.String(r.Description)
+		}
+		if r.TcpOptions != nil {
+			tcpOpts := &ocicore.TcpOptions{}
+			if r.TcpOptions.DestinationPortRange != nil {
+				tcpOpts.DestinationPortRange = &ocicore.PortRange{
+					Min: common.Int(r.TcpOptions.DestinationPortRange.Min),
+					Max: common.Int(r.TcpOptions.DestinationPortRange.Max),
+				}
+			}
+			if r.TcpOptions.SourcePortRange != nil {
+				tcpOpts.SourcePortRange = &ocicore.PortRange{
+					Min: common.Int(r.TcpOptions.SourcePortRange.Min),
+					Max: common.Int(r.TcpOptions.SourcePortRange.Max),
+				}
+			}
+			rule.TcpOptions = tcpOpts
+		}
+		if r.UdpOptions != nil {
+			udpOpts := &ocicore.UdpOptions{}
+			if r.UdpOptions.DestinationPortRange != nil {
+				udpOpts.DestinationPortRange = &ocicore.PortRange{
+					Min: common.Int(r.UdpOptions.DestinationPortRange.Min),
+					Max: common.Int(r.UdpOptions.DestinationPortRange.Max),
+				}
+			}
+			if r.UdpOptions.SourcePortRange != nil {
+				udpOpts.SourcePortRange = &ocicore.PortRange{
+					Min: common.Int(r.UdpOptions.SourcePortRange.Min),
+					Max: common.Int(r.UdpOptions.SourcePortRange.Max),
+				}
+			}
+			rule.UdpOptions = udpOpts
+		}
+		result[i] = rule
+	}
+	return result
+}
+
+// CreateSecurityList calls the OCI API to create a new Security List.
+func (c *OciSecurityListServiceManager) CreateSecurityList(ctx context.Context, sl ociv1beta1.OciSecurityList) (*ocicore.SecurityList, error) {
+	client, err := c.getOCIClient()
+	if err != nil {
+		return nil, err
+	}
+
+	c.Log.DebugLog("Creating OciSecurityList", "name", sl.Spec.DisplayName)
+
+	details := ocicore.CreateSecurityListDetails{
+		CompartmentId:        common.String(string(sl.Spec.CompartmentId)),
+		VcnId:                common.String(string(sl.Spec.VcnId)),
+		DisplayName:          common.String(sl.Spec.DisplayName),
+		IngressSecurityRules: buildIngressRules(sl.Spec.IngressSecurityRules),
+		EgressSecurityRules:  buildEgressRules(sl.Spec.EgressSecurityRules),
+		FreeformTags:         sl.Spec.FreeFormTags,
+	}
+	if sl.Spec.DefinedTags != nil {
+		details.DefinedTags = *util.ConvertToOciDefinedTags(&sl.Spec.DefinedTags)
+	}
+
+	resp, err := client.CreateSecurityList(ctx, ocicore.CreateSecurityListRequest{CreateSecurityListDetails: details})
+	if err != nil {
+		return nil, err
+	}
+	return &resp.SecurityList, nil
+}
+
+// GetSecurityList retrieves a Security List by OCID.
+func (c *OciSecurityListServiceManager) GetSecurityList(ctx context.Context, slId ociv1beta1.OCID) (*ocicore.SecurityList, error) {
+	client, err := c.getOCIClient()
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.GetSecurityList(ctx, ocicore.GetSecurityListRequest{SecurityListId: common.String(string(slId))})
+	if err != nil {
+		return nil, err
+	}
+	return &resp.SecurityList, nil
+}
+
+// GetSecurityListOcid looks up an existing Security List by display name and returns its OCID if found.
+func (c *OciSecurityListServiceManager) GetSecurityListOcid(ctx context.Context, sl ociv1beta1.OciSecurityList) (*ociv1beta1.OCID, error) {
+	client, err := c.getOCIClient()
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.ListSecurityLists(ctx, ocicore.ListSecurityListsRequest{
+		CompartmentId: common.String(string(sl.Spec.CompartmentId)),
+		VcnId:         common.String(string(sl.Spec.VcnId)),
+		DisplayName:   common.String(sl.Spec.DisplayName),
+		Limit:         common.Int(1),
+	})
+	if err != nil {
+		c.Log.ErrorLog(err, "Error listing Security Lists")
+		return nil, err
+	}
+
+	for _, item := range resp.Items {
+		state := string(item.LifecycleState)
+		if state == "AVAILABLE" || state == "PROVISIONING" {
+			c.Log.DebugLog(fmt.Sprintf("OciSecurityList %s exists with OCID %s", sl.Spec.DisplayName, *item.Id))
+			return (*ociv1beta1.OCID)(item.Id), nil
+		}
+	}
+
+	c.Log.DebugLog(fmt.Sprintf("OciSecurityList %s does not exist", sl.Spec.DisplayName))
+	return nil, nil
+}
+
+// UpdateSecurityList updates an existing Security List's display name, tags, and rules.
+func (c *OciSecurityListServiceManager) UpdateSecurityList(ctx context.Context, sl *ociv1beta1.OciSecurityList) error {
+	client, err := c.getOCIClient()
+	if err != nil {
+		return err
+	}
+
+	updateDetails := ocicore.UpdateSecurityListDetails{}
+	updateNeeded := false
+
+	if sl.Spec.DisplayName != "" {
+		updateDetails.DisplayName = common.String(sl.Spec.DisplayName)
+		updateNeeded = true
+	}
+	if len(sl.Spec.FreeFormTags) > 0 {
+		updateDetails.FreeformTags = sl.Spec.FreeFormTags
+		updateNeeded = true
+	}
+
+	if !updateNeeded {
+		return nil
+	}
+
+	_, err = client.UpdateSecurityList(ctx, ocicore.UpdateSecurityListRequest{
+		SecurityListId:            common.String(string(sl.Status.OsokStatus.Ocid)),
+		UpdateSecurityListDetails: updateDetails,
+	})
+	return err
+}
+
+// DeleteSecurityList deletes the Security List for the given OCID.
+func (c *OciSecurityListServiceManager) DeleteSecurityList(ctx context.Context, slId ociv1beta1.OCID) error {
+	client, err := c.getOCIClient()
+	if err != nil {
+		return err
+	}
+
+	_, err = client.DeleteSecurityList(ctx, ocicore.DeleteSecurityListRequest{SecurityListId: common.String(string(slId))})
+	return err
+}
+
+// --- Network Security Group CRUD ---
+
+// CreateNetworkSecurityGroup calls the OCI API to create a new NSG.
+func (c *OciNetworkSecurityGroupServiceManager) CreateNetworkSecurityGroup(ctx context.Context, nsg ociv1beta1.OciNetworkSecurityGroup) (*ocicore.NetworkSecurityGroup, error) {
+	client, err := c.getOCIClient()
+	if err != nil {
+		return nil, err
+	}
+
+	c.Log.DebugLog("Creating OciNetworkSecurityGroup", "name", nsg.Spec.DisplayName)
+
+	details := ocicore.CreateNetworkSecurityGroupDetails{
+		CompartmentId: common.String(string(nsg.Spec.CompartmentId)),
+		VcnId:         common.String(string(nsg.Spec.VcnId)),
+		DisplayName:   common.String(nsg.Spec.DisplayName),
+		FreeformTags:  nsg.Spec.FreeFormTags,
+	}
+	if nsg.Spec.DefinedTags != nil {
+		details.DefinedTags = *util.ConvertToOciDefinedTags(&nsg.Spec.DefinedTags)
+	}
+
+	resp, err := client.CreateNetworkSecurityGroup(ctx, ocicore.CreateNetworkSecurityGroupRequest{CreateNetworkSecurityGroupDetails: details})
+	if err != nil {
+		return nil, err
+	}
+	return &resp.NetworkSecurityGroup, nil
+}
+
+// GetNetworkSecurityGroup retrieves an NSG by OCID.
+func (c *OciNetworkSecurityGroupServiceManager) GetNetworkSecurityGroup(ctx context.Context, nsgId ociv1beta1.OCID) (*ocicore.NetworkSecurityGroup, error) {
+	client, err := c.getOCIClient()
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.GetNetworkSecurityGroup(ctx, ocicore.GetNetworkSecurityGroupRequest{NetworkSecurityGroupId: common.String(string(nsgId))})
+	if err != nil {
+		return nil, err
+	}
+	return &resp.NetworkSecurityGroup, nil
+}
+
+// GetNetworkSecurityGroupOcid looks up an existing NSG by display name and returns its OCID if found.
+func (c *OciNetworkSecurityGroupServiceManager) GetNetworkSecurityGroupOcid(ctx context.Context, nsg ociv1beta1.OciNetworkSecurityGroup) (*ociv1beta1.OCID, error) {
+	client, err := c.getOCIClient()
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.ListNetworkSecurityGroups(ctx, ocicore.ListNetworkSecurityGroupsRequest{
+		CompartmentId: common.String(string(nsg.Spec.CompartmentId)),
+		VcnId:         common.String(string(nsg.Spec.VcnId)),
+		DisplayName:   common.String(nsg.Spec.DisplayName),
+		Limit:         common.Int(1),
+	})
+	if err != nil {
+		c.Log.ErrorLog(err, "Error listing Network Security Groups")
+		return nil, err
+	}
+
+	for _, item := range resp.Items {
+		state := string(item.LifecycleState)
+		if state == "AVAILABLE" || state == "PROVISIONING" {
+			c.Log.DebugLog(fmt.Sprintf("OciNetworkSecurityGroup %s exists with OCID %s", nsg.Spec.DisplayName, *item.Id))
+			return (*ociv1beta1.OCID)(item.Id), nil
+		}
+	}
+
+	c.Log.DebugLog(fmt.Sprintf("OciNetworkSecurityGroup %s does not exist", nsg.Spec.DisplayName))
+	return nil, nil
+}
+
+// UpdateNetworkSecurityGroup updates an existing NSG's display name and tags.
+func (c *OciNetworkSecurityGroupServiceManager) UpdateNetworkSecurityGroup(ctx context.Context, nsg *ociv1beta1.OciNetworkSecurityGroup) error {
+	client, err := c.getOCIClient()
+	if err != nil {
+		return err
+	}
+
+	existing, err := c.GetNetworkSecurityGroup(ctx, nsg.Status.OsokStatus.Ocid)
+	if err != nil {
+		return err
+	}
+
+	updateDetails := ocicore.UpdateNetworkSecurityGroupDetails{}
+	updateNeeded := false
+
+	if nsg.Spec.DisplayName != "" && (existing.DisplayName == nil || *existing.DisplayName != nsg.Spec.DisplayName) {
+		updateDetails.DisplayName = common.String(nsg.Spec.DisplayName)
+		updateNeeded = true
+	}
+	if len(nsg.Spec.FreeFormTags) > 0 {
+		updateDetails.FreeformTags = nsg.Spec.FreeFormTags
+		updateNeeded = true
+	}
+
+	if !updateNeeded {
+		return nil
+	}
+
+	_, err = client.UpdateNetworkSecurityGroup(ctx, ocicore.UpdateNetworkSecurityGroupRequest{
+		NetworkSecurityGroupId:            common.String(string(nsg.Status.OsokStatus.Ocid)),
+		UpdateNetworkSecurityGroupDetails: updateDetails,
+	})
+	return err
+}
+
+// DeleteNetworkSecurityGroup deletes the NSG for the given OCID.
+func (c *OciNetworkSecurityGroupServiceManager) DeleteNetworkSecurityGroup(ctx context.Context, nsgId ociv1beta1.OCID) error {
+	client, err := c.getOCIClient()
+	if err != nil {
+		return err
+	}
+
+	_, err = client.DeleteNetworkSecurityGroup(ctx, ocicore.DeleteNetworkSecurityGroupRequest{NetworkSecurityGroupId: common.String(string(nsgId))})
+	return err
+}
+
+// --- Route Table CRUD ---
+
+func buildRouteRules(rules []ociv1beta1.RouteRule) []ocicore.RouteRule {
+	result := make([]ocicore.RouteRule, len(rules))
+	for i, r := range rules {
+		destType := r.DestinationType
+		if destType == "" {
+			destType = "CIDR_BLOCK"
+		}
+		rule := ocicore.RouteRule{
+			NetworkEntityId: common.String(r.NetworkEntityId),
+			Destination:     common.String(r.Destination),
+			DestinationType: ocicore.RouteRuleDestinationTypeEnum(destType),
+		}
+		if r.Description != "" {
+			rule.Description = common.String(r.Description)
+		}
+		result[i] = rule
+	}
+	return result
+}
+
+// CreateRouteTable calls the OCI API to create a new Route Table.
+func (c *OciRouteTableServiceManager) CreateRouteTable(ctx context.Context, rt ociv1beta1.OciRouteTable) (*ocicore.RouteTable, error) {
+	client, err := c.getOCIClient()
+	if err != nil {
+		return nil, err
+	}
+
+	c.Log.DebugLog("Creating OciRouteTable", "name", rt.Spec.DisplayName)
+
+	details := ocicore.CreateRouteTableDetails{
+		CompartmentId: common.String(string(rt.Spec.CompartmentId)),
+		VcnId:         common.String(string(rt.Spec.VcnId)),
+		DisplayName:   common.String(rt.Spec.DisplayName),
+		RouteRules:    buildRouteRules(rt.Spec.RouteRules),
+		FreeformTags:  rt.Spec.FreeFormTags,
+	}
+	if rt.Spec.DefinedTags != nil {
+		details.DefinedTags = *util.ConvertToOciDefinedTags(&rt.Spec.DefinedTags)
+	}
+
+	resp, err := client.CreateRouteTable(ctx, ocicore.CreateRouteTableRequest{CreateRouteTableDetails: details})
+	if err != nil {
+		return nil, err
+	}
+	return &resp.RouteTable, nil
+}
+
+// GetRouteTable retrieves a Route Table by OCID.
+func (c *OciRouteTableServiceManager) GetRouteTable(ctx context.Context, rtId ociv1beta1.OCID) (*ocicore.RouteTable, error) {
+	client, err := c.getOCIClient()
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.GetRouteTable(ctx, ocicore.GetRouteTableRequest{RtId: common.String(string(rtId))})
+	if err != nil {
+		return nil, err
+	}
+	return &resp.RouteTable, nil
+}
+
+// GetRouteTableOcid looks up an existing Route Table by display name and returns its OCID if found.
+func (c *OciRouteTableServiceManager) GetRouteTableOcid(ctx context.Context, rt ociv1beta1.OciRouteTable) (*ociv1beta1.OCID, error) {
+	client, err := c.getOCIClient()
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.ListRouteTables(ctx, ocicore.ListRouteTablesRequest{
+		CompartmentId: common.String(string(rt.Spec.CompartmentId)),
+		VcnId:         common.String(string(rt.Spec.VcnId)),
+		DisplayName:   common.String(rt.Spec.DisplayName),
+		Limit:         common.Int(1),
+	})
+	if err != nil {
+		c.Log.ErrorLog(err, "Error listing Route Tables")
+		return nil, err
+	}
+
+	for _, item := range resp.Items {
+		state := string(item.LifecycleState)
+		if state == "AVAILABLE" || state == "PROVISIONING" {
+			c.Log.DebugLog(fmt.Sprintf("OciRouteTable %s exists with OCID %s", rt.Spec.DisplayName, *item.Id))
+			return (*ociv1beta1.OCID)(item.Id), nil
+		}
+	}
+
+	c.Log.DebugLog(fmt.Sprintf("OciRouteTable %s does not exist", rt.Spec.DisplayName))
+	return nil, nil
+}
+
+// UpdateRouteTable updates an existing Route Table's display name, tags, and route rules.
+func (c *OciRouteTableServiceManager) UpdateRouteTable(ctx context.Context, rt *ociv1beta1.OciRouteTable) error {
+	client, err := c.getOCIClient()
+	if err != nil {
+		return err
+	}
+
+	updateDetails := ocicore.UpdateRouteTableDetails{}
+	updateNeeded := false
+
+	if rt.Spec.DisplayName != "" {
+		updateDetails.DisplayName = common.String(rt.Spec.DisplayName)
+		updateNeeded = true
+	}
+	if len(rt.Spec.FreeFormTags) > 0 {
+		updateDetails.FreeformTags = rt.Spec.FreeFormTags
+		updateNeeded = true
+	}
+
+	if !updateNeeded {
+		return nil
+	}
+
+	_, err = client.UpdateRouteTable(ctx, ocicore.UpdateRouteTableRequest{
+		RtId:                    common.String(string(rt.Status.OsokStatus.Ocid)),
+		UpdateRouteTableDetails: updateDetails,
+	})
+	return err
+}
+
+// DeleteRouteTable deletes the Route Table for the given OCID.
+func (c *OciRouteTableServiceManager) DeleteRouteTable(ctx context.Context, rtId ociv1beta1.OCID) error {
+	client, err := c.getOCIClient()
+	if err != nil {
+		return err
+	}
+
+	_, err = client.DeleteRouteTable(ctx, ocicore.DeleteRouteTableRequest{RtId: common.String(string(rtId))})
 	return err
 }

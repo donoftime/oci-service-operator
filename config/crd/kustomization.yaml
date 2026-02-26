@@ -29,6 +29,9 @@ resources:
 - bases/oci.oracle.com_ocinatgateways.yaml
 - bases/oci.oracle.com_ociservicegateways.yaml
 - bases/oci.oracle.com_ocidrgs.yaml
+- bases/oci.oracle.com_ocisecuritylists.yaml
+- bases/oci.oracle.com_ocinetworksecuritygroups.yaml
+- bases/oci.oracle.com_ociroutetables.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patchesStrategicMerge:

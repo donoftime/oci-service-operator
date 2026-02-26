@@ -494,6 +494,51 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err = (&controllers.OciSecurityListReconciler{
+		Reconciler: &core.BaseReconciler{
+			Client:             mgr.GetClient(),
+			OSOKServiceManager: ocinetworking.NewOciSecurityListServiceManager(provider, credClient, scheme, loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("service-manager").WithName("OciSecurityList")}),
+			Finalizer:          core.NewBaseFinalizer(mgr.GetClient(), ctrl.Log),
+			Log:                loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("controllers").WithName("OciSecurityList")},
+			Metrics:            metricsClient,
+			Recorder:           mgr.GetEventRecorderFor("OciSecurityList"),
+			Scheme:             scheme,
+		},
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.ErrorLog(err, "unable to create controller", "controller", "OciSecurityList")
+		os.Exit(1)
+	}
+
+	if err = (&controllers.OciNetworkSecurityGroupReconciler{
+		Reconciler: &core.BaseReconciler{
+			Client:             mgr.GetClient(),
+			OSOKServiceManager: ocinetworking.NewOciNetworkSecurityGroupServiceManager(provider, credClient, scheme, loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("service-manager").WithName("OciNetworkSecurityGroup")}),
+			Finalizer:          core.NewBaseFinalizer(mgr.GetClient(), ctrl.Log),
+			Log:                loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("controllers").WithName("OciNetworkSecurityGroup")},
+			Metrics:            metricsClient,
+			Recorder:           mgr.GetEventRecorderFor("OciNetworkSecurityGroup"),
+			Scheme:             scheme,
+		},
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.ErrorLog(err, "unable to create controller", "controller", "OciNetworkSecurityGroup")
+		os.Exit(1)
+	}
+
+	if err = (&controllers.OciRouteTableReconciler{
+		Reconciler: &core.BaseReconciler{
+			Client:             mgr.GetClient(),
+			OSOKServiceManager: ocinetworking.NewOciRouteTableServiceManager(provider, credClient, scheme, loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("service-manager").WithName("OciRouteTable")}),
+			Finalizer:          core.NewBaseFinalizer(mgr.GetClient(), ctrl.Log),
+			Log:                loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("controllers").WithName("OciRouteTable")},
+			Metrics:            metricsClient,
+			Recorder:           mgr.GetEventRecorderFor("OciRouteTable"),
+			Scheme:             scheme,
+		},
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.ErrorLog(err, "unable to create controller", "controller", "OciRouteTable")
+		os.Exit(1)
+	}
+
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("health", healthz.Ping); err != nil {

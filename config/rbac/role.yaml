@@ -34,7 +34,10 @@ rules:
   - ocidrgs
   - ociinternetgateways
   - ocinatgateways
+  - ocinetworksecuritygroups
   - ociqueues
+  - ociroutetables
+  - ocisecuritylists
   - ociservicegateways
   - ocisubnets
   - ocivaults
@@ -68,7 +71,10 @@ rules:
   - ocidrgs/finalizers
   - ociinternetgateways/finalizers
   - ocinatgateways/finalizers
+  - ocinetworksecuritygroups/finalizers
   - ociqueues/finalizers
+  - ociroutetables/finalizers
+  - ocisecuritylists/finalizers
   - ociservicegateways/finalizers
   - ocisubnets/finalizers
   - ocivaults/finalizers
@@ -96,7 +102,10 @@ rules:
   - ocidrgs/status
   - ociinternetgateways/status
   - ocinatgateways/status
+  - ocinetworksecuritygroups/status
   - ociqueues/status
+  - ociroutetables/status
+  - ocisecuritylists/status
   - ociservicegateways/status
   - ocisubnets/status
   - ocivaults/status

@@ -1,0 +1,169 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.0
+  name: ociroutetables.oci.oracle.com
+spec:
+  group: oci.oracle.com
+  names:
+    kind: OciRouteTable
+    listKind: OciRouteTableList
+    plural: ociroutetables
+    singular: ociroutetable
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.displayName
+      name: DisplayName
+      priority: 1
+      type: string
+    - description: status of the OciRouteTable
+      jsonPath: .status.status.conditions[-1].type
+      name: Status
+      type: string
+    - description: Ocid of the OciRouteTable
+      jsonPath: .status.status.ocid
+      name: Ocid
+      priority: 1
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: OciRouteTable is the Schema for the ociroutetables API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: OciRouteTableSpec defines the desired state of OciRouteTable
+            properties:
+              compartmentId:
+                description: CompartmentId is the OCID of the compartment
+                maxLength: 255
+                minLength: 1
+                type: string
+              definedTags:
+                additionalProperties:
+                  additionalProperties:
+                    type: string
+                  type: object
+                type: object
+              displayName:
+                description: DisplayName is a user-friendly name for the Route Table
+                type: string
+              freeformTags:
+                additionalProperties:
+                  type: string
+                type: object
+              id:
+                description: RouteTableId is the OCID of an existing Route Table to
+                  bind to (optional)
+                maxLength: 255
+                minLength: 1
+                type: string
+              routeRules:
+                description: RouteRules are the routing rules for this table
+                items:
+                  description: RouteRule defines a single route in a route table
+                  properties:
+                    description:
+                      description: Description is an optional description
+                      type: string
+                    destination:
+                      description: Destination is the CIDR, e.g. "0.0.0.0/0"
+                      type: string
+                    destinationType:
+                      description: DestinationType is "CIDR_BLOCK" (default) or "SERVICE_CIDR_BLOCK"
+                      type: string
+                    networkEntityId:
+                      description: NetworkEntityId is the OCID of the gateway (IGW,
+                        NGW, etc.)
+                      type: string
+                  required:
+                  - destination
+                  - networkEntityId
+                  type: object
+                type: array
+              vcnId:
+                description: VcnId is the OCID of the VCN that contains this Route
+                  Table
+                maxLength: 255
+                minLength: 1
+                type: string
+            required:
+            - compartmentId
+            - displayName
+            - vcnId
+            type: object
+          status:
+            description: OciRouteTableStatus defines the observed state of OciRouteTable
+            properties:
+              status:
+                properties:
+                  conditions:
+                    items:
+                      properties:
+                        lastTransitionTime:
+                          format: date-time
+                          type: string
+                        message:
+                          type: string
+                        reason:
+                          type: string
+                        status:
+                          type: string
+                        type:
+                          type: string
+                      required:
+                      - status
+                      - type
+                      type: object
+                    type: array
+                  createdAt:
+                    format: date-time
+                    type: string
+                  deletedAt:
+                    format: date-time
+                    type: string
+                  message:
+                    type: string
+                  ocid:
+                    maxLength: 255
+                    minLength: 1
+                    type: string
+                  reason:
+                    type: string
+                  requestedAt:
+                    format: date-time
+                    type: string
+                  updatedAt:
+                    format: date-time
+                    type: string
+                type: object
+            required:
+            - status
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

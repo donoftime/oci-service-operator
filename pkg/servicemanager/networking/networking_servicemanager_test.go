@@ -58,6 +58,24 @@ type fakeVirtualNetworkClient struct {
 	listDrgsFn  func(ctx context.Context, req ocicore.ListDrgsRequest) (ocicore.ListDrgsResponse, error)
 	updateDrgFn func(ctx context.Context, req ocicore.UpdateDrgRequest) (ocicore.UpdateDrgResponse, error)
 	deleteDrgFn func(ctx context.Context, req ocicore.DeleteDrgRequest) (ocicore.DeleteDrgResponse, error)
+	// Security List
+	createSecurityListFn func(ctx context.Context, req ocicore.CreateSecurityListRequest) (ocicore.CreateSecurityListResponse, error)
+	getSecurityListFn    func(ctx context.Context, req ocicore.GetSecurityListRequest) (ocicore.GetSecurityListResponse, error)
+	listSecurityListsFn  func(ctx context.Context, req ocicore.ListSecurityListsRequest) (ocicore.ListSecurityListsResponse, error)
+	updateSecurityListFn func(ctx context.Context, req ocicore.UpdateSecurityListRequest) (ocicore.UpdateSecurityListResponse, error)
+	deleteSecurityListFn func(ctx context.Context, req ocicore.DeleteSecurityListRequest) (ocicore.DeleteSecurityListResponse, error)
+	// Network Security Group
+	createNetworkSecurityGroupFn func(ctx context.Context, req ocicore.CreateNetworkSecurityGroupRequest) (ocicore.CreateNetworkSecurityGroupResponse, error)
+	getNetworkSecurityGroupFn    func(ctx context.Context, req ocicore.GetNetworkSecurityGroupRequest) (ocicore.GetNetworkSecurityGroupResponse, error)
+	listNetworkSecurityGroupsFn  func(ctx context.Context, req ocicore.ListNetworkSecurityGroupsRequest) (ocicore.ListNetworkSecurityGroupsResponse, error)
+	updateNetworkSecurityGroupFn func(ctx context.Context, req ocicore.UpdateNetworkSecurityGroupRequest) (ocicore.UpdateNetworkSecurityGroupResponse, error)
+	deleteNetworkSecurityGroupFn func(ctx context.Context, req ocicore.DeleteNetworkSecurityGroupRequest) (ocicore.DeleteNetworkSecurityGroupResponse, error)
+	// Route Table
+	createRouteTableFn func(ctx context.Context, req ocicore.CreateRouteTableRequest) (ocicore.CreateRouteTableResponse, error)
+	getRouteTableFn    func(ctx context.Context, req ocicore.GetRouteTableRequest) (ocicore.GetRouteTableResponse, error)
+	listRouteTablesFn  func(ctx context.Context, req ocicore.ListRouteTablesRequest) (ocicore.ListRouteTablesResponse, error)
+	updateRouteTableFn func(ctx context.Context, req ocicore.UpdateRouteTableRequest) (ocicore.UpdateRouteTableResponse, error)
+	deleteRouteTableFn func(ctx context.Context, req ocicore.DeleteRouteTableRequest) (ocicore.DeleteRouteTableResponse, error)
 }
 
 func (f *fakeVirtualNetworkClient) CreateVcn(ctx context.Context, req ocicore.CreateVcnRequest) (ocicore.CreateVcnResponse, error) {
@@ -276,6 +294,117 @@ func (f *fakeVirtualNetworkClient) DeleteDrg(ctx context.Context, req ocicore.De
 		return f.deleteDrgFn(ctx, req)
 	}
 	return ocicore.DeleteDrgResponse{}, nil
+}
+
+// Security List stubs
+
+func (f *fakeVirtualNetworkClient) CreateSecurityList(ctx context.Context, req ocicore.CreateSecurityListRequest) (ocicore.CreateSecurityListResponse, error) {
+	if f.createSecurityListFn != nil {
+		return f.createSecurityListFn(ctx, req)
+	}
+	return ocicore.CreateSecurityListResponse{SecurityList: ocicore.SecurityList{Id: common.String("ocid1.securitylist.oc1..new"), LifecycleState: ocicore.SecurityListLifecycleStateAvailable}}, nil
+}
+
+func (f *fakeVirtualNetworkClient) GetSecurityList(ctx context.Context, req ocicore.GetSecurityListRequest) (ocicore.GetSecurityListResponse, error) {
+	if f.getSecurityListFn != nil {
+		return f.getSecurityListFn(ctx, req)
+	}
+	return ocicore.GetSecurityListResponse{}, nil
+}
+
+func (f *fakeVirtualNetworkClient) ListSecurityLists(ctx context.Context, req ocicore.ListSecurityListsRequest) (ocicore.ListSecurityListsResponse, error) {
+	if f.listSecurityListsFn != nil {
+		return f.listSecurityListsFn(ctx, req)
+	}
+	return ocicore.ListSecurityListsResponse{}, nil
+}
+
+func (f *fakeVirtualNetworkClient) UpdateSecurityList(ctx context.Context, req ocicore.UpdateSecurityListRequest) (ocicore.UpdateSecurityListResponse, error) {
+	if f.updateSecurityListFn != nil {
+		return f.updateSecurityListFn(ctx, req)
+	}
+	return ocicore.UpdateSecurityListResponse{}, nil
+}
+
+func (f *fakeVirtualNetworkClient) DeleteSecurityList(ctx context.Context, req ocicore.DeleteSecurityListRequest) (ocicore.DeleteSecurityListResponse, error) {
+	if f.deleteSecurityListFn != nil {
+		return f.deleteSecurityListFn(ctx, req)
+	}
+	return ocicore.DeleteSecurityListResponse{}, nil
+}
+
+// Network Security Group stubs
+
+func (f *fakeVirtualNetworkClient) CreateNetworkSecurityGroup(ctx context.Context, req ocicore.CreateNetworkSecurityGroupRequest) (ocicore.CreateNetworkSecurityGroupResponse, error) {
+	if f.createNetworkSecurityGroupFn != nil {
+		return f.createNetworkSecurityGroupFn(ctx, req)
+	}
+	return ocicore.CreateNetworkSecurityGroupResponse{NetworkSecurityGroup: ocicore.NetworkSecurityGroup{Id: common.String("ocid1.networksecuritygroup.oc1..new"), LifecycleState: ocicore.NetworkSecurityGroupLifecycleStateAvailable}}, nil
+}
+
+func (f *fakeVirtualNetworkClient) GetNetworkSecurityGroup(ctx context.Context, req ocicore.GetNetworkSecurityGroupRequest) (ocicore.GetNetworkSecurityGroupResponse, error) {
+	if f.getNetworkSecurityGroupFn != nil {
+		return f.getNetworkSecurityGroupFn(ctx, req)
+	}
+	return ocicore.GetNetworkSecurityGroupResponse{}, nil
+}
+
+func (f *fakeVirtualNetworkClient) ListNetworkSecurityGroups(ctx context.Context, req ocicore.ListNetworkSecurityGroupsRequest) (ocicore.ListNetworkSecurityGroupsResponse, error) {
+	if f.listNetworkSecurityGroupsFn != nil {
+		return f.listNetworkSecurityGroupsFn(ctx, req)
+	}
+	return ocicore.ListNetworkSecurityGroupsResponse{}, nil
+}
+
+func (f *fakeVirtualNetworkClient) UpdateNetworkSecurityGroup(ctx context.Context, req ocicore.UpdateNetworkSecurityGroupRequest) (ocicore.UpdateNetworkSecurityGroupResponse, error) {
+	if f.updateNetworkSecurityGroupFn != nil {
+		return f.updateNetworkSecurityGroupFn(ctx, req)
+	}
+	return ocicore.UpdateNetworkSecurityGroupResponse{}, nil
+}
+
+func (f *fakeVirtualNetworkClient) DeleteNetworkSecurityGroup(ctx context.Context, req ocicore.DeleteNetworkSecurityGroupRequest) (ocicore.DeleteNetworkSecurityGroupResponse, error) {
+	if f.deleteNetworkSecurityGroupFn != nil {
+		return f.deleteNetworkSecurityGroupFn(ctx, req)
+	}
+	return ocicore.DeleteNetworkSecurityGroupResponse{}, nil
+}
+
+// Route Table stubs
+
+func (f *fakeVirtualNetworkClient) CreateRouteTable(ctx context.Context, req ocicore.CreateRouteTableRequest) (ocicore.CreateRouteTableResponse, error) {
+	if f.createRouteTableFn != nil {
+		return f.createRouteTableFn(ctx, req)
+	}
+	return ocicore.CreateRouteTableResponse{RouteTable: ocicore.RouteTable{Id: common.String("ocid1.routetable.oc1..new"), LifecycleState: ocicore.RouteTableLifecycleStateAvailable}}, nil
+}
+
+func (f *fakeVirtualNetworkClient) GetRouteTable(ctx context.Context, req ocicore.GetRouteTableRequest) (ocicore.GetRouteTableResponse, error) {
+	if f.getRouteTableFn != nil {
+		return f.getRouteTableFn(ctx, req)
+	}
+	return ocicore.GetRouteTableResponse{}, nil
+}
+
+func (f *fakeVirtualNetworkClient) ListRouteTables(ctx context.Context, req ocicore.ListRouteTablesRequest) (ocicore.ListRouteTablesResponse, error) {
+	if f.listRouteTablesFn != nil {
+		return f.listRouteTablesFn(ctx, req)
+	}
+	return ocicore.ListRouteTablesResponse{}, nil
+}
+
+func (f *fakeVirtualNetworkClient) UpdateRouteTable(ctx context.Context, req ocicore.UpdateRouteTableRequest) (ocicore.UpdateRouteTableResponse, error) {
+	if f.updateRouteTableFn != nil {
+		return f.updateRouteTableFn(ctx, req)
+	}
+	return ocicore.UpdateRouteTableResponse{}, nil
+}
+
+func (f *fakeVirtualNetworkClient) DeleteRouteTable(ctx context.Context, req ocicore.DeleteRouteTableRequest) (ocicore.DeleteRouteTableResponse, error) {
+	if f.deleteRouteTableFn != nil {
+		return f.deleteRouteTableFn(ctx, req)
+	}
+	return ocicore.DeleteRouteTableResponse{}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -1286,6 +1415,289 @@ func TestDrg_Delete_Succeeds(t *testing.T) {
 	drg.Status.OsokStatus.Ocid = "ocid1.drg.oc1..del"
 
 	done, err := mgr.Delete(context.Background(), drg)
+	assert.NoError(t, err)
+	assert.True(t, done)
+	assert.True(t, deleteCalled)
+}
+
+// ---------------------------------------------------------------------------
+// Helper constructors for new service managers
+// ---------------------------------------------------------------------------
+
+func securityListMgrWithFake(fake *fakeVirtualNetworkClient) *OciSecurityListServiceManager {
+	mgr := NewOciSecurityListServiceManager(emptyProvider(), nil, nil, defaultLog())
+	ExportSetSecurityListClientForTest(mgr, fake)
+	return mgr
+}
+
+func nsgMgrWithFake(fake *fakeVirtualNetworkClient) *OciNetworkSecurityGroupServiceManager {
+	mgr := NewOciNetworkSecurityGroupServiceManager(emptyProvider(), nil, nil, defaultLog())
+	ExportSetNSGClientForTest(mgr, fake)
+	return mgr
+}
+
+func routeTableMgrWithFake(fake *fakeVirtualNetworkClient) *OciRouteTableServiceManager {
+	mgr := NewOciRouteTableServiceManager(emptyProvider(), nil, nil, defaultLog())
+	ExportSetRouteTableClientForTest(mgr, fake)
+	return mgr
+}
+
+// ---------------------------------------------------------------------------
+// SecurityList tests
+// ---------------------------------------------------------------------------
+
+func TestCreateOrUpdate_SecurityList_CreatesNew(t *testing.T) {
+	slID := "ocid1.securitylist.oc1..created"
+	fake := &fakeVirtualNetworkClient{
+		listSecurityListsFn: func(_ context.Context, _ ocicore.ListSecurityListsRequest) (ocicore.ListSecurityListsResponse, error) {
+			return ocicore.ListSecurityListsResponse{Items: []ocicore.SecurityList{}}, nil
+		},
+		createSecurityListFn: func(_ context.Context, _ ocicore.CreateSecurityListRequest) (ocicore.CreateSecurityListResponse, error) {
+			return ocicore.CreateSecurityListResponse{
+				SecurityList: ocicore.SecurityList{
+					Id:             common.String(slID),
+					DisplayName:    common.String("new-sl"),
+					LifecycleState: ocicore.SecurityListLifecycleStateAvailable,
+				},
+			}, nil
+		},
+	}
+	mgr := securityListMgrWithFake(fake)
+
+	sl := &ociv1beta1.OciSecurityList{}
+	sl.Name = "new-sl"
+	sl.Namespace = "default"
+	sl.Spec.DisplayName = "new-sl"
+	sl.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+	sl.Spec.VcnId = "ocid1.vcn.oc1..xxx"
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), sl, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.Equal(t, ociv1beta1.OCID(slID), sl.Status.OsokStatus.Ocid)
+}
+
+func TestCreateOrUpdate_SecurityList_FindsExisting(t *testing.T) {
+	slID := "ocid1.securitylist.oc1..existing"
+	fake := &fakeVirtualNetworkClient{
+		listSecurityListsFn: func(_ context.Context, _ ocicore.ListSecurityListsRequest) (ocicore.ListSecurityListsResponse, error) {
+			return ocicore.ListSecurityListsResponse{
+				Items: []ocicore.SecurityList{
+					{Id: common.String(slID), DisplayName: common.String("existing-sl"), LifecycleState: ocicore.SecurityListLifecycleStateAvailable},
+				},
+			}, nil
+		},
+		getSecurityListFn: func(_ context.Context, _ ocicore.GetSecurityListRequest) (ocicore.GetSecurityListResponse, error) {
+			return ocicore.GetSecurityListResponse{
+				SecurityList: ocicore.SecurityList{
+					Id:             common.String(slID),
+					DisplayName:    common.String("existing-sl"),
+					LifecycleState: ocicore.SecurityListLifecycleStateAvailable,
+				},
+			}, nil
+		},
+	}
+	mgr := securityListMgrWithFake(fake)
+
+	sl := &ociv1beta1.OciSecurityList{}
+	sl.Spec.DisplayName = "existing-sl"
+	sl.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+	sl.Spec.VcnId = "ocid1.vcn.oc1..xxx"
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), sl, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.Equal(t, ociv1beta1.OCID(slID), sl.Status.OsokStatus.Ocid)
+}
+
+func TestDelete_SecurityList_Succeeds(t *testing.T) {
+	var deleteCalled bool
+	fake := &fakeVirtualNetworkClient{
+		deleteSecurityListFn: func(_ context.Context, _ ocicore.DeleteSecurityListRequest) (ocicore.DeleteSecurityListResponse, error) {
+			deleteCalled = true
+			return ocicore.DeleteSecurityListResponse{}, nil
+		},
+	}
+	mgr := securityListMgrWithFake(fake)
+
+	sl := &ociv1beta1.OciSecurityList{}
+	sl.Status.OsokStatus.Ocid = "ocid1.securitylist.oc1..del"
+
+	done, err := mgr.Delete(context.Background(), sl)
+	assert.NoError(t, err)
+	assert.True(t, done)
+	assert.True(t, deleteCalled)
+}
+
+// ---------------------------------------------------------------------------
+// NetworkSecurityGroup tests
+// ---------------------------------------------------------------------------
+
+func TestCreateOrUpdate_NSG_CreatesNew(t *testing.T) {
+	nsgID := "ocid1.networksecuritygroup.oc1..created"
+	fake := &fakeVirtualNetworkClient{
+		listNetworkSecurityGroupsFn: func(_ context.Context, _ ocicore.ListNetworkSecurityGroupsRequest) (ocicore.ListNetworkSecurityGroupsResponse, error) {
+			return ocicore.ListNetworkSecurityGroupsResponse{Items: []ocicore.NetworkSecurityGroup{}}, nil
+		},
+		createNetworkSecurityGroupFn: func(_ context.Context, _ ocicore.CreateNetworkSecurityGroupRequest) (ocicore.CreateNetworkSecurityGroupResponse, error) {
+			return ocicore.CreateNetworkSecurityGroupResponse{
+				NetworkSecurityGroup: ocicore.NetworkSecurityGroup{
+					Id:             common.String(nsgID),
+					DisplayName:    common.String("new-nsg"),
+					LifecycleState: ocicore.NetworkSecurityGroupLifecycleStateAvailable,
+				},
+			}, nil
+		},
+	}
+	mgr := nsgMgrWithFake(fake)
+
+	nsg := &ociv1beta1.OciNetworkSecurityGroup{}
+	nsg.Name = "new-nsg"
+	nsg.Namespace = "default"
+	nsg.Spec.DisplayName = "new-nsg"
+	nsg.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+	nsg.Spec.VcnId = "ocid1.vcn.oc1..xxx"
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), nsg, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.Equal(t, ociv1beta1.OCID(nsgID), nsg.Status.OsokStatus.Ocid)
+}
+
+func TestCreateOrUpdate_NSG_FindsExisting(t *testing.T) {
+	nsgID := "ocid1.networksecuritygroup.oc1..existing"
+	fake := &fakeVirtualNetworkClient{
+		listNetworkSecurityGroupsFn: func(_ context.Context, _ ocicore.ListNetworkSecurityGroupsRequest) (ocicore.ListNetworkSecurityGroupsResponse, error) {
+			return ocicore.ListNetworkSecurityGroupsResponse{
+				Items: []ocicore.NetworkSecurityGroup{
+					{Id: common.String(nsgID), DisplayName: common.String("existing-nsg"), LifecycleState: ocicore.NetworkSecurityGroupLifecycleStateAvailable},
+				},
+			}, nil
+		},
+		getNetworkSecurityGroupFn: func(_ context.Context, _ ocicore.GetNetworkSecurityGroupRequest) (ocicore.GetNetworkSecurityGroupResponse, error) {
+			return ocicore.GetNetworkSecurityGroupResponse{
+				NetworkSecurityGroup: ocicore.NetworkSecurityGroup{
+					Id:             common.String(nsgID),
+					DisplayName:    common.String("existing-nsg"),
+					LifecycleState: ocicore.NetworkSecurityGroupLifecycleStateAvailable,
+				},
+			}, nil
+		},
+	}
+	mgr := nsgMgrWithFake(fake)
+
+	nsg := &ociv1beta1.OciNetworkSecurityGroup{}
+	nsg.Spec.DisplayName = "existing-nsg"
+	nsg.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+	nsg.Spec.VcnId = "ocid1.vcn.oc1..xxx"
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), nsg, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.Equal(t, ociv1beta1.OCID(nsgID), nsg.Status.OsokStatus.Ocid)
+}
+
+func TestDelete_NSG_Succeeds(t *testing.T) {
+	var deleteCalled bool
+	fake := &fakeVirtualNetworkClient{
+		deleteNetworkSecurityGroupFn: func(_ context.Context, _ ocicore.DeleteNetworkSecurityGroupRequest) (ocicore.DeleteNetworkSecurityGroupResponse, error) {
+			deleteCalled = true
+			return ocicore.DeleteNetworkSecurityGroupResponse{}, nil
+		},
+	}
+	mgr := nsgMgrWithFake(fake)
+
+	nsg := &ociv1beta1.OciNetworkSecurityGroup{}
+	nsg.Status.OsokStatus.Ocid = "ocid1.networksecuritygroup.oc1..del"
+
+	done, err := mgr.Delete(context.Background(), nsg)
+	assert.NoError(t, err)
+	assert.True(t, done)
+	assert.True(t, deleteCalled)
+}
+
+// ---------------------------------------------------------------------------
+// RouteTable tests
+// ---------------------------------------------------------------------------
+
+func TestCreateOrUpdate_RouteTable_CreatesNew(t *testing.T) {
+	rtID := "ocid1.routetable.oc1..created"
+	fake := &fakeVirtualNetworkClient{
+		listRouteTablesFn: func(_ context.Context, _ ocicore.ListRouteTablesRequest) (ocicore.ListRouteTablesResponse, error) {
+			return ocicore.ListRouteTablesResponse{Items: []ocicore.RouteTable{}}, nil
+		},
+		createRouteTableFn: func(_ context.Context, _ ocicore.CreateRouteTableRequest) (ocicore.CreateRouteTableResponse, error) {
+			return ocicore.CreateRouteTableResponse{
+				RouteTable: ocicore.RouteTable{
+					Id:             common.String(rtID),
+					DisplayName:    common.String("new-rt"),
+					LifecycleState: ocicore.RouteTableLifecycleStateAvailable,
+				},
+			}, nil
+		},
+	}
+	mgr := routeTableMgrWithFake(fake)
+
+	rt := &ociv1beta1.OciRouteTable{}
+	rt.Name = "new-rt"
+	rt.Namespace = "default"
+	rt.Spec.DisplayName = "new-rt"
+	rt.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+	rt.Spec.VcnId = "ocid1.vcn.oc1..xxx"
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), rt, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.Equal(t, ociv1beta1.OCID(rtID), rt.Status.OsokStatus.Ocid)
+}
+
+func TestCreateOrUpdate_RouteTable_FindsExisting(t *testing.T) {
+	rtID := "ocid1.routetable.oc1..existing"
+	fake := &fakeVirtualNetworkClient{
+		listRouteTablesFn: func(_ context.Context, _ ocicore.ListRouteTablesRequest) (ocicore.ListRouteTablesResponse, error) {
+			return ocicore.ListRouteTablesResponse{
+				Items: []ocicore.RouteTable{
+					{Id: common.String(rtID), DisplayName: common.String("existing-rt"), LifecycleState: ocicore.RouteTableLifecycleStateAvailable},
+				},
+			}, nil
+		},
+		getRouteTableFn: func(_ context.Context, _ ocicore.GetRouteTableRequest) (ocicore.GetRouteTableResponse, error) {
+			return ocicore.GetRouteTableResponse{
+				RouteTable: ocicore.RouteTable{
+					Id:             common.String(rtID),
+					DisplayName:    common.String("existing-rt"),
+					LifecycleState: ocicore.RouteTableLifecycleStateAvailable,
+				},
+			}, nil
+		},
+	}
+	mgr := routeTableMgrWithFake(fake)
+
+	rt := &ociv1beta1.OciRouteTable{}
+	rt.Spec.DisplayName = "existing-rt"
+	rt.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+	rt.Spec.VcnId = "ocid1.vcn.oc1..xxx"
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), rt, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.Equal(t, ociv1beta1.OCID(rtID), rt.Status.OsokStatus.Ocid)
+}
+
+func TestDelete_RouteTable_Succeeds(t *testing.T) {
+	var deleteCalled bool
+	fake := &fakeVirtualNetworkClient{
+		deleteRouteTableFn: func(_ context.Context, _ ocicore.DeleteRouteTableRequest) (ocicore.DeleteRouteTableResponse, error) {
+			deleteCalled = true
+			return ocicore.DeleteRouteTableResponse{}, nil
+		},
+	}
+	mgr := routeTableMgrWithFake(fake)
+
+	rt := &ociv1beta1.OciRouteTable{}
+	rt.Status.OsokStatus.Ocid = "ocid1.routetable.oc1..del"
+
+	done, err := mgr.Delete(context.Background(), rt)
 	assert.NoError(t, err)
 	assert.True(t, done)
 	assert.True(t, deleteCalled)

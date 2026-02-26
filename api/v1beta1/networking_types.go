@@ -360,3 +360,227 @@ type OciDrgList struct {
 func init() {
 	SchemeBuilder.Register(&OciDrg{}, &OciDrgList{})
 }
+
+// IngressSecurityRule defines an ingress rule for a security list
+type IngressSecurityRule struct {
+	Protocol    string      `json:"protocol"`
+	Source      string      `json:"source"`
+	IsStateless bool        `json:"isStateless,omitempty"`
+	Description string      `json:"description,omitempty"`
+	TcpOptions  *TcpOptions `json:"tcpOptions,omitempty"`
+	UdpOptions  *UdpOptions `json:"udpOptions,omitempty"`
+}
+
+// EgressSecurityRule defines an egress rule
+type EgressSecurityRule struct {
+	Protocol    string      `json:"protocol"`
+	Destination string      `json:"destination"`
+	IsStateless bool        `json:"isStateless,omitempty"`
+	Description string      `json:"description,omitempty"`
+	TcpOptions  *TcpOptions `json:"tcpOptions,omitempty"`
+	UdpOptions  *UdpOptions `json:"udpOptions,omitempty"`
+}
+
+// PortRange defines min/max port
+type PortRange struct {
+	Min int `json:"min"`
+	Max int `json:"max"`
+}
+
+// TcpOptions for TCP rules
+type TcpOptions struct {
+	DestinationPortRange *PortRange `json:"destinationPortRange,omitempty"`
+	SourcePortRange      *PortRange `json:"sourcePortRange,omitempty"`
+}
+
+// UdpOptions for UDP rules
+type UdpOptions struct {
+	DestinationPortRange *PortRange `json:"destinationPortRange,omitempty"`
+	SourcePortRange      *PortRange `json:"sourcePortRange,omitempty"`
+}
+
+// OciSecurityListSpec defines the desired state of OciSecurityList
+type OciSecurityListSpec struct {
+	// SecurityListId is the OCID of an existing Security List to bind to (optional)
+	SecurityListId OCID `json:"id,omitempty"`
+
+	// CompartmentId is the OCID of the compartment
+	// +kubebuilder:validation:Required
+	CompartmentId OCID `json:"compartmentId"`
+
+	// VcnId is the OCID of the VCN that contains this Security List
+	// +kubebuilder:validation:Required
+	VcnId OCID `json:"vcnId"`
+
+	// DisplayName is a user-friendly name for the Security List
+	// +kubebuilder:validation:Required
+	DisplayName string `json:"displayName"`
+
+	// IngressSecurityRules are the ingress rules
+	IngressSecurityRules []IngressSecurityRule `json:"ingressSecurityRules,omitempty"`
+
+	// EgressSecurityRules are the egress rules
+	EgressSecurityRules []EgressSecurityRule `json:"egressSecurityRules,omitempty"`
+
+	TagResources `json:",inline,omitempty"`
+}
+
+// OciSecurityListStatus defines the observed state of OciSecurityList
+type OciSecurityListStatus struct {
+	OsokStatus OSOKStatus `json:"status"`
+}
+
+//+kubebuilder:object:root=true
+//+kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="DisplayName",type="string",JSONPath=".spec.displayName",priority=1
+// +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.status.conditions[-1].type",description="status of the OciSecurityList",priority=0
+// +kubebuilder:printcolumn:name="Ocid",type="string",JSONPath=".status.status.ocid",description="Ocid of the OciSecurityList",priority=1
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp",priority=0
+
+// OciSecurityList is the Schema for the ocisecuritylists API
+type OciSecurityList struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec   OciSecurityListSpec   `json:"spec,omitempty"`
+	Status OciSecurityListStatus `json:"status,omitempty"`
+}
+
+//+kubebuilder:object:root=true
+
+// OciSecurityListList contains a list of OciSecurityList
+type OciSecurityListList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []OciSecurityList `json:"items"`
+}
+
+func init() {
+	SchemeBuilder.Register(&OciSecurityList{}, &OciSecurityListList{})
+}
+
+// OciNetworkSecurityGroupSpec defines the desired state of OciNetworkSecurityGroup
+type OciNetworkSecurityGroupSpec struct {
+	// NetworkSecurityGroupId is the OCID of an existing NSG to bind to (optional)
+	NetworkSecurityGroupId OCID `json:"id,omitempty"`
+
+	// CompartmentId is the OCID of the compartment
+	// +kubebuilder:validation:Required
+	CompartmentId OCID `json:"compartmentId"`
+
+	// VcnId is the OCID of the VCN that contains this NSG
+	// +kubebuilder:validation:Required
+	VcnId OCID `json:"vcnId"`
+
+	// DisplayName is a user-friendly name for the NSG
+	// +kubebuilder:validation:Required
+	DisplayName string `json:"displayName"`
+
+	TagResources `json:",inline,omitempty"`
+}
+
+// OciNetworkSecurityGroupStatus defines the observed state of OciNetworkSecurityGroup
+type OciNetworkSecurityGroupStatus struct {
+	OsokStatus OSOKStatus `json:"status"`
+}
+
+//+kubebuilder:object:root=true
+//+kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="DisplayName",type="string",JSONPath=".spec.displayName",priority=1
+// +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.status.conditions[-1].type",description="status of the OciNetworkSecurityGroup",priority=0
+// +kubebuilder:printcolumn:name="Ocid",type="string",JSONPath=".status.status.ocid",description="Ocid of the OciNetworkSecurityGroup",priority=1
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp",priority=0
+
+// OciNetworkSecurityGroup is the Schema for the ocinetworksecuritygroups API
+type OciNetworkSecurityGroup struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec   OciNetworkSecurityGroupSpec   `json:"spec,omitempty"`
+	Status OciNetworkSecurityGroupStatus `json:"status,omitempty"`
+}
+
+//+kubebuilder:object:root=true
+
+// OciNetworkSecurityGroupList contains a list of OciNetworkSecurityGroup
+type OciNetworkSecurityGroupList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []OciNetworkSecurityGroup `json:"items"`
+}
+
+func init() {
+	SchemeBuilder.Register(&OciNetworkSecurityGroup{}, &OciNetworkSecurityGroupList{})
+}
+
+// RouteRule defines a single route in a route table
+type RouteRule struct {
+	// NetworkEntityId is the OCID of the gateway (IGW, NGW, etc.)
+	NetworkEntityId string `json:"networkEntityId"`
+
+	// Destination is the CIDR, e.g. "0.0.0.0/0"
+	Destination string `json:"destination"`
+
+	// DestinationType is "CIDR_BLOCK" (default) or "SERVICE_CIDR_BLOCK"
+	DestinationType string `json:"destinationType,omitempty"`
+
+	// Description is an optional description
+	Description string `json:"description,omitempty"`
+}
+
+// OciRouteTableSpec defines the desired state of OciRouteTable
+type OciRouteTableSpec struct {
+	// RouteTableId is the OCID of an existing Route Table to bind to (optional)
+	RouteTableId OCID `json:"id,omitempty"`
+
+	// CompartmentId is the OCID of the compartment
+	// +kubebuilder:validation:Required
+	CompartmentId OCID `json:"compartmentId"`
+
+	// VcnId is the OCID of the VCN that contains this Route Table
+	// +kubebuilder:validation:Required
+	VcnId OCID `json:"vcnId"`
+
+	// DisplayName is a user-friendly name for the Route Table
+	// +kubebuilder:validation:Required
+	DisplayName string `json:"displayName"`
+
+	// RouteRules are the routing rules for this table
+	RouteRules []RouteRule `json:"routeRules,omitempty"`
+
+	TagResources `json:",inline,omitempty"`
+}
+
+// OciRouteTableStatus defines the observed state of OciRouteTable
+type OciRouteTableStatus struct {
+	OsokStatus OSOKStatus `json:"status"`
+}
+
+//+kubebuilder:object:root=true
+//+kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="DisplayName",type="string",JSONPath=".spec.displayName",priority=1
+// +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.status.conditions[-1].type",description="status of the OciRouteTable",priority=0
+// +kubebuilder:printcolumn:name="Ocid",type="string",JSONPath=".status.status.ocid",description="Ocid of the OciRouteTable",priority=1
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp",priority=0
+
+// OciRouteTable is the Schema for the ociroutetables API
+type OciRouteTable struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec   OciRouteTableSpec   `json:"spec,omitempty"`
+	Status OciRouteTableStatus `json:"status,omitempty"`
+}
+
+//+kubebuilder:object:root=true
+
+// OciRouteTableList contains a list of OciRouteTable
+type OciRouteTableList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []OciRouteTable `json:"items"`
+}
+
+func init() {
+	SchemeBuilder.Register(&OciRouteTable{}, &OciRouteTableList{})
+}
