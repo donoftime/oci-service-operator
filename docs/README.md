@@ -98,6 +98,20 @@
     - [Example](postgresql.md#example)
     - [Deletion](postgresql.md#deletion)
     - [Binding to Existing](postgresql.md#binding-to-an-existing-db-system)
+  - [OCI Compute Instance](compute.md#oci-compute-instance)
+    - [Overview](compute.md#overview)
+    - [Prerequisites](compute.md#prerequisites)
+    - [ComputeInstance CRD](compute.md#computeinstance-crd)
+    - [Example](compute.md#example)
+    - [Deletion](compute.md#deletion)
+    - [Binding to Existing Instance](compute.md#binding-to-an-existing-instance)
+  - [OCI Networking (VCN and Subnet)](networking.md#oci-networking-vcn-and-subnet)
+    - [Overview](networking.md#overview)
+    - [Prerequisites](networking.md#prerequisites)
+    - [OciVcn CRD](networking.md#ocivcn-crd)
+    - [OciSubnet CRD](networking.md#ocisubnet-crd)
+    - [Examples](networking.md#examples)
+    - [Deletion](networking.md#deletion)
 
 ## Introduction
 
