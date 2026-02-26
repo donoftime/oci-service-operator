@@ -138,7 +138,7 @@ controller-gen: ## Download controller-gen locally if necessary.
 
 KUSTOMIZE = $(shell pwd)/bin/kustomize
 kustomize: ## Download kustomize locally if necessary.
-	$(call go-get-tool,$(KUSTOMIZE),sigs.k8s.io/kustomize/kustomize/v3@v3.8.7)
+	$(call go-get-tool,$(KUSTOMIZE),sigs.k8s.io/kustomize/kustomize/v5@v5.4.2)
 
 # go-get-tool will 'go install' any package $2 and install it to $1.
 PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
@@ -213,33 +213,37 @@ catalog-push: ## Push a catalog image.
 	$(MAKE) docker-push IMG=$(CATALOG_IMG)
 
 delete-crds:
-	kubectl delete crd virtualdeploymentbindings.servicemesh.oci.oracle.com &
-	kubectl delete crd ingressgatewaydeployments.servicemesh.oci.oracle.com &
-	kubectl delete crd ingressgatewayroutetables.servicemesh.oci.oracle.com &
-	kubectl delete crd ingressgateways.servicemesh.oci.oracle.com &
-	kubectl delete crd accesspolicies.servicemesh.oci.oracle.com &
-	kubectl delete crd virtualserviceroutetables.servicemesh.oci.oracle.com &
-	kubectl delete crd virtualdeployments.servicemesh.oci.oracle.com &
-	kubectl delete crd virtualservices.servicemesh.oci.oracle.com &
-	kubectl delete crd meshes.servicemesh.oci.oracle.com &
 	kubectl delete crd autonomousdatabases.oci.oracle.com &
 	kubectl delete crd mysqldbsystems.oci.oracle.com &
 	kubectl delete crd streams.oci.oracle.com &
+	kubectl delete crd apigatewaydeployments.oci.oracle.com &
+	kubectl delete crd apigateways.oci.oracle.com &
+	kubectl delete crd containerinstances.oci.oracle.com &
+	kubectl delete crd devopsprojects.oci.oracle.com &
+	kubectl delete crd functionsapplications.oci.oracle.com &
+	kubectl delete crd functionsfunctions.oci.oracle.com &
+	kubectl delete crd nosqldatabases.oci.oracle.com &
+	kubectl delete crd ociqueues.oci.oracle.com &
+	kubectl delete crd opensearchclusters.oci.oracle.com &
+	kubectl delete crd redisclusters.oci.oracle.com &
+	kubectl delete crd ocivaults.oci.oracle.com &
 
 delete-operator:
 	kubectl delete ns $(OPERATOR_NAMESPACE)
 
 .PHONY: delete-crds-force
 delete-crds-force:
-	kubectl patch crd/virtualdeploymentbindings.servicemesh.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge &
-	kubectl patch crd/ingressgatewaydeployments.servicemesh.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge &
-	kubectl patch crd/ingressgatewayroutetables.servicemesh.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge &
-	kubectl patch crd/ingressgateways.servicemesh.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge &
-	kubectl patch crd/accesspolicies.servicemesh.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge &
-	kubectl patch crd/virtualserviceroutetables.servicemesh.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge &
-	kubectl patch crd/virtualdeployments.servicemesh.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge &
-	kubectl patch crd/virtualservices.servicemesh.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge &
-	kubectl patch crd/meshes.servicemesh.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge &
 	kubectl patch crd/autonomousdatabases.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge &
 	kubectl patch crd/mysqldbsystems.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge &
-	kubectl patch crd/streams.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge
+	kubectl patch crd/streams.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge &
+	kubectl patch crd/apigatewaydeployments.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge &
+	kubectl patch crd/apigateways.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge &
+	kubectl patch crd/containerinstances.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge &
+	kubectl patch crd/devopsprojects.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge &
+	kubectl patch crd/functionsapplications.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge &
+	kubectl patch crd/functionsfunctions.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge &
+	kubectl patch crd/nosqldatabases.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge &
+	kubectl patch crd/ociqueues.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge &
+	kubectl patch crd/opensearchclusters.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge &
+	kubectl patch crd/redisclusters.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge &
+	kubectl patch crd/ocivaults.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge
