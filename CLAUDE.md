@@ -109,3 +109,15 @@ When implementing a new service:
 - You MUST commit ALL generated files (zz_generated.deepcopy.go, CRD yaml)
 - Do NOT close your bead until you have run `gt done` which pushes your branch
 - The refinery merges your branch — you do not push to main directly
+
+### CRITICAL: Verify your commit exists before `gt done`
+
+Before EVER running `gt done`, you MUST run:
+```bash
+git log origin/main..HEAD --oneline
+```
+If this shows NOTHING, you have not committed your work. `gt done` will submit
+an empty branch to the merge queue and your work will be lost. Fix this by
+committing your changes first.
+
+This is the single most common failure mode in this repo. Check it every time.
