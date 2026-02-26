@@ -147,7 +147,9 @@ github.com/oracle/oci-go-sdk/v65/common
 github.com/oracle/oci-go-sdk/v65/common/auth
 github.com/oracle/oci-go-sdk/v65/common/utils
 github.com/oracle/oci-go-sdk/v65/containerinstances
+github.com/oracle/oci-go-sdk/v65/core
 github.com/oracle/oci-go-sdk/v65/database
+github.com/oracle/oci-go-sdk/v65/dataflow
 github.com/oracle/oci-go-sdk/v65/functions
 github.com/oracle/oci-go-sdk/v65/identity
 github.com/oracle/oci-go-sdk/v65/keymanagement

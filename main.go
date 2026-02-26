@@ -35,6 +35,7 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/metrics"
 	ociapigw "github.com/oracle/oci-service-operator/pkg/servicemanager/apigateway"
 	"github.com/oracle/oci-service-operator/pkg/servicemanager/autonomousdatabases/adb"
+	ocicompute "github.com/oracle/oci-service-operator/pkg/servicemanager/compute"
 	ocicontainerinstance "github.com/oracle/oci-service-operator/pkg/servicemanager/containerinstance"
 	ocidataflow "github.com/oracle/oci-service-operator/pkg/servicemanager/dataflow"
 	ocifunctions "github.com/oracle/oci-service-operator/pkg/servicemanager/functions"
@@ -384,6 +385,21 @@ func main() {
 		},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.ErrorLog(err, "unable to create controller", "controller", "ContainerInstance")
+		os.Exit(1)
+	}
+
+	if err = (&controllers.ComputeInstanceReconciler{
+		Reconciler: &core.BaseReconciler{
+			Client:             mgr.GetClient(),
+			OSOKServiceManager: ocicompute.NewComputeInstanceServiceManager(provider, credClient, scheme, loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("service-manager").WithName("ComputeInstance")}),
+			Finalizer:          core.NewBaseFinalizer(mgr.GetClient(), ctrl.Log),
+			Log:                loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("controllers").WithName("ComputeInstance")},
+			Metrics:            metricsClient,
+			Recorder:           mgr.GetEventRecorderFor("ComputeInstance"),
+			Scheme:             scheme,
+		},
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.ErrorLog(err, "unable to create controller", "controller", "ComputeInstance")
 		os.Exit(1)
 	}
 
