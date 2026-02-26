@@ -39,6 +39,7 @@ import (
 	ocicontainerinstance "github.com/oracle/oci-service-operator/pkg/servicemanager/containerinstance"
 	ocidataflow "github.com/oracle/oci-service-operator/pkg/servicemanager/dataflow"
 	ocifunctions "github.com/oracle/oci-service-operator/pkg/servicemanager/functions"
+	ocinetworking "github.com/oracle/oci-service-operator/pkg/servicemanager/networking"
 	"github.com/oracle/oci-service-operator/pkg/servicemanager/mysql/dbsystem"
 	"github.com/oracle/oci-service-operator/pkg/servicemanager/nosql"
 	ociobjectstorage "github.com/oracle/oci-service-operator/pkg/servicemanager/objectstorage"
@@ -400,6 +401,36 @@ func main() {
 		},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.ErrorLog(err, "unable to create controller", "controller", "ComputeInstance")
+		os.Exit(1)
+	}
+
+	if err = (&controllers.OciVcnReconciler{
+		Reconciler: &core.BaseReconciler{
+			Client:             mgr.GetClient(),
+			OSOKServiceManager: ocinetworking.NewOciVcnServiceManager(provider, credClient, scheme, loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("service-manager").WithName("OciVcn")}),
+			Finalizer:          core.NewBaseFinalizer(mgr.GetClient(), ctrl.Log),
+			Log:                loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("controllers").WithName("OciVcn")},
+			Metrics:            metricsClient,
+			Recorder:           mgr.GetEventRecorderFor("OciVcn"),
+			Scheme:             scheme,
+		},
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.ErrorLog(err, "unable to create controller", "controller", "OciVcn")
+		os.Exit(1)
+	}
+
+	if err = (&controllers.OciSubnetReconciler{
+		Reconciler: &core.BaseReconciler{
+			Client:             mgr.GetClient(),
+			OSOKServiceManager: ocinetworking.NewOciSubnetServiceManager(provider, credClient, scheme, loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("service-manager").WithName("OciSubnet")}),
+			Finalizer:          core.NewBaseFinalizer(mgr.GetClient(), ctrl.Log),
+			Log:                loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("controllers").WithName("OciSubnet")},
+			Metrics:            metricsClient,
+			Recorder:           mgr.GetEventRecorderFor("OciSubnet"),
+			Scheme:             scheme,
+		},
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.ErrorLog(err, "unable to create controller", "controller", "OciSubnet")
 		os.Exit(1)
 	}
 

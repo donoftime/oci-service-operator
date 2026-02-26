@@ -23,6 +23,8 @@ resources:
 - bases/oci.oracle.com_ociqueues.yaml
 - bases/oci.oracle.com_postgresdbsystems.yaml
 - bases/oci.oracle.com_redisclusters.yaml
+- bases/oci.oracle.com_ocivcns.yaml
+- bases/oci.oracle.com_ocisubnets.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patchesStrategicMerge:

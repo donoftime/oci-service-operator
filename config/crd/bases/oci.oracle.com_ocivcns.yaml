@@ -1,0 +1,147 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.0
+  name: ocivcns.oci.oracle.com
+spec:
+  group: oci.oracle.com
+  names:
+    kind: OciVcn
+    listKind: OciVcnList
+    plural: ocivcns
+    singular: ocivcn
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.displayName
+      name: DisplayName
+      priority: 1
+      type: string
+    - description: status of the OciVcn
+      jsonPath: .status.status.conditions[-1].type
+      name: Status
+      type: string
+    - description: Ocid of the OciVcn
+      jsonPath: .status.status.ocid
+      name: Ocid
+      priority: 1
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: OciVcn is the Schema for the ocivcns API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: OciVcnSpec defines the desired state of OciVcn
+            properties:
+              cidrBlock:
+                description: CidrBlock is the CIDR block for the VCN
+                type: string
+              compartmentId:
+                description: CompartmentId is the OCID of the compartment in which
+                  to create the VCN
+                maxLength: 255
+                minLength: 1
+                type: string
+              definedTags:
+                additionalProperties:
+                  additionalProperties:
+                    type: string
+                  type: object
+                type: object
+              displayName:
+                description: DisplayName is a user-friendly name for the VCN
+                type: string
+              dnsLabel:
+                description: DnsLabel is the DNS label for the VCN (optional)
+                type: string
+              freeformTags:
+                additionalProperties:
+                  type: string
+                type: object
+              id:
+                description: VcnId is the OCID of an existing VCN to bind to (optional;
+                  if omitted, a new VCN is created)
+                maxLength: 255
+                minLength: 1
+                type: string
+            required:
+            - cidrBlock
+            - compartmentId
+            - displayName
+            type: object
+          status:
+            description: OciVcnStatus defines the observed state of OciVcn
+            properties:
+              status:
+                properties:
+                  conditions:
+                    items:
+                      properties:
+                        lastTransitionTime:
+                          format: date-time
+                          type: string
+                        message:
+                          type: string
+                        reason:
+                          type: string
+                        status:
+                          type: string
+                        type:
+                          type: string
+                      required:
+                      - status
+                      - type
+                      type: object
+                    type: array
+                  createdAt:
+                    format: date-time
+                    type: string
+                  deletedAt:
+                    format: date-time
+                    type: string
+                  message:
+                    type: string
+                  ocid:
+                    maxLength: 255
+                    minLength: 1
+                    type: string
+                  reason:
+                    type: string
+                  requestedAt:
+                    format: date-time
+                    type: string
+                  updatedAt:
+                    format: date-time
+                    type: string
+                type: object
+            required:
+            - status
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
