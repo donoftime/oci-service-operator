@@ -1,0 +1,16 @@
+apiVersion: oci.oracle.com/v1beta1
+kind: PostgresDbSystem
+metadata:
+  name: sample-postgres-db
+  namespace: default
+spec:
+  compartmentId: ocid1.compartment.oc1..aaaaaaaaxxx
+  displayName: SamplePostgresDB
+  dbVersion: "14.10"
+  shape: "VM.Standard.E4.Flex"
+  subnetId: ocid1.subnet.oc1.iad.xxx
+  storageType: HighPerformance
+  instanceCount: 1
+  instanceOcpuCount: 2
+  instanceMemoryInGBs: 32
+  description: "A sample OCI PostgreSQL DB System managed by OSOK"

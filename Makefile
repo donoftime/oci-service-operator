@@ -224,6 +224,7 @@ delete-crds:
 	kubectl delete crd nosqldatabases.oci.oracle.com &
 	kubectl delete crd ociqueues.oci.oracle.com &
 	kubectl delete crd opensearchclusters.oci.oracle.com &
+	kubectl delete crd postgresdbsystems.oci.oracle.com &
 	kubectl delete crd redisclusters.oci.oracle.com &
 	kubectl delete crd ocivaults.oci.oracle.com &
 	kubectl delete crd dataflowapplications.oci.oracle.com &
@@ -245,5 +246,6 @@ delete-crds-force:
 	kubectl patch crd/nosqldatabases.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge &
 	kubectl patch crd/ociqueues.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge &
 	kubectl patch crd/opensearchclusters.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge &
+	kubectl patch crd/postgresdbsystems.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge &
 	kubectl patch crd/redisclusters.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge &
 	kubectl patch crd/ocivaults.oci.oracle.com -p '{"metadata":{"finalizers":[]}}' --type=merge

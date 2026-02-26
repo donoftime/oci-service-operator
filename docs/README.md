@@ -90,6 +90,14 @@
     - [Connection Secret](objectstorage.md#connection-secret)
     - [Example](objectstorage.md#example)
     - [Deletion](objectstorage.md#deletion)
+  - [OCI PostgreSQL Database](postgresql.md#oci-database-with-postgresql)
+    - [Overview](postgresql.md#overview)
+    - [Prerequisites](postgresql.md#prerequisites)
+    - [PostgresDbSystem CRD](postgresql.md#postgresdbsystem-crd)
+    - [Connection Secret](postgresql.md#connection-secret)
+    - [Example](postgresql.md#example)
+    - [Deletion](postgresql.md#deletion)
+    - [Binding to Existing](postgresql.md#binding-to-an-existing-db-system)
 
 ## Introduction
 

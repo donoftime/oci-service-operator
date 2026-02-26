@@ -42,6 +42,7 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/servicemanager/nosql"
 	ociobjectstorage "github.com/oracle/oci-service-operator/pkg/servicemanager/objectstorage"
 	opensearchmanager "github.com/oracle/oci-service-operator/pkg/servicemanager/opensearch"
+	ocipostgres "github.com/oracle/oci-service-operator/pkg/servicemanager/postgresql"
 	ociqueue "github.com/oracle/oci-service-operator/pkg/servicemanager/queue"
 	ociredis "github.com/oracle/oci-service-operator/pkg/servicemanager/redis"
 	"github.com/oracle/oci-service-operator/pkg/servicemanager/streams"
@@ -201,6 +202,21 @@ func main() {
 		},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.ErrorLog(err, "unable to create controller", "controller", "RedisCluster")
+		os.Exit(1)
+	}
+
+	if err = (&controllers.PostgresDbSystemReconciler{
+		Reconciler: &core.BaseReconciler{
+			Client:             mgr.GetClient(),
+			OSOKServiceManager: ocipostgres.NewPostgresDbSystemServiceManager(provider, credClient, scheme, loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("service-manager").WithName("PostgresDbSystem")}),
+			Finalizer:          core.NewBaseFinalizer(mgr.GetClient(), ctrl.Log),
+			Log:                loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("controllers").WithName("PostgresDbSystem")},
+			Metrics:            metricsClient,
+			Recorder:           mgr.GetEventRecorderFor("PostgresDbSystem"),
+			Scheme:             scheme,
+		},
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.ErrorLog(err, "unable to create controller", "controller", "PostgresDbSystem")
 		os.Exit(1)
 	}
 
