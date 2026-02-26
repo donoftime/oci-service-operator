@@ -70,6 +70,11 @@ func (c *ComputeInstanceServiceManager) LaunchInstance(ctx context.Context, ci o
 		details.DefinedTags = *util.ConvertToOciDefinedTags(&ci.Spec.DefinedTags)
 	}
 
+	// Disable legacy IMDS v1 endpoints — required for tenancies that enforce IMDS v2.
+	details.InstanceOptions = &core.InstanceOptions{
+		AreLegacyImdsEndpointsDisabled: common.Bool(true),
+	}
+
 	req := core.LaunchInstanceRequest{
 		LaunchInstanceDetails: details,
 	}

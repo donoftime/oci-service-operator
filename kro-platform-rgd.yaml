@@ -19,6 +19,9 @@ spec:
       nosqlTableName: string
       containerImageUrl: string
       imageId: string
+      # Legacy fields retained for schema compatibility; not referenced by resource templates
+      subnetId: string
+      vcnId: string
 
   resources:
 
@@ -126,7 +129,7 @@ spec:
           displayName: ${schema.metadata.name}-igw
           isEnabled: true
       readyWhen:
-        - ${internetGateway.status.status.conditions[-1].type == 'Active'}
+        - ${internetGateway.status.status.ocid != ""}
 
     # ── 8. Route Table ────────────────────────────────────────────────────────
     - id: routeTable
@@ -144,7 +147,7 @@ spec:
               networkEntityId: ${internetGateway.status.status.ocid}
               destinationType: CIDR_BLOCK
       readyWhen:
-        - ${routeTable.status.status.conditions[-1].type == 'Active'}
+        - ${routeTable.status.status.ocid != ""}
 
     # ── 9. Subnet ─────────────────────────────────────────────────────────────
     - id: subnet
