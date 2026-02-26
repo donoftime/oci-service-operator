@@ -24,6 +24,7 @@ rules:
   - apigateways
   - autonomousdatabases
   - containerinstances
+  - dataflowapplications
   - functionsapplications
   - functionsfunctions
   - mysqldbsystems
@@ -48,6 +49,7 @@ rules:
   - apigateways/finalizers
   - autonomousdatabases/finalizers
   - containerinstances/finalizers
+  - dataflowapplications/finalizers
   - functionsapplications/finalizers
   - functionsfunctions/finalizers
   - mysqldbsystems/finalizers
@@ -66,6 +68,7 @@ rules:
   - apigateways/status
   - autonomousdatabases/status
   - containerinstances/status
+  - dataflowapplications/status
   - functionsapplications/status
   - functionsfunctions/status
   - mysqldbsystems/status

@@ -1,0 +1,202 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.0
+  name: dataflowapplications.oci.oracle.com
+spec:
+  group: oci.oracle.com
+  names:
+    kind: DataFlowApplication
+    listKind: DataFlowApplicationList
+    plural: dataflowapplications
+    singular: dataflowapplication
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.displayName
+      name: DisplayName
+      priority: 1
+      type: string
+    - jsonPath: .spec.language
+      name: Language
+      priority: 1
+      type: string
+    - description: status of the DataFlowApplication
+      jsonPath: .status.status.conditions[-1].type
+      name: Status
+      type: string
+    - description: Ocid of the DataFlowApplication
+      jsonPath: .status.status.ocid
+      name: Ocid
+      priority: 1
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: DataFlowApplication is the Schema for the dataflowapplications
+          API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: DataFlowApplicationSpec defines the desired state of DataFlowApplication
+            properties:
+              archiveUri:
+                description: ArchiveUri is the OCI URI for an archive file with custom
+                  dependencies
+                type: string
+              arguments:
+                description: Arguments are command-line arguments passed to the application
+                items:
+                  type: string
+                type: array
+              className:
+                description: ClassName is the Java/Scala main class name
+                type: string
+              compartmentId:
+                description: CompartmentId is the OCID of the compartment in which
+                  to create the application
+                maxLength: 255
+                minLength: 1
+                type: string
+              configuration:
+                additionalProperties:
+                  type: string
+                description: Configuration is the Spark configuration key-value pairs
+                type: object
+              definedTags:
+                additionalProperties:
+                  additionalProperties:
+                    type: string
+                  type: object
+                type: object
+              description:
+                description: Description is a user-friendly description of the application
+                type: string
+              displayName:
+                description: DisplayName is a user-friendly name for the Data Flow
+                  Application
+                type: string
+              driverShape:
+                description: DriverShape is the VM shape for the driver
+                type: string
+              executorShape:
+                description: ExecutorShape is the VM shape for the executors
+                type: string
+              fileUri:
+                description: FileUri is the OCI URI for the application file (not
+                  required for SQL)
+                type: string
+              freeformTags:
+                additionalProperties:
+                  type: string
+                type: object
+              id:
+                description: DataFlowApplicationId is the OCID of an existing Data
+                  Flow Application to bind to (optional)
+                maxLength: 255
+                minLength: 1
+                type: string
+              language:
+                description: Language is the Spark language for the application (PYTHON,
+                  SCALA, JAVA, SQL)
+                enum:
+                - PYTHON
+                - SCALA
+                - JAVA
+                - SQL
+                type: string
+              logsBucketUri:
+                description: LogsBucketUri is the OCI URI for the logs bucket
+                type: string
+              numExecutors:
+                description: NumExecutors is the number of executor VMs requested
+                minimum: 1
+                type: integer
+              sparkVersion:
+                description: SparkVersion is the Spark version to use (e.g. "3.2.1")
+                type: string
+              warehouseBucketUri:
+                description: WarehouseBucketUri is the OCI URI for the Hive warehouse
+                  bucket
+                type: string
+            required:
+            - compartmentId
+            - displayName
+            - driverShape
+            - executorShape
+            - language
+            - numExecutors
+            - sparkVersion
+            type: object
+          status:
+            description: DataFlowApplicationStatus defines the observed state of DataFlowApplication
+            properties:
+              status:
+                properties:
+                  conditions:
+                    items:
+                      properties:
+                        lastTransitionTime:
+                          format: date-time
+                          type: string
+                        message:
+                          type: string
+                        reason:
+                          type: string
+                        status:
+                          type: string
+                        type:
+                          type: string
+                      required:
+                      - status
+                      - type
+                      type: object
+                    type: array
+                  createdAt:
+                    format: date-time
+                    type: string
+                  deletedAt:
+                    format: date-time
+                    type: string
+                  message:
+                    type: string
+                  ocid:
+                    maxLength: 255
+                    minLength: 1
+                    type: string
+                  reason:
+                    type: string
+                  requestedAt:
+                    format: date-time
+                    type: string
+                  updatedAt:
+                    format: date-time
+                    type: string
+                type: object
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

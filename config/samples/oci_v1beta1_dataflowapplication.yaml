@@ -1,0 +1,16 @@
+apiVersion: oci.oracle.com/v1beta1
+kind: DataFlowApplication
+metadata:
+  name: sample-dataflow-app
+  namespace: default
+spec:
+  compartmentId: ocid1.compartment.oc1..aaaaaaaaxxx
+  displayName: SampleSparkApp
+  language: PYTHON
+  driverShape: "VM.Standard2.1"
+  executorShape: "VM.Standard2.1"
+  numExecutors: 1
+  sparkVersion: "3.2.1"
+  fileUri: "oci://my-bucket@my-namespace/spark_app.py"
+  description: "A sample OCI Data Flow application managed by OSOK"
+  logsBucketUri: "oci://my-logs-bucket@my-namespace"
