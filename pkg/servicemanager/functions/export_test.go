@@ -5,7 +5,10 @@
 
 package functions
 
-import ocifunctions "github.com/oracle/oci-go-sdk/v65/functions"
+import (
+	"github.com/oracle/oci-go-sdk/v65/common"
+	ocifunctions "github.com/oracle/oci-go-sdk/v65/functions"
+)
 
 // GetFunctionCredentialMapForTest exports getFunctionCredentialMap for unit testing.
 func GetFunctionCredentialMapForTest(fn ocifunctions.Function) map[string][]byte {
@@ -20,4 +23,14 @@ func ExportSetApplicationClientForTest(m *FunctionsApplicationServiceManager, c 
 // ExportSetFunctionClientForTest sets the OCI client on the function service manager for unit testing.
 func ExportSetFunctionClientForTest(m *FunctionsFunctionServiceManager, c FunctionsManagementClientInterface) {
 	m.ociClient = c
+}
+
+// ExportGetAppRetryPolicy exports getRetryPolicy on FunctionsApplicationServiceManager for testing.
+func ExportGetAppRetryPolicy(m *FunctionsApplicationServiceManager, attempts uint) common.RetryPolicy {
+	return m.getRetryPolicy(attempts)
+}
+
+// ExportGetFuncRetryPolicy exports getRetryPolicy on FunctionsFunctionServiceManager for testing.
+func ExportGetFuncRetryPolicy(m *FunctionsFunctionServiceManager, attempts uint) common.RetryPolicy {
+	return m.getRetryPolicy(attempts)
 }
