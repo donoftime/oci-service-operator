@@ -113,7 +113,40 @@ spec:
           cidrBlock: ${schema.spec.cidrBlock}
           dnsLabel: platform
 
-    # ── 7. Subnet ─────────────────────────────────────────────────────────────
+    # ── 7. Internet Gateway ───────────────────────────────────────────────────
+    - id: internetGateway
+      template:
+        apiVersion: oci.oracle.com/v1beta1
+        kind: OciInternetGateway
+        metadata:
+          name: ${schema.metadata.name}-igw
+        spec:
+          compartmentId: ${schema.spec.compartmentId}
+          vcnId: ${vcn.status.status.ocid}
+          displayName: ${schema.metadata.name}-igw
+          isEnabled: true
+      readyWhen:
+        - ${internetGateway.status.status.conditions[-1].type == 'Active'}
+
+    # ── 8. Route Table ────────────────────────────────────────────────────────
+    - id: routeTable
+      template:
+        apiVersion: oci.oracle.com/v1beta1
+        kind: OciRouteTable
+        metadata:
+          name: ${schema.metadata.name}-rt
+        spec:
+          compartmentId: ${schema.spec.compartmentId}
+          vcnId: ${vcn.status.status.ocid}
+          displayName: ${schema.metadata.name}-rt
+          routeRules:
+            - destination: "0.0.0.0/0"
+              networkEntityId: ${internetGateway.status.status.ocid}
+              destinationType: CIDR_BLOCK
+      readyWhen:
+        - ${routeTable.status.status.conditions[-1].type == 'Active'}
+
+    # ── 9. Subnet ─────────────────────────────────────────────────────────────
     - id: subnet
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -127,8 +160,9 @@ spec:
           cidrBlock: ${schema.spec.subnetCidrBlock}
           dnsLabel: private
           prohibitPublicIpOnVnic: true
+          routeTableId: ${routeTable.status.status.ocid}
 
-    # ── 8. MySQL DB System ────────────────────────────────────────────────────
+    # ── 10. MySQL DB System ───────────────────────────────────────────────────
     - id: mysql
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -150,7 +184,7 @@ spec:
             secret:
               secretName: ${schema.spec.mysqlCredentialsSecret}
 
-    # ── 9. PostgreSQL DB System ───────────────────────────────────────────────
+    # ── 11. PostgreSQL DB System ──────────────────────────────────────────────
     - id: postgres
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -168,7 +202,7 @@ spec:
           instanceOcpuCount: 2
           instanceMemoryInGBs: 32
 
-    # ── 10. NoSQL Table ────────────────────────────────────────────────────────
+    # ── 12. NoSQL Table ───────────────────────────────────────────────────────
     - id: nosqlTable
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -186,7 +220,7 @@ spec:
             maxWriteUnits: 50
             maxStorageInGBs: 1
 
-    # ── 11. OCI Cache with Redis ────────────────────────────────────────────────
+    # ── 13. OCI Cache with Redis ──────────────────────────────────────────────
     - id: redisCluster
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -201,7 +235,7 @@ spec:
           nodeMemoryInGBs: 2
           subnetId: ${subnet.status.status.ocid}
 
-    # ── 12. OpenSearch Cluster ────────────────────────────────────────────────
+    # ── 14. OpenSearch Cluster ────────────────────────────────────────────────
     - id: opensearch
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -229,7 +263,7 @@ spec:
           subnetId: ${subnet.status.status.ocid}
           subnetCompartmentId: ${schema.spec.compartmentId}
 
-    # ── 13. API Gateway ───────────────────────────────────────────────────────
+    # ── 15. API Gateway ───────────────────────────────────────────────────────
     - id: apiGateway
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -242,7 +276,7 @@ spec:
           endpointType: PUBLIC
           subnetId: ${schema.spec.lbSubnetId}
 
-    # ── 14. API Gateway Deployment ────────────────────────────────────────────
+    # ── 16. API Gateway Deployment ────────────────────────────────────────────
     # Stock responses only — no function backend required.
     - id: apiGatewayDeployment
       template:
@@ -264,7 +298,7 @@ spec:
                 status: 200
                 body: '{"status":"ok"}'
 
-    # ── 15. Container Instance ────────────────────────────────────────────────
+    # ── 17. Container Instance ────────────────────────────────────────────────
     - id: containerInstance
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -288,7 +322,7 @@ spec:
               displayName: primary-vnic
           containerRestartPolicy: ON_FAILURE
 
-    # ── 16. Compute Instance ──────────────────────────────────────────────────
+    # ── 18. Compute Instance ──────────────────────────────────────────────────
     - id: computeInstance
       template:
         apiVersion: oci.oracle.com/v1beta1
