@@ -9,7 +9,6 @@ spec:
   dbVersion: "14.10"
   shape: "VM.Standard.E4.Flex"
   subnetId: ocid1.subnet.oc1.iad.xxx
-  storageType: HighPerformance
   instanceCount: 1
   instanceOcpuCount: 2
   instanceMemoryInGBs: 32

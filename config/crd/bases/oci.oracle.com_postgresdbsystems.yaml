@@ -107,8 +107,8 @@ spec:
                   "VM.Standard.E4.Flex")
                 type: string
               storageType:
-                description: StorageType selects the storage tier ("HighPerformance"
-                  or "Balanced")
+                description: StorageType is an optional hint for storage selection;
+                  currently the OCI Optimized storage tier is always used
                 type: string
               subnetId:
                 description: SubnetId is the OCID of the subnet for the DB system
@@ -120,7 +120,6 @@ spec:
             - dbVersion
             - displayName
             - shape
-            - storageType
             - subnetId
             type: object
           status:

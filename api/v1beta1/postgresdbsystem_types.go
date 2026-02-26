@@ -34,9 +34,8 @@ type PostgresDbSystemSpec struct {
 	// +kubebuilder:validation:Required
 	SubnetId OCID `json:"subnetId"`
 
-	// StorageType selects the storage tier ("HighPerformance" or "Balanced")
-	// +kubebuilder:validation:Required
-	StorageType string `json:"storageType"`
+	// StorageType is an optional hint for storage selection; currently the OCI Optimized storage tier is always used
+	StorageType string `json:"storageType,omitempty"`
 
 	// Description is an optional user-provided description of the DB system
 	Description string `json:"description,omitempty"`

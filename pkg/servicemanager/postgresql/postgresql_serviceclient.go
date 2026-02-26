@@ -45,7 +45,7 @@ func (c *PostgresDbSystemServiceManager) CreatePostgresDbSystem(ctx context.Cont
 
 	c.Log.DebugLog("Creating PostgresDbSystem", "name", dbSystem.Spec.DisplayName)
 
-	storageDetails := buildStorageDetails(dbSystem.Spec.StorageType)
+	storageDetails := buildStorageDetails()
 
 	details := psql.CreateDbSystemDetails{
 		DisplayName:   common.String(dbSystem.Spec.DisplayName),
@@ -186,8 +186,8 @@ func (c *PostgresDbSystemServiceManager) DeletePostgresDbSystem(ctx context.Cont
 	return err
 }
 
-// buildStorageDetails constructs the appropriate StorageDetails based on the storage type.
-func buildStorageDetails(storageType string) psql.StorageDetails {
+// buildStorageDetails constructs the StorageDetails for the OCI PostgreSQL DB system.
+func buildStorageDetails() psql.StorageDetails {
 	isRegionallyDurable := true
 	return psql.OciOptimizedStorageDetails{
 		IsRegionallyDurable: common.Bool(isRegionallyDurable),

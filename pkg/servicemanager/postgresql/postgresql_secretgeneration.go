@@ -33,12 +33,9 @@ func getCredentialMap(dbSystem psql.DbSystem) map[string][]byte {
 		credMap["displayName"] = []byte(*dbSystem.DisplayName)
 	}
 
-	// Extract primary endpoint from the first instance node if available
-	if len(dbSystem.Instances) > 0 {
-		// The primary endpoint comes from NetworkDetails
-		if dbSystem.NetworkDetails != nil && dbSystem.NetworkDetails.PrimaryDbEndpointPrivateIp != nil {
-			credMap["primaryEndpoint"] = []byte(*dbSystem.NetworkDetails.PrimaryDbEndpointPrivateIp)
-		}
+	// Extract primary endpoint from NetworkDetails if available
+	if dbSystem.NetworkDetails != nil && dbSystem.NetworkDetails.PrimaryDbEndpointPrivateIp != nil {
+		credMap["primaryEndpoint"] = []byte(*dbSystem.NetworkDetails.PrimaryDbEndpointPrivateIp)
 	}
 
 	// Default PostgreSQL port
