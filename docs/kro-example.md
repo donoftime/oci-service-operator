@@ -57,14 +57,6 @@ Allow any-user to manage nosql-family in compartment <resources_compartment_name
   where all {request.principal.type = 'instance',
               request.principal.compartment.id = '<oke_nodes_compartment_ocid>'}
 
-# Functions (also needs VCN read for subnet validation)
-Allow any-user to manage functions-family in compartment <resources_compartment_name>
-  where all {request.principal.type = 'instance',
-              request.principal.compartment.id = '<oke_nodes_compartment_ocid>'}
-Allow any-user to use virtual-network-family in compartment <resources_compartment_name>
-  where all {request.principal.type = 'instance',
-              request.principal.compartment.id = '<oke_nodes_compartment_ocid>'}
-
 # Vault and Key Management
 Allow any-user to manage vaults in compartment <resources_compartment_name>
   where all {request.principal.type = 'instance',
@@ -74,12 +66,12 @@ Allow any-user to manage keys in compartment <resources_compartment_name>
               request.principal.compartment.id = '<oke_nodes_compartment_ocid>'}
 
 # Container Instances
-Allow any-user to manage container-instances in compartment <resources_compartment_name>
+Allow any-user to manage compute-container-family in compartment <resources_compartment_name>
   where all {request.principal.type = 'instance',
               request.principal.compartment.id = '<oke_nodes_compartment_ocid>'}
 
 # PostgreSQL DB System
-Allow any-user to manage postgresql-db-systems in compartment <resources_compartment_name>
+Allow any-user to manage postgres-db-systems in compartment <resources_compartment_name>
   where all {request.principal.type = 'instance',
               request.principal.compartment.id = '<oke_nodes_compartment_ocid>'}
 
@@ -88,8 +80,14 @@ Allow any-user to manage object-family in compartment <resources_compartment_nam
   where all {request.principal.type = 'instance',
               request.principal.compartment.id = '<oke_nodes_compartment_ocid>'}
 
-# Data Flow (also needs object storage access for app files and logs)
-Allow any-user to manage dataflow-family in compartment <resources_compartment_name>
+# Networking (VCN, Subnets, Gateways, Route Tables, Security Lists)
+# Must be 'manage' (not 'use') — OSOK creates and deletes these resources.
+Allow any-user to manage virtual-network-family in compartment <resources_compartment_name>
+  where all {request.principal.type = 'instance',
+              request.principal.compartment.id = '<oke_nodes_compartment_ocid>'}
+
+# Compute Instances
+Allow any-user to manage instances in compartment <resources_compartment_name>
   where all {request.principal.type = 'instance',
               request.principal.compartment.id = '<oke_nodes_compartment_ocid>'}
 ```
@@ -102,10 +100,9 @@ Allow any-user to manage dataflow-family in compartment <resources_compartment_n
 - kro installed in the cluster (`helm install kro oci://ghcr.io/kro-run/kro/kro --namespace kro-system --create-namespace`)
 - `kubectl` configured against the cluster
 - Your tenancy's Object Storage namespace (`oci os ns get`)
-- A subnet accessible from your OKE nodes (for MySQL, PostgreSQL, Redis, OpenSearch, API Gateway, Functions, Container Instances)
-- A VCN OCID (for OpenSearch)
-- An OCIR image pushed for your Functions function
-- An OCI Object Storage URI for your Data Flow application file (e.g. `oci://my-bucket@my-namespace/app.py`)
+- A **public subnet OCID** (`lbSubnetId`) for the API Gateway — must allow public IPs
+- A **compute image OCID** (`imageId`) — Oracle Linux or compatible image in your region
+- The VCN and private subnet are created by the platform itself from CIDR blocks you provide
 
 ---
 
@@ -130,10 +127,11 @@ kubectl create secret generic osok-platform-adb-creds \
 ## ResourceGraphDefinition
 
 This single manifest defines a reusable platform blueprint. kro registers it as a
-new CRD (`OSOKPlatform`) and resolves dependencies automatically — for example,
-`FunctionsFunction` waits for `FunctionsApplication` to be provisioned before
-kro creates it, because its `applicationId` field references the application's
-status OCID.
+new CRD (`OSOKPlatform`) and resolves dependencies automatically.
+
+The platform builds a full VCN topology from scratch — VCN → Internet Gateway →
+Route Table → Subnet — then attaches all network-dependent services to that subnet.
+kro ensures each layer is active before creating resources that depend on it.
 
 ```yaml
 apiVersion: kro.run/v1alpha1
@@ -145,61 +143,24 @@ spec:
     apiVersion: v1alpha1
     kind: OSOKPlatform
     spec:
-      properties:
-        # ── Core ────────────────────────────────────────────────────────────
-        compartmentId:
-          type: string
-          description: "OCID of the OCI compartment for all resources"
-        availabilityDomain:
-          type: string
-          description: "Availability domain (e.g. AD-1)"
-        subnetId:
-          type: string
-          description: "Subnet OCID for network-attached services"
-        vcnId:
-          type: string
-          description: "VCN OCID (required by OpenSearch)"
-        objectStorageNamespace:
-          type: string
-          description: "Tenancy Object Storage namespace (from: oci os ns get)"
-
-        # ── Credentials ─────────────────────────────────────────────────────
-        mysqlCredentialsSecret:
-          type: string
-          description: "K8s secret name with 'username' and 'password' keys for MySQL"
-        adbAdminPasswordSecret:
-          type: string
-          description: "K8s secret name with 'password' key for Autonomous Database"
-
-        # ── Compute / Serverless ────────────────────────────────────────────
-        functionsImageUrl:
-          type: string
-          description: "OCIR image URL for the Functions function (e.g. iad.ocir.io/mytenancy/myrepo/fn:latest)"
-        containerImageUrl:
-          type: string
-          description: "Container image URL for the Container Instance"
-
-        # ── Analytics ───────────────────────────────────────────────────────
-        dataflowFileUri:
-          type: string
-          description: "OCI Object Storage URI of the Data Flow application file (e.g. oci://bucket@namespace/app.py)"
-
-      required:
-        - compartmentId
-        - availabilityDomain
-        - subnetId
-        - vcnId
-        - objectStorageNamespace
-        - mysqlCredentialsSecret
-        - adbAdminPasswordSecret
-        - functionsImageUrl
-        - containerImageUrl
-        - dataflowFileUri
+      compartmentId: string
+      availabilityDomain: string
+      # VCN topology — created by the platform
+      cidrBlock: string           # VCN CIDR, e.g. "10.0.0.0/16"
+      subnetCidrBlock: string     # Private subnet CIDR, e.g. "10.0.1.0/24"
+      # Pre-existing public subnet for the API Gateway (must allow public IPs)
+      lbSubnetId: string
+      objectStorageNamespace: string
+      mysqlCredentialsSecret: string
+      adbAdminPasswordSecret: string
+      adbDbName: string           # No hyphens — used as DB name (e.g. myplatformadb)
+      nosqlTableName: string      # No hyphens — used in DDL (e.g. myplatform_events)
+      containerImageUrl: string
+      imageId: string             # Boot image OCID for the Compute VM
 
   resources:
 
     # ── 1. Vault ─────────────────────────────────────────────────────────────
-    # Independent. Creates a DEFAULT vault with a managed AES-256 encryption key.
     - id: vault
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -217,7 +178,6 @@ spec:
               length: 32
 
     # ── 2. Object Storage Bucket ──────────────────────────────────────────────
-    # Independent. Used by Data Flow for logs.
     - id: objectStorageBucket
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -268,7 +228,7 @@ spec:
         spec:
           compartmentId: ${schema.spec.compartmentId}
           displayName: ${schema.metadata.name}-adb
-          dbName: ${schema.metadata.name}adb
+          dbName: ${schema.spec.adbDbName}
           dbWorkload: OLTP
           cpuCoreCount: 1
           dataStorageSizeInTBs: 1
@@ -278,7 +238,74 @@ spec:
             secret:
               secretName: ${schema.spec.adbAdminPasswordSecret}
 
-    # ── 6. MySQL DB System ────────────────────────────────────────────────────
+    # ── 6. VCN ────────────────────────────────────────────────────────────────
+    # Foundation of the network topology. Internet Gateway and Route Table
+    # depend on this OCID.
+    - id: vcn
+      template:
+        apiVersion: oci.oracle.com/v1beta1
+        kind: OciVcn
+        metadata:
+          name: ${schema.metadata.name}-vcn
+        spec:
+          compartmentId: ${schema.spec.compartmentId}
+          displayName: ${schema.metadata.name}-vcn
+          cidrBlock: ${schema.spec.cidrBlock}
+          dnsLabel: platform
+
+    # ── 7. Internet Gateway ───────────────────────────────────────────────────
+    # Provides outbound internet access. Route Table depends on this OCID.
+    - id: internetGateway
+      template:
+        apiVersion: oci.oracle.com/v1beta1
+        kind: OciInternetGateway
+        metadata:
+          name: ${schema.metadata.name}-igw
+        spec:
+          compartmentId: ${schema.spec.compartmentId}
+          vcnId: ${vcn.status.status.ocid}
+          displayName: ${schema.metadata.name}-igw
+          isEnabled: true
+      readyWhen:
+        - ${internetGateway.status.status.conditions[-1].type == 'Active'}
+
+    # ── 8. Route Table ────────────────────────────────────────────────────────
+    # Default route via Internet Gateway. Subnet depends on this OCID.
+    - id: routeTable
+      template:
+        apiVersion: oci.oracle.com/v1beta1
+        kind: OciRouteTable
+        metadata:
+          name: ${schema.metadata.name}-rt
+        spec:
+          compartmentId: ${schema.spec.compartmentId}
+          vcnId: ${vcn.status.status.ocid}
+          displayName: ${schema.metadata.name}-rt
+          routeRules:
+            - destination: "0.0.0.0/0"
+              networkEntityId: ${internetGateway.status.status.ocid}
+              destinationType: CIDR_BLOCK
+      readyWhen:
+        - ${routeTable.status.status.conditions[-1].type == 'Active'}
+
+    # ── 9. Subnet ─────────────────────────────────────────────────────────────
+    # Private subnet (no public IPs). All network-attached services use this.
+    - id: subnet
+      template:
+        apiVersion: oci.oracle.com/v1beta1
+        kind: OciSubnet
+        metadata:
+          name: ${schema.metadata.name}-subnet
+        spec:
+          compartmentId: ${schema.spec.compartmentId}
+          displayName: ${schema.metadata.name}-subnet
+          vcnId: ${vcn.status.status.ocid}
+          cidrBlock: ${schema.spec.subnetCidrBlock}
+          dnsLabel: private
+          prohibitPublicIpOnVnic: true
+          routeTableId: ${routeTable.status.status.ocid}
+
+    # ── 10. MySQL DB System ───────────────────────────────────────────────────
     - id: mysql
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -289,9 +316,9 @@ spec:
           compartmentId: ${schema.spec.compartmentId}
           displayName: ${schema.metadata.name}-mysql
           shapeName: MySQL.VM.Standard.E3.1.8GB
-          subnetId: ${schema.spec.subnetId}
+          subnetId: ${subnet.status.status.ocid}
           availabilityDomain: ${schema.spec.availabilityDomain}
-          mysqlVersion: "8.0"
+          mysqlVersion: "8.0.42"
           dataStorageSizeInGBs: 50
           adminUsername:
             secret:
@@ -300,7 +327,7 @@ spec:
             secret:
               secretName: ${schema.spec.mysqlCredentialsSecret}
 
-    # ── 7. PostgreSQL DB System ───────────────────────────────────────────────
+    # ── 11. PostgreSQL DB System ──────────────────────────────────────────────
     - id: postgres
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -312,13 +339,13 @@ spec:
           displayName: ${schema.metadata.name}-postgres
           dbVersion: "14.10"
           shape: VM.Standard.E4.Flex
-          subnetId: ${schema.spec.subnetId}
+          subnetId: ${subnet.status.status.ocid}
           storageType: HighPerformance
           instanceCount: 1
           instanceOcpuCount: 2
           instanceMemoryInGBs: 32
 
-    # ── 8. NoSQL Table ────────────────────────────────────────────────────────
+    # ── 12. NoSQL Table ───────────────────────────────────────────────────────
     - id: nosqlTable
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -327,16 +354,16 @@ spec:
           name: ${schema.metadata.name}-nosql
         spec:
           compartmentId: ${schema.spec.compartmentId}
-          name: ${schema.metadata.name}_events
+          name: ${schema.spec.nosqlTableName}
           ddlStatement: >-
-            CREATE TABLE IF NOT EXISTS ${schema.metadata.name}_events
+            CREATE TABLE IF NOT EXISTS ${schema.spec.nosqlTableName}
             (id STRING, ts TIMESTAMP(3), payload JSON, PRIMARY KEY(id))
           tableLimits:
             maxReadUnits: 50
             maxWriteUnits: 50
             maxStorageInGBs: 1
 
-    # ── 9. OCI Cache with Redis ────────────────────────────────────────────────
+    # ── 13. OCI Cache with Redis ──────────────────────────────────────────────
     - id: redisCluster
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -346,12 +373,12 @@ spec:
         spec:
           compartmentId: ${schema.spec.compartmentId}
           displayName: ${schema.metadata.name}-redis
-          softwareVersion: REDIS_7_0
+          softwareVersion: V7_0_5
           nodeCount: 3
-          nodeMemoryInGBs: 1
-          subnetId: ${schema.spec.subnetId}
+          nodeMemoryInGBs: 2
+          subnetId: ${subnet.status.status.ocid}
 
-    # ── 10. OpenSearch Cluster ────────────────────────────────────────────────
+    # ── 14. OpenSearch Cluster ────────────────────────────────────────────────
     - id: opensearch
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -365,23 +392,23 @@ spec:
           masterNodeCount: 3
           masterNodeHostType: FLEX
           masterNodeHostOcpuCount: 2
-          masterNodeHostMemoryGB: 16
+          masterNodeHostMemoryGB: 32
           dataNodeCount: 3
           dataNodeHostType: FLEX
           dataNodeHostOcpuCount: 4
-          dataNodeHostMemoryGB: 32
+          dataNodeHostMemoryGB: 64
           dataNodeStorageGB: 100
           opendashboardNodeCount: 1
           opendashboardNodeHostOcpuCount: 2
-          opendashboardNodeHostMemoryGB: 16
-          vcnId: ${schema.spec.vcnId}
+          opendashboardNodeHostMemoryGB: 32
+          vcnId: ${vcn.status.status.ocid}
           vcnCompartmentId: ${schema.spec.compartmentId}
-          subnetId: ${schema.spec.subnetId}
+          subnetId: ${subnet.status.status.ocid}
           subnetCompartmentId: ${schema.spec.compartmentId}
 
-    # ── 11. API Gateway ───────────────────────────────────────────────────────
-    # The deployment (resource 12) is created after this because it references
-    # this gateway's status OCID.
+    # ── 15. API Gateway ───────────────────────────────────────────────────────
+    # Uses a pre-existing public/LB subnet (lbSubnetId) — the platform subnet
+    # prohibits public IPs, so API Gateway needs its own public-facing subnet.
     - id: apiGateway
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -392,43 +419,10 @@ spec:
           compartmentId: ${schema.spec.compartmentId}
           displayName: ${schema.metadata.name}-apigw
           endpointType: PUBLIC
-          subnetId: ${schema.spec.subnetId}
+          subnetId: ${schema.spec.lbSubnetId}
 
-    # ── 12. Functions Application ─────────────────────────────────────────────
-    # The function (resource 13) is created after this because it references
-    # this application's status OCID.
-    - id: functionsApp
-      template:
-        apiVersion: oci.oracle.com/v1beta1
-        kind: FunctionsApplication
-        metadata:
-          name: ${schema.metadata.name}-fn-app
-        spec:
-          compartmentId: ${schema.spec.compartmentId}
-          displayName: ${schema.metadata.name}-fn-app
-          subnetIds:
-            - ${schema.spec.subnetId}
-
-    # ── 13. Functions Function ────────────────────────────────────────────────
-    # Depends on functionsApp: kro waits for functionsApp.status.status.ocid
-    # to be populated before creating this resource.
-    - id: functionsFunction
-      template:
-        apiVersion: oci.oracle.com/v1beta1
-        kind: FunctionsFunction
-        metadata:
-          name: ${schema.metadata.name}-fn
-        spec:
-          compartmentId: ${schema.spec.compartmentId}
-          applicationId: ${functionsApp.status.status.ocid}
-          displayName: ${schema.metadata.name}-fn
-          image: ${schema.spec.functionsImageUrl}
-          memoryInMBs: 256
-          timeoutInSeconds: 60
-
-    # ── 14. API Gateway Deployment ────────────────────────────────────────────
-    # Depends on both apiGateway and functionsFunction (two status OCID refs).
-    # kro creates this only after both are Active.
+    # ── 16. API Gateway Deployment ────────────────────────────────────────────
+    # Depends on apiGateway. Serves a stock health-check response.
     - id: apiGatewayDeployment
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -448,14 +442,8 @@ spec:
                 type: STOCK_RESPONSE_BACKEND
                 status: 200
                 body: '{"status":"ok"}'
-            - path: /process
-              methods:
-                - POST
-              backend:
-                type: ORACLE_FUNCTIONS_BACKEND
-                functionId: ${functionsFunction.status.status.ocid}
 
-    # ── 15. Container Instance ────────────────────────────────────────────────
+    # ── 17. Container Instance ────────────────────────────────────────────────
     - id: containerInstance
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -475,29 +463,29 @@ spec:
               environmentVariables:
                 COMPARTMENT_ID: ${schema.spec.compartmentId}
           vnics:
-            - subnetId: ${schema.spec.subnetId}
+            - subnetId: ${subnet.status.status.ocid}
               displayName: primary-vnic
           containerRestartPolicy: ON_FAILURE
 
-    # ── 16. Data Flow Application ─────────────────────────────────────────────
-    # Uses the Object Storage bucket (resource 2) for log output.
-    # The logsBucketUri is constructed from the bucket name and tenancy namespace.
-    - id: dataflowApp
+    # ── 18. Compute Instance ──────────────────────────────────────────────────
+    # A full VM in the platform subnet. imageId must be an OCI image OCID
+    # valid in your region (e.g. Oracle Linux 8).
+    - id: computeInstance
       template:
         apiVersion: oci.oracle.com/v1beta1
-        kind: DataFlowApplication
+        kind: ComputeInstance
         metadata:
-          name: ${schema.metadata.name}-dataflow
+          name: ${schema.metadata.name}-vm
         spec:
           compartmentId: ${schema.spec.compartmentId}
-          displayName: ${schema.metadata.name}-dataflow
-          language: PYTHON
-          driverShape: VM.Standard2.1
-          executorShape: VM.Standard2.1
-          numExecutors: 1
-          sparkVersion: "3.2.1"
-          fileUri: ${schema.spec.dataflowFileUri}
-          logsBucketUri: "oci://${schema.metadata.name}-bucket@${schema.spec.objectStorageNamespace}"
+          displayName: ${schema.metadata.name}-vm
+          availabilityDomain: ${schema.spec.availabilityDomain}
+          shape: VM.Standard.E4.Flex
+          shapeConfig:
+            ocpus: 1
+            memoryInGBs: 16
+          imageId: ${schema.spec.imageId}
+          subnetId: ${subnet.status.status.ocid}
 ```
 
 ---
@@ -509,14 +497,17 @@ new CRD. Create an instance to provision the full platform:
 
 ```bash
 # Apply the RGD
-kubectl apply -f osok-platform-rgd.yaml
+kubectl apply -f kro-platform-rgd.yaml
 
 # Verify kro registered it
 kubectl get resourcegraphdefinitions osok-platform
 ```
 
+Create the instance. Substitute your real values — note `adbDbName` and `nosqlTableName`
+must not contain hyphens (OCI restriction):
+
 ```yaml
-# osok-platform-instance.yaml
+# kro-platform-instance.yaml
 apiVersion: kro.run/v1alpha1
 kind: OSOKPlatform
 metadata:
@@ -524,21 +515,31 @@ metadata:
   namespace: default
 spec:
   compartmentId: ocid1.compartment.oc1..aaaaaaaaxxx
-  availabilityDomain: AD-1
-  subnetId: ocid1.subnet.oc1.iad.xxx
-  vcnId: ocid1.vcn.oc1.iad.xxx
-  objectStorageNamespace: mytenancy
+  availabilityDomain: IqDk:US-ASHBURN-AD-1
 
+  # VCN topology — created from scratch
+  cidrBlock: "10.0.0.0/16"
+  subnetCidrBlock: "10.0.1.0/24"
+
+  # Pre-existing public subnet for the API Gateway
+  lbSubnetId: ocid1.subnet.oc1.iad.xxx
+
+  objectStorageNamespace: mytenancy
   mysqlCredentialsSecret: osok-platform-mysql-creds
   adbAdminPasswordSecret: osok-platform-adb-creds
 
-  functionsImageUrl: iad.ocir.io/mytenancy/my-repo/my-fn:latest
-  containerImageUrl: busybox:latest
-  dataflowFileUri: "oci://my-dataflow-bucket@mytenancy/app.py"
+  adbDbName: myplatformadb         # no hyphens
+  nosqlTableName: myplatform_events  # no hyphens
+
+  containerImageUrl: iad.ocir.io/mytenancy/my-repo/myapp:latest
+
+  # Oracle Linux 8 image OCID — find yours with:
+  # oci compute image list --compartment-id <ocid> --operating-system "Oracle Linux"
+  imageId: ocid1.image.oc1.iad.xxx
 ```
 
 ```bash
-kubectl apply -f osok-platform-instance.yaml
+kubectl apply -f kro-platform-instance.yaml
 ```
 
 ---
@@ -554,29 +555,26 @@ kubectl get osokplatform my-platform -w
 Check individual resources as they come up:
 
 ```bash
-# All OSOK resources in the namespace
-kubectl get ocivault,objectstoragebucket,stream,ociqueue,autonomousdatabases,\
+kubectl get \
+  ocivault,objectstoragebucket,stream,ociqueue,autonomousdatabases,\
+  ocivcn,ociinternetgateway,ociroutetable,ocisubnet,\
   mysqldbsystem,postgresdbsystem,nosqldatabase,rediscluster,opensearchcluster,\
-  apigateway,apigatewaydeployment,functionsapplication,functionsfunction,\
-  containerinstance,dataflowapplication -n default
-
-# Detailed status of a specific resource
-kubectl describe ocivault my-platform-vault
-kubectl describe functionsfunction my-platform-fn
+  apigateway,apigatewaydeployment,containerinstance,computeinstance \
+  -o custom-columns='KIND:.kind,NAME:.metadata.name,STATUS:.status.status.conditions[-1].type'
 ```
 
-For services that create Kubernetes Secrets (Vault, Redis, Queue, PostgreSQL,
-Object Storage), retrieve the connection details:
+For services that create Kubernetes Secrets (MySQL, Redis, Queue, PostgreSQL,
+Object Storage), retrieve connection details:
 
 ```bash
-kubectl get secret my-platform-vault -o yaml
+kubectl get secret my-platform-mysql -o yaml
 kubectl get secret my-platform-redis -o yaml
 kubectl get secret my-platform-queue -o yaml
 kubectl get secret my-platform-postgres -o yaml
 kubectl get secret my-platform-bucket -o yaml
 ```
 
-The API Gateway endpoint is available from the gateway status:
+The API Gateway endpoint is in the gateway status message:
 
 ```bash
 kubectl get apigateway my-platform-apigw \
@@ -594,21 +592,23 @@ exist. The graph for this platform is:
 vault               ─┐
 objectStorageBucket ─┤
 stream              ─┤
-queue               ─┤  (all independent, run in parallel)
+queue               ─┤  (independent — run in parallel)
 adb                 ─┤
-mysql               ─┤
-postgres            ─┤
-nosqlTable          ─┤
-redisCluster        ─┤
-opensearch          ─┤
-                     │
 apiGateway ──────────┤──► apiGatewayDeployment
-                     │         ▲
-functionsApp ────────┤──► functionsFunction ─┘
                      │
-containerInstance   ─┤
-dataflowApp ─────────┘
+vcn ─────────────────┤──► internetGateway ──► routeTable ──► subnet ──► mysql
+                     │                                              ├──► postgres
+                     │                                              ├──► redisCluster
+                     │                                              ├──► opensearch
+                     │                                              ├──► containerInstance
+                     │                                              └──► computeInstance
+                     │
+nosqlTable ──────────┘
 ```
+
+The VCN topology chain (`vcn → internetGateway → routeTable → subnet`) must
+complete before any subnet-attached service is created. kro handles this
+automatically by tracking the `${resource.status.status.ocid}` references.
 
 ---
 
@@ -625,6 +625,8 @@ is removed. Note that some services impose deletion delays:
 - **Vault**: OCI schedules deletion with a minimum 7-day grace period
 - **ADB**: Terminates immediately but may take a few minutes
 - **OpenSearch / MySQL / PostgreSQL**: Active deletion, may take several minutes
+- **VCN resources**: Subnet must be deleted before Route Table, Internet Gateway,
+  and VCN — kro/OSOK handle this order automatically via finalizers
 
 Remove the RGD when no instances remain:
 
