@@ -154,7 +154,7 @@ func (c *NoSQLDatabaseServiceManager) UpdateTable(ctx context.Context, db *ociv1
 	}
 
 	req := nosql.UpdateTableRequest{
-		TableNameOrId:     common.String(string(db.Status.OsokStatus.Ocid)),
+		TableNameOrId:      common.String(string(db.Status.OsokStatus.Ocid)),
 		UpdateTableDetails: updateDetails,
 	}
 

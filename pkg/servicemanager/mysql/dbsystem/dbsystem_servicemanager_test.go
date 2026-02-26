@@ -16,8 +16,8 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/loggerutil"
 	. "github.com/oracle/oci-service-operator/pkg/servicemanager/mysql/dbsystem"
 	"github.com/stretchr/testify/assert"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 // fakeCredentialClient implements credhelper.CredentialClient for testing.

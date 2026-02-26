@@ -117,11 +117,11 @@ func (f *fakeQueueAdminClient) DeleteQueue(ctx context.Context, req ociqueue.Del
 
 func makeActiveQueue(id, displayName, messagesEndpoint string) ociqueue.Queue {
 	return ociqueue.Queue{
-		Id:               common.String(id),
-		DisplayName:      common.String(displayName),
-		CompartmentId:    common.String("ocid1.compartment.oc1..xxx"),
-		LifecycleState:   ociqueue.QueueLifecycleStateActive,
-		MessagesEndpoint: common.String(messagesEndpoint),
+		Id:                           common.String(id),
+		DisplayName:                  common.String(displayName),
+		CompartmentId:                common.String("ocid1.compartment.oc1..xxx"),
+		LifecycleState:               ociqueue.QueueLifecycleStateActive,
+		MessagesEndpoint:             common.String(messagesEndpoint),
 		RetentionInSeconds:           common.Int(86400),
 		VisibilityInSeconds:          common.Int(30),
 		TimeoutInSeconds:             common.Int(30),

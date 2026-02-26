@@ -28,7 +28,7 @@ type OpenSearchClusterSpec struct {
 	// +kubebuilder:validation:Minimum:=1
 	MasterNodeHostOcpuCount int `json:"masterNodeHostOcpuCount,omitempty"`
 	// +kubebuilder:validation:Minimum:=1
-	MasterNodeHostMemoryGB      int    `json:"masterNodeHostMemoryGB,omitempty"`
+	MasterNodeHostMemoryGB       int    `json:"masterNodeHostMemoryGB,omitempty"`
 	MasterNodeHostBareMetalShape string `json:"masterNodeHostBareMetalShape,omitempty"`
 
 	// Data node configuration
@@ -41,7 +41,7 @@ type OpenSearchClusterSpec struct {
 	// +kubebuilder:validation:Minimum:=1
 	DataNodeHostMemoryGB int `json:"dataNodeHostMemoryGB,omitempty"`
 	// +kubebuilder:validation:Minimum:=1
-	DataNodeStorageGB        int    `json:"dataNodeStorageGB,omitempty"`
+	DataNodeStorageGB          int    `json:"dataNodeStorageGB,omitempty"`
 	DataNodeHostBareMetalShape string `json:"dataNodeHostBareMetalShape,omitempty"`
 
 	// OpenSearch Dashboard node configuration

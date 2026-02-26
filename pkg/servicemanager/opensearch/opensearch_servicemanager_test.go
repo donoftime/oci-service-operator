@@ -110,25 +110,25 @@ func makeManagerWithClient(mock *mockOpensearchClient) *OpenSearchClusterService
 func makeCluster(displayName string) *ociv1beta1.OpenSearchCluster {
 	return &ociv1beta1.OpenSearchCluster{
 		Spec: ociv1beta1.OpenSearchClusterSpec{
-			CompartmentId: "ocid1.compartment.oc1..xxx",
-			DisplayName:   displayName,
-			SoftwareVersion: "2.11.0",
-			MasterNodeCount:        3,
-			MasterNodeHostType:     "FLEX",
-			MasterNodeHostOcpuCount: 4,
-			MasterNodeHostMemoryGB: 32,
-			DataNodeCount:          2,
-			DataNodeHostType:       "FLEX",
-			DataNodeHostOcpuCount:  4,
-			DataNodeHostMemoryGB:   32,
-			DataNodeStorageGB:      50,
-			OpendashboardNodeCount:          1,
-			OpendashboardNodeHostOcpuCount:  4,
-			OpendashboardNodeHostMemoryGB:   32,
-			VcnId:               "ocid1.vcn.oc1..xxx",
-			SubnetId:            "ocid1.subnet.oc1..xxx",
-			VcnCompartmentId:    "ocid1.compartment.oc1..xxx",
-			SubnetCompartmentId: "ocid1.compartment.oc1..xxx",
+			CompartmentId:                  "ocid1.compartment.oc1..xxx",
+			DisplayName:                    displayName,
+			SoftwareVersion:                "2.11.0",
+			MasterNodeCount:                3,
+			MasterNodeHostType:             "FLEX",
+			MasterNodeHostOcpuCount:        4,
+			MasterNodeHostMemoryGB:         32,
+			DataNodeCount:                  2,
+			DataNodeHostType:               "FLEX",
+			DataNodeHostOcpuCount:          4,
+			DataNodeHostMemoryGB:           32,
+			DataNodeStorageGB:              50,
+			OpendashboardNodeCount:         1,
+			OpendashboardNodeHostOcpuCount: 4,
+			OpendashboardNodeHostMemoryGB:  32,
+			VcnId:                          "ocid1.vcn.oc1..xxx",
+			SubnetId:                       "ocid1.subnet.oc1..xxx",
+			VcnCompartmentId:               "ocid1.compartment.oc1..xxx",
+			SubnetCompartmentId:            "ocid1.compartment.oc1..xxx",
 		},
 	}
 }
@@ -518,12 +518,12 @@ func TestCreateOrUpdate_NoOcid_ExistingCluster_GetFails(t *testing.T) {
 func TestCreateOrUpdate_ExplicitOcid_WithEndpointFields(t *testing.T) {
 	const clusterID = "ocid1.opensearchcluster.oc1..jjj"
 	clusterWithEndpoints := sdkopensearch.OpensearchCluster{
-		Id:                   common.String(clusterID),
-		DisplayName:          common.String("my-cluster"),
-		LifecycleState:       sdkopensearch.OpensearchClusterLifecycleStateActive,
-		OpensearchFqdn:       common.String("search.us-phoenix-1.oci.oraclecloud.com"),
-		OpensearchPrivateIp:  common.String("10.0.1.100"),
-		OpendashboardFqdn:    common.String("dashboard.us-phoenix-1.oci.oraclecloud.com"),
+		Id:                     common.String(clusterID),
+		DisplayName:            common.String("my-cluster"),
+		LifecycleState:         sdkopensearch.OpensearchClusterLifecycleStateActive,
+		OpensearchFqdn:         common.String("search.us-phoenix-1.oci.oraclecloud.com"),
+		OpensearchPrivateIp:    common.String("10.0.1.100"),
+		OpendashboardFqdn:      common.String("dashboard.us-phoenix-1.oci.oraclecloud.com"),
 		OpendashboardPrivateIp: common.String("10.0.1.101"),
 	}
 	mock := &mockOpensearchClient{

@@ -450,8 +450,8 @@ func TestCreateOrUpdate_UpdatePath_NoOpWhenUnchanged(t *testing.T) {
 	cluster.Name = "test-cluster"
 	cluster.Namespace = "default"
 	cluster.Spec.RedisClusterId = clusterOcid
-	cluster.Spec.DisplayName = "same-name"  // matches existing
-	cluster.Spec.NodeCount = 3              // matches existing
+	cluster.Spec.DisplayName = "same-name" // matches existing
+	cluster.Spec.NodeCount = 3             // matches existing
 	cluster.Spec.NodeMemoryInGBs = 16.0    // matches existing
 	cluster.Status.OsokStatus.Ocid = clusterOcid
 

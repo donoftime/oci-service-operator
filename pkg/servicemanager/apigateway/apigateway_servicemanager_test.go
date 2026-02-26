@@ -23,12 +23,12 @@ import (
 // --- mock gateway client ---
 
 type mockGatewayClient struct {
-	createGatewayFn  func(ctx context.Context, req apigateway.CreateGatewayRequest) (apigateway.CreateGatewayResponse, error)
-	getGatewayFn     func(ctx context.Context, req apigateway.GetGatewayRequest) (apigateway.GetGatewayResponse, error)
-	listGatewaysFn   func(ctx context.Context, req apigateway.ListGatewaysRequest) (apigateway.ListGatewaysResponse, error)
-	updateGatewayFn  func(ctx context.Context, req apigateway.UpdateGatewayRequest) (apigateway.UpdateGatewayResponse, error)
-	deleteGatewayFn  func(ctx context.Context, req apigateway.DeleteGatewayRequest) (apigateway.DeleteGatewayResponse, error)
-	deleteCalled     bool
+	createGatewayFn func(ctx context.Context, req apigateway.CreateGatewayRequest) (apigateway.CreateGatewayResponse, error)
+	getGatewayFn    func(ctx context.Context, req apigateway.GetGatewayRequest) (apigateway.GetGatewayResponse, error)
+	listGatewaysFn  func(ctx context.Context, req apigateway.ListGatewaysRequest) (apigateway.ListGatewaysResponse, error)
+	updateGatewayFn func(ctx context.Context, req apigateway.UpdateGatewayRequest) (apigateway.UpdateGatewayResponse, error)
+	deleteGatewayFn func(ctx context.Context, req apigateway.DeleteGatewayRequest) (apigateway.DeleteGatewayResponse, error)
+	deleteCalled    bool
 }
 
 func (m *mockGatewayClient) CreateGateway(ctx context.Context, req apigateway.CreateGatewayRequest) (apigateway.CreateGatewayResponse, error) {

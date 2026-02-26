@@ -192,4 +192,3 @@ func (c *RedisClusterServiceManager) getRetryPolicy(attempts uint) common.RetryP
 	}
 	return common.NewRetryPolicy(attempts, shouldRetry, nextDuration)
 }
-
