@@ -11,6 +11,10 @@ spec:
   cidrBlock: "10.0.0.0/16"
   subnetCidrBlock: "10.0.1.0/24"
 
+  # Legacy fields — kept for schema compatibility
+  subnetId: ocid1.subnet.oc1.iad.aaaaaaaajubm6en7abkdkvyjb7oieedx6erstxi62zovgj3q5qbami2ygxza
+  vcnId: ocid1.vcn.oc1.iad.amaaaaaa2ahbgkyacqezlzup3hbkakou2pd2c7atxdrc76huezowualjc5xq
+
   # lbSubnetId is a pre-existing public subnet for the API Gateway
   lbSubnetId: ocid1.subnet.oc1.iad.aaaaaaaacmqn5tbxatzapwnqgapigor5jw7g2lft2gzqa2iqfnk56z6r2coa
 
@@ -24,5 +28,5 @@ spec:
 
   containerImageUrl: iad.ocir.io/okedev/dmayo/osok:latest
 
-  # imageId for the Compute Instance VM (Oracle Linux 8 in us-ashburn-1)
-  imageId: ocid1.image.oc1.iad.aaaaaaaavzjw65d6he5iy5tq3qmdjnf2dqzionn7iqv2vzmtllquacukukfq
+  # imageId for the Compute Instance VM (Oracle-Linux-8.10-2026.01.29-0 in us-ashburn-1)
+  imageId: ocid1.image.oc1.iad.aaaaaaaanfvealtkbagzff3alti6od4ehazp67jnstifmfrripsabel3khsa
