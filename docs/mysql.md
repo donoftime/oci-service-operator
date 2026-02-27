@@ -87,6 +87,10 @@ The Complete Specification of the `mysqldbsystems` Custom Resource (CR) is as de
 | `spec.definedTags` | Defined tags for this resource. Each key is predefined and scoped to a namespace. For more information, see [Resource Tags](https://docs.oracle.com/iaas/Content/General/Concepts/resourcetags.htm). | string | no |
 | `spec.adminUsername.secret.secretName` | The username for the administrative user. | string | yes       |
 | `spec.adminPassword.secret.secretName` | The Kubernetes Secret Name that contains admin password for Mysql DbSystem. The password must be between 8 and 32 characters long, and must contain at least 1 numeric character, 1 lowercase character, 1 uppercase character, and 1 special (nonalphanumeric) character. | string | yes       |
+| `spec.backupPolicy.isEnabled` | Specifies if automatic backups are enabled. | boolean | no |
+| `spec.backupPolicy.windowStartTime` | Start of the 30-minute window for daily automated backups (RFC3339 time format, e.g. `02:00`). | string | no |
+| `spec.backupPolicy.retentionInDays` | Number of days to retain automatic backups. | int | no |
+| `spec.maintenance.windowStartTime` | Start of the 2-hour maintenance window in `"{day-of-week} {time-of-day}"` format (e.g. `"sun 02:00"`). | string | no |
 
 
 

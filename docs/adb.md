@@ -43,7 +43,9 @@ The Complete Specification of the `AutonomousDatabase` Custom Resource (CR) is a
 | `spec.displayName` | The user-friendly name for the Autonomous Database. The name does not have to be unique. | string | yes       |
 | `spec.dbName` | The database name. The name must begin with an alphabetic character and can contain a maximum of 14 alphanumeric characters. Special characters are not permitted. The database name must be unique in the tenancy. | string | yes       |
 | `spec.compartmentId` | The [OCID](https://docs.cloud.oracle.com/Content/General/Concepts/identifiers.htm) of the compartment of the Autonomous Database. | string | yes       |
-| `spec.cpuCoreCount` | The number of OCPU cores to be made available to the database. | int    | yes       |
+| `spec.cpuCoreCount` | The number of OCPU cores to be made available to the database. Used with the legacy OCPU compute model. When using ECPU (recommended), use `computeModel` and `computeCount` instead. | int    | no        |
+| `spec.computeModel` | The compute model for the Autonomous Database. Allowed values: `ECPU` (recommended) or `OCPU` (legacy). Defaults to `OCPU` if not set. | string | no        |
+| `spec.computeCount` | The number of ECPUs to allocate to the database (used when `computeModel` is `ECPU`; minimum value is 2). | float  | no        |
 | `spec.dataStorageSizeInTBs`| The size, in terabytes, of the data volume that will be created and attached to the database. This storage can later be scaled up if needed. | int    | yes       |
 | `spec.dbVersion` | A valid Oracle Database version for Autonomous Database. | string | no        |
 | `spec.isDedicated` | True if the database is on dedicated [Exadata infrastructure](https://docs.cloud.oracle.com/Content/Database/Concepts/adbddoverview.htm).  | boolean | no       |
@@ -103,13 +105,17 @@ spec:
   isDedicated: <false/true>
   dbVersion: <ORABLE_DB_VERSION>
   dataStorageSizeInTBs: <SIZE_IN_TBs>
-  cpuCoreCount: <COUNT>
+  # Recommended: use ECPU compute model
+  computeModel: ECPU
+  computeCount: <COUNT>          # minimum 2 for ECPU
+  # Legacy OCPU compute model (use one or the other, not both):
+  # cpuCoreCount: <COUNT>
   adminPassword:
     secret:
       secretName: <ADMIN_PASSWORD_SECRET_NAME>
   isAutoScalingEnabled: <true/false>
   isFreeTier: <false/true>
-  licenseModel: <BRING_YOUR_OWN_LICENSE/LICENSE_INCLUDEE>
+  licenseModel: <BRING_YOUR_OWN_LICENSE/LICENSE_INCLUDED>
   wallet:
     walletName: <WALLET_SECRET_NAME>
     walletPassword:
@@ -187,13 +193,17 @@ spec:
   isDedicated: <false/true>
   dbVersion: <ORABLE_DB_VERSION>
   dataStorageSizeInTBs: <SIZE_IN_TBs>
-  cpuCoreCount: <COUNT>
+  # Recommended: use ECPU compute model
+  computeModel: ECPU
+  computeCount: <COUNT>          # minimum 2 for ECPU
+  # Legacy OCPU compute model (use one or the other, not both):
+  # cpuCoreCount: <COUNT>
   adminPassword:
     secret:
       secretName: <ADMIN_PASSWORD_SECRET_NAME>
   isAutoScalingEnabled: <true/false>
   isFreeTier: <false/true>
-  licenseModel: <BRING_YOUR_OWN_LICENSE/LICENSE_INCLUDEE>
+  licenseModel: <BRING_YOUR_OWN_LICENSE/LICENSE_INCLUDED>
   wallet:
     walletName: <WALLET_SECRET_NAME>
     walletPassword:

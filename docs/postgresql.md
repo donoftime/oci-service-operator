@@ -25,11 +25,13 @@ The `PostgresDbSystem` CRD maps to an OCI Database with PostgreSQL DB system.
 | `dbVersion` | string | Yes | PostgreSQL version (e.g. `14.10`) |
 | `shape` | string | Yes | Instance shape for DB nodes (e.g. `VM.Standard.E4.Flex`) |
 | `subnetId` | string (OCID) | Yes | Subnet for the DB system endpoints |
-| `storageType` | string | Yes | Storage tier: `HighPerformance` or `Balanced` |
+| `storageType` | string | No | Storage tier hint; the OCI Optimized storage tier is always used regardless of this value |
 | `description` | string | No | Optional description of the DB system |
 | `instanceCount` | integer | No | Number of DB instance nodes (defaults to 1) |
 | `instanceOcpuCount` | integer | No | OCPUs available to each instance node |
 | `instanceMemoryInGBs` | integer | No | Memory available to each instance node, in gigabytes |
+| `adminUsername.secret.secretName` | string | No | Kubernetes Secret name containing the admin username for the DB system. The secret must have a `username` key. |
+| `adminPassword.secret.secretName` | string | No | Kubernetes Secret name containing the admin password for the DB system. The secret must have a `password` key. |
 | `id` | string (OCID) | No | Bind to an existing DB system instead of creating one |
 | `freeformTags` | map | No | OCI freeform tags |
 | `definedTags` | map | No | OCI defined tags |
@@ -55,6 +57,27 @@ When a DB system is successfully provisioned, OSOK automatically creates a Kuber
 | `primaryEndpoint` | Private IP of the primary DB endpoint (if available) |
 | `port` | PostgreSQL port (5432) |
 
+## Admin Credentials
+
+To provision a new PostgreSQL DB system with an admin account, create a Kubernetes Secret containing the admin username and password:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: <ADMIN_SECRET_NAME>
+type: Opaque
+data:
+  username: <USERNAME_BASE64_ENCODED>
+  password: <PASSWORD_BASE64_ENCODED>
+```
+
+```bash
+kubectl apply -f <ADMIN_SECRET>.yaml
+```
+
+Reference the secret in the `adminUsername` and `adminPassword` fields of the spec.
+
 ## Example
 
 ```yaml
@@ -69,10 +92,15 @@ spec:
   dbVersion: "14.10"
   shape: "VM.Standard.E4.Flex"
   subnetId: ocid1.subnet.oc1.iad.xxx
-  storageType: HighPerformance
   instanceCount: 1
   instanceOcpuCount: 2
   instanceMemoryInGBs: 32
+  adminUsername:
+    secret:
+      secretName: <ADMIN_SECRET_NAME>
+  adminPassword:
+    secret:
+      secretName: <ADMIN_SECRET_NAME>
 ```
 
 Apply the resource:
@@ -122,7 +150,6 @@ spec:
   dbVersion: "14.10"
   shape: "VM.Standard.E4.Flex"
   subnetId: ocid1.subnet.oc1.iad.xxx
-  storageType: HighPerformance
   id: ocid1.postgresql.oc1.iad.existing-ocid
 ```
 
