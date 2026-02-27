@@ -25,24 +25,7 @@ spec:
 
   resources:
 
-    # ── 1. Vault ─────────────────────────────────────────────────────────────
-    - id: vault
-      template:
-        apiVersion: oci.oracle.com/v1beta1
-        kind: OciVault
-        metadata:
-          name: ${schema.metadata.name}-vault
-        spec:
-          compartmentId: ${schema.spec.compartmentId}
-          displayName: ${schema.metadata.name}-vault
-          vaultType: DEFAULT
-          key:
-            displayName: ${schema.metadata.name}-key
-            keyShape:
-              algorithm: AES
-              length: 32
-
-    # ── 2. Object Storage Bucket ──────────────────────────────────────────────
+    # ── 1. Object Storage Bucket ──────────────────────────────────────────────
     - id: objectStorageBucket
       template:
         apiVersion: oci.oracle.com/v1beta1
