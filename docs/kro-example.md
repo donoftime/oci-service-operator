@@ -267,7 +267,7 @@ spec:
           displayName: ${schema.metadata.name}-igw
           isEnabled: true
       readyWhen:
-        - ${internetGateway.status.status.conditions[-1].type == 'Active'}
+        - ${internetGateway.status.status.ocid != ""}
 
     # ── 8. Route Table ────────────────────────────────────────────────────────
     # Default route via Internet Gateway. Subnet depends on this OCID.
@@ -286,7 +286,7 @@ spec:
               networkEntityId: ${internetGateway.status.status.ocid}
               destinationType: CIDR_BLOCK
       readyWhen:
-        - ${routeTable.status.status.conditions[-1].type == 'Active'}
+        - ${routeTable.status.status.ocid != ""}
 
     # ── 9. Subnet ─────────────────────────────────────────────────────────────
     # Private subnet (no public IPs). All network-attached services use this.
@@ -328,6 +328,8 @@ spec:
               secretName: ${schema.spec.mysqlCredentialsSecret}
 
     # ── 11. PostgreSQL DB System ──────────────────────────────────────────────
+    # dbVersion accepts major versions only: "14", "15", or "16".
+    # shape must use the PostgreSQL. prefix (e.g. PostgreSQL.VM.Standard.E4.Flex).
     - id: postgres
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -337,8 +339,8 @@ spec:
         spec:
           compartmentId: ${schema.spec.compartmentId}
           displayName: ${schema.metadata.name}-postgres
-          dbVersion: "14.10"
-          shape: VM.Standard.E4.Flex
+          dbVersion: "14"
+          shape: PostgreSQL.VM.Standard.E4.Flex
           subnetId: ${subnet.status.status.ocid}
           storageType: HighPerformance
           instanceCount: 1
@@ -450,6 +452,13 @@ spec:
     #   gcPolicy:
     #     maxInstances: 3  # keep the 3 most recent instances; default 3
     # Setting maxInstances: 1 is most quota-efficient (only the active instance).
+    #
+    # Available shapes vary by region/AD — check with:
+    #   oci container-instances container-instance list-shapes \
+    #     --compartment-id <ocid> --availability-domain <ad>
+    # Common shapes: CI.Standard.E4.Flex, CI.Standard.A1.Flex (ARM).
+    # Use command override to prevent application-specific binaries from crashing
+    # in a container instance context outside Kubernetes.
     - id: containerInstance
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -460,13 +469,17 @@ spec:
           compartmentId: ${schema.spec.compartmentId}
           availabilityDomain: ${schema.spec.availabilityDomain}
           displayName: ${schema.metadata.name}-ci
-          shape: CI.Standard.E4.Flex
+          shape: CI.Standard.A1.Flex
           shapeConfig:
             ocpus: 1
             memoryInGBs: 4
           containers:
             - imageUrl: ${schema.spec.containerImageUrl}
               displayName: app
+              command:
+                - /bin/sh
+                - -c
+                - sleep infinity
               environmentVariables:
                 COMPARTMENT_ID: ${schema.spec.compartmentId}
           vnics:
@@ -616,6 +629,11 @@ nosqlTable ──────────┘
 The VCN topology chain (`vcn → internetGateway → routeTable → subnet`) must
 complete before any subnet-attached service is created. kro handles this
 automatically by tracking the `${resource.status.status.ocid}` references.
+
+> **readyWhen pattern**: Use `${resource.status.status.ocid != ""}` to gate
+> downstream resources on a gateway becoming active. kro's CEL evaluator does
+> not support negative list indices (`conditions[-1]`), so always use OCID
+> presence checks as readiness signals.
 
 ---
 
