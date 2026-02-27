@@ -662,12 +662,7 @@ kubectl get osokplatform my-platform -w
 Check individual resources as they come up:
 
 ```bash
-kubectl get \
-  objectstoragebucket,stream,ociqueue,autonomousdatabases,\
-  ocivcn,ociinternetgateway,ocinatgateway,ociservicegateway,ociroutetable,ocisecuritylist,ocisubnet,\
-  mysqldbsystem,postgresdbsystem,nosqldatabase,rediscluster,opensearchcluster,\
-  apigateway,apigatewaydeployment,containerinstance,computeinstance \
-  -o custom-columns='KIND:.kind,NAME:.metadata.name,STATUS:.status.status.conditions[-1].type'
+kubectl get objectstoragebucket,stream,ociqueue,autonomousdatabases,ocivcn,ociinternetgateway,ocinatgateway,ociservicegateway,ociroutetable,ocisecuritylist,ocisubnet,mysqldbsystem,postgresdbsystem,nosqldatabase,rediscluster,opensearchcluster,apigateway,apigatewaydeployment,containerinstance,computeinstance -o custom-columns='KIND:.kind,NAME:.metadata.name,STATUS:.status.status.conditions[-1].type'
 ```
 
 For services that create Kubernetes Secrets (MySQL, Redis, Queue, PostgreSQL,
