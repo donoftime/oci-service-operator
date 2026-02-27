@@ -181,9 +181,9 @@ spec:
           displayName: ${schema.metadata.name}-seclist
           egressSecurityRules:
             - protocol: "all"
-              destination: all-iad-services-in-oracle-services-network
+              destination: "0.0.0.0/0"
               isStateless: false
-              description: "Allow all egress to OCI services via SGW"
+              description: "Allow all egress (route table directs OCI service traffic to SGW)"
           ingressSecurityRules:
             - protocol: "6"
               source: ${schema.spec.subnetCidrBlock}
