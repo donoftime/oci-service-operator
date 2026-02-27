@@ -30,6 +30,7 @@ The `ContainerInstance` CRD maps to an OCI Container Instance.
 | `id` | string (OCID) | No | Bind to an existing instance instead of creating one |
 | `displayName` | string | No | User-friendly display name. **Required for idempotency** — OSOK uses this to look up existing instances by name, preventing a new instance from being created on every reconcile cycle. |
 | `gcPolicy.maxInstances` | integer | No | Maximum number of historical instances to retain (default: 3). Older instances (by creation time) are deleted when the limit is exceeded. Set to `1` for most quota-efficient operation (only the active instance is kept). |
+| `imagePullSecrets` | []ImagePullSecret | No | Credentials for pulling images from private registries |
 | `faultDomain` | string | No | Fault domain for the instance |
 | `gracefulShutdownTimeoutInSeconds` | integer | No | Graceful shutdown timeout |
 | `containerRestartPolicy` | string | No | Restart policy: `ALWAYS`, `NEVER`, or `ON_FAILURE` |
@@ -50,6 +51,7 @@ Each entry in the `containers` array supports:
 | `environmentVariables` | map | No | Additional environment variables |
 | `resourceConfig.vcpusLimit` | float | No | Max vCPUs for this container |
 | `resourceConfig.memoryLimitInGBs` | float | No | Max memory in GB for this container |
+| `volumeMounts` | []VolumeMount | No | Volume mounts for the container |
 
 ### VNIC Fields
 
@@ -60,6 +62,27 @@ Each entry in the `vnics` array supports:
 | `subnetId` | string (OCID) | Yes | Subnet for the VNIC |
 | `displayName` | string | No | Name for the VNIC |
 | `nsgIds` | []string (OCID) | No | NSG OCIDs to associate with the VNIC |
+
+### VolumeMount Fields
+
+Each entry in `containers[*].volumeMounts` supports:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `mountPath` | string | Yes | Path inside the container where the volume is mounted |
+| `volumeName` | string | Yes | Name of the volume to mount |
+| `subPath` | string | No | Optional path within the volume to mount |
+| `isReadOnly` | bool | No | Mount the volume as read-only when true |
+
+### ImagePullSecret Fields
+
+Each entry in `imagePullSecrets` supports:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `registryEndpoint` | string | Yes | Registry hostname (e.g. `registry.example.com`) |
+| `username` | string | Yes | Registry username |
+| `password` | string | Yes | Registry password |
 
 ### Status Fields
 

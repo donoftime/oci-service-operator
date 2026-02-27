@@ -354,7 +354,8 @@ The `OciSecurityList` CRD manages an [OCI Security List](https://docs.oracle.com
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `protocol` | string | Yes | IP protocol number: `"all"`, `"6"` (TCP), `"17"` (UDP), `"1"` (ICMP) |
-| `destination` | string | Yes | Destination CIDR block (e.g. `"0.0.0.0/0"`) |
+| `destination` | string | Yes | Destination CIDR block (e.g. `"0.0.0.0/0"`) or service CIDR label |
+| `destinationType` | string | No | `"CIDR_BLOCK"` (default) or `"SERVICE_CIDR_BLOCK"` |
 | `isStateless` | bool | No | When true, rule is stateless (default: false, stateful) |
 | `description` | string | No | Human-readable description |
 | `tcpOptions` | TcpOptions | No | TCP port range filter (only for protocol `"6"`) |
@@ -366,6 +367,10 @@ The `OciSecurityList` CRD manages an [OCI Security List](https://docs.oracle.com
 |-------|------|-------------|
 | `destinationPortRange` | PortRange | Destination port range (`min`, `max`) |
 | `sourcePortRange` | PortRange | Source port range (`min`, `max`) |
+
+### Reconciliation Behavior
+
+Security rules are reconciled on every controller cycle. If you update `ingressSecurityRules` or `egressSecurityRules` in the spec, the controller applies the full set of rules to OCI on the next reconcile — replacing any previously configured rules. This ensures the OCI Security List always reflects the spec exactly.
 
 ### Status Fields
 
@@ -485,6 +490,10 @@ The `OciRouteTable` CRD manages an [OCI Route Table](https://docs.oracle.com/iaa
 | `destination` | string | Yes | Destination CIDR block (e.g. `"0.0.0.0/0"`) or service CIDR label |
 | `destinationType` | string | No | `"CIDR_BLOCK"` (default) or `"SERVICE_CIDR_BLOCK"` |
 | `description` | string | No | Human-readable description |
+
+### Reconciliation Behavior
+
+Route rules are reconciled on every controller cycle. If you update `routeRules` in the spec, the controller applies the full set of rules to OCI on the next reconcile — replacing any previously configured rules. This ensures the OCI Route Table always reflects the spec exactly.
 
 ### Status Fields
 

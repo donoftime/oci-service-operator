@@ -83,7 +83,7 @@ spec:
                 minimum: 1
                 type: integer
               retentionInHours:
-                maximum: 167
+                maximum: 168
                 minimum: 24
                 type: integer
               streamPoolId:
