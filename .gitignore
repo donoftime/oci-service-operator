@@ -7,6 +7,9 @@ bundle/
 # This is to remediate SCA findings wrt downloads from dockerfiles present in go vendor tree
 vendor/**/Dockerfile
 
+# Kubernetes secrets — never commit plaintext credentials
+kro-platform-secrets.yaml
+
 # Gas Town (added by gt)
 .runtime/
 .claude/commands/
