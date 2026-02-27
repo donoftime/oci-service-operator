@@ -484,6 +484,106 @@ func TestCreateOrUpdate_WithWallet_PasswordSecretError(t *testing.T) {
 	assert.False(t, resp.IsSuccessful)
 }
 
+// TestCreateOrUpdate_CreateNewAdb_ECPU verifies that when ComputeModel is set, ComputeCount
+// is sent and CpuCoreCount is NOT set in the create request.
+func TestCreateOrUpdate_CreateNewAdb_ECPU(t *testing.T) {
+	newAdbId := "ocid1.autonomousdatabase.oc1..ecpu"
+
+	credClient := &fakeCredentialClient{
+		getSecretFn: func(_ context.Context, _, _ string) (map[string][]byte, error) {
+			return map[string][]byte{"password": []byte("admin123")}, nil
+		},
+	}
+	mgr := newTestManager(credClient)
+
+	var capturedReq database.CreateAutonomousDatabaseRequest
+	mockClient := &mockOciDbClient{
+		listFn: func(_ context.Context, _ database.ListAutonomousDatabasesRequest) (database.ListAutonomousDatabasesResponse, error) {
+			return database.ListAutonomousDatabasesResponse{}, nil
+		},
+		createFn: func(_ context.Context, req database.CreateAutonomousDatabaseRequest) (database.CreateAutonomousDatabaseResponse, error) {
+			capturedReq = req
+			return database.CreateAutonomousDatabaseResponse{
+				AutonomousDatabase: database.AutonomousDatabase{
+					Id: common.String(newAdbId),
+				},
+			}, nil
+		},
+		getFn: func(_ context.Context, _ database.GetAutonomousDatabaseRequest) (database.GetAutonomousDatabaseResponse, error) {
+			return database.GetAutonomousDatabaseResponse{
+				AutonomousDatabase: makeActiveAdb(newAdbId, "ecpu-adb"),
+			}, nil
+		},
+	}
+	ExportSetClientForTest(mgr, mockClient)
+
+	adb := &ociv1beta1.AutonomousDatabases{}
+	adb.Spec.DisplayName = "ecpu-adb"
+	adb.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+	adb.Spec.AdminPassword.Secret.SecretName = "adb-admin-secret"
+	adb.Spec.ComputeModel = "ECPU"
+	adb.Spec.ComputeCount = 2.0
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), adb, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.Equal(t, ociv1beta1.OCID(newAdbId), adb.Status.OsokStatus.Ocid)
+
+	details := capturedReq.CreateAutonomousDatabaseDetails.(database.CreateAutonomousDatabaseDetails)
+	assert.Equal(t, database.CreateAutonomousDatabaseBaseComputeModelEnum("ECPU"), details.ComputeModel)
+	assert.Equal(t, common.Float32(2.0), details.ComputeCount)
+	assert.Nil(t, details.CpuCoreCount, "CpuCoreCount must be nil when using ECPU model")
+}
+
+// TestCreateOrUpdate_CreateNewAdb_OCPU verifies that when ComputeModel is empty,
+// CpuCoreCount is sent (legacy OCPU path) and ComputeCount/ComputeModel are not set.
+func TestCreateOrUpdate_CreateNewAdb_OCPU(t *testing.T) {
+	newAdbId := "ocid1.autonomousdatabase.oc1..ocpu"
+
+	credClient := &fakeCredentialClient{
+		getSecretFn: func(_ context.Context, _, _ string) (map[string][]byte, error) {
+			return map[string][]byte{"password": []byte("admin123")}, nil
+		},
+	}
+	mgr := newTestManager(credClient)
+
+	var capturedReq database.CreateAutonomousDatabaseRequest
+	mockClient := &mockOciDbClient{
+		listFn: func(_ context.Context, _ database.ListAutonomousDatabasesRequest) (database.ListAutonomousDatabasesResponse, error) {
+			return database.ListAutonomousDatabasesResponse{}, nil
+		},
+		createFn: func(_ context.Context, req database.CreateAutonomousDatabaseRequest) (database.CreateAutonomousDatabaseResponse, error) {
+			capturedReq = req
+			return database.CreateAutonomousDatabaseResponse{
+				AutonomousDatabase: database.AutonomousDatabase{
+					Id: common.String(newAdbId),
+				},
+			}, nil
+		},
+		getFn: func(_ context.Context, _ database.GetAutonomousDatabaseRequest) (database.GetAutonomousDatabaseResponse, error) {
+			return database.GetAutonomousDatabaseResponse{
+				AutonomousDatabase: makeActiveAdb(newAdbId, "ocpu-adb"),
+			}, nil
+		},
+	}
+	ExportSetClientForTest(mgr, mockClient)
+
+	adb := &ociv1beta1.AutonomousDatabases{}
+	adb.Spec.DisplayName = "ocpu-adb"
+	adb.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+	adb.Spec.AdminPassword.Secret.SecretName = "adb-admin-secret"
+	adb.Spec.CpuCoreCount = 1
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), adb, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+
+	details := capturedReq.CreateAutonomousDatabaseDetails.(database.CreateAutonomousDatabaseDetails)
+	assert.Equal(t, common.Int(1), details.CpuCoreCount)
+	assert.Empty(t, string(details.ComputeModel), "ComputeModel must be empty when using OCPU model")
+	assert.Nil(t, details.ComputeCount, "ComputeCount must be nil when using OCPU model")
+}
+
 // TestCreateOrUpdate_CreateNewAdb_MissingPasswordKey verifies that a missing "password"
 // key in the admin secret causes a clear error before any OCI call is made.
 func TestCreateOrUpdate_CreateNewAdb_MissingPasswordKey(t *testing.T) {

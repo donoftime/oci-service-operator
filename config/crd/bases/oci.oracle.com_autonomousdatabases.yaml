@@ -72,6 +72,10 @@ spec:
                 maxLength: 255
                 minLength: 1
                 type: string
+              computeCount:
+                type: number
+              computeModel:
+                type: string
               cpuCoreCount:
                 type: integer
               dataStorageSizeInTBs:

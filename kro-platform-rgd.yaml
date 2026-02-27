@@ -95,7 +95,8 @@ spec:
           displayName: ${schema.metadata.name}-adb
           dbName: ${schema.spec.adbDbName}
           dbWorkload: OLTP
-          cpuCoreCount: 1
+          computeModel: ECPU
+          computeCount: 2
           dataStorageSizeInTBs: 1
           isAutoScalingEnabled: false
           isFreeTier: false

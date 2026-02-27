@@ -59,7 +59,6 @@ func (c *AdbServiceManager) CreateAdb(ctx context.Context, adb ociv1beta1.Autono
 		CompartmentId:        common.String(string(adb.Spec.CompartmentId)),
 		DisplayName:          common.String(adb.Spec.DisplayName),
 		DbName:               common.String(adb.Spec.DbName),
-		CpuCoreCount:         common.Int(adb.Spec.CpuCoreCount),
 		DataStorageSizeInTBs: common.Int(adb.Spec.DataStorageSizeInTBs),
 		AdminPassword:        common.String(adminPwd),
 		IsAutoScalingEnabled: common.Bool(adb.Spec.IsAutoScalingEnabled),
@@ -68,6 +67,13 @@ func (c *AdbServiceManager) CreateAdb(ctx context.Context, adb ociv1beta1.Autono
 		IsFreeTier:           common.Bool(adb.Spec.IsFreeTier),
 		FreeformTags:         adb.Spec.FreeFormTags,
 		DefinedTags:          *util.ConvertToOciDefinedTags(&adb.Spec.DefinedTags),
+	}
+
+	if adb.Spec.ComputeModel != "" {
+		createAutonomousDatabaseDetails.ComputeModel = database.CreateAutonomousDatabaseBaseComputeModelEnum(adb.Spec.ComputeModel)
+		createAutonomousDatabaseDetails.ComputeCount = common.Float32(adb.Spec.ComputeCount)
+	} else {
+		createAutonomousDatabaseDetails.CpuCoreCount = common.Int(adb.Spec.CpuCoreCount)
 	}
 
 	if adb.Spec.DbVersion != "" {
