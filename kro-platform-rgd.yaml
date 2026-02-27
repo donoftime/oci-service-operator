@@ -131,7 +131,22 @@ spec:
       readyWhen:
         - ${internetGateway.status.status.ocid != ""}
 
-    # ── 7b. Service Gateway ───────────────────────────────────────────────────
+    # ── 7b. NAT Gateway ────────────────────────────────────────────────────────
+    - id: natGateway
+      template:
+        apiVersion: oci.oracle.com/v1beta1
+        kind: OciNatGateway
+        metadata:
+          name: ${schema.metadata.name}-ngw
+        spec:
+          compartmentId: ${schema.spec.compartmentId}
+          vcnId: ${vcn.status.status.ocid}
+          displayName: ${schema.metadata.name}-ngw
+          blockTraffic: false
+      readyWhen:
+        - ${natGateway.status.status.ocid != ""}
+
+    # ── 7c. Service Gateway ───────────────────────────────────────────────────
     - id: serviceGateway
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -160,7 +175,7 @@ spec:
           displayName: ${schema.metadata.name}-rt
           routeRules:
             - destination: "0.0.0.0/0"
-              networkEntityId: ${internetGateway.status.status.ocid}
+              networkEntityId: ${natGateway.status.status.ocid}
               destinationType: CIDR_BLOCK
             - destination: all-iad-services-in-oracle-services-network
               networkEntityId: ${serviceGateway.status.status.ocid}
