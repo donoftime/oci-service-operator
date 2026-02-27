@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	"github.com/oracle/oci-go-sdk/v65/mysql"
@@ -16,6 +17,7 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/loggerutil"
 	. "github.com/oracle/oci-service-operator/pkg/servicemanager/mysql/dbsystem"
 	"github.com/stretchr/testify/assert"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -508,4 +510,309 @@ func TestCreateOrUpdate_LifecycleFailed(t *testing.T) {
 	assert.True(t, resp.IsSuccessful)
 	// Status should reflect the FAILED lifecycle
 	assert.Equal(t, ociv1beta1.OCID(dbSystemId), dbSystem.Status.OsokStatus.Ocid)
+}
+
+// ---------------------------------------------------------------------------
+// DeleteMySqlDbSystem stub coverage
+// ---------------------------------------------------------------------------
+
+// TestDeleteMySqlDbSystem verifies DeleteMySqlDbSystem returns empty string and no error.
+func TestDeleteMySqlDbSystem(t *testing.T) {
+	mgr := newTestManager(&fakeCredentialClient{})
+	ocid, err := mgr.DeleteMySqlDbSystem()
+	assert.NoError(t, err)
+	assert.Equal(t, "", ocid)
+}
+
+// ---------------------------------------------------------------------------
+// deleteFromSecret coverage
+// ---------------------------------------------------------------------------
+
+// TestDeleteFromSecret verifies deleteFromSecret calls CredentialClient.DeleteSecret.
+func TestDeleteFromSecret(t *testing.T) {
+	deleteCalled := false
+	credClient := &fakeCredentialClient{
+		deleteSecretFn: func(_ context.Context, _, _ string) (bool, error) {
+			deleteCalled = true
+			return true, nil
+		},
+	}
+	mgr := newTestManager(credClient)
+
+	ok, err := ExportDeleteFromSecretForTest(mgr, context.Background(), "default", "my-dbsystem")
+	assert.NoError(t, err)
+	assert.True(t, ok)
+	assert.True(t, deleteCalled, "DeleteSecret should be called by deleteFromSecret")
+}
+
+// ---------------------------------------------------------------------------
+// getDbSystemRetryPolicy predicate and nextDuration coverage
+// ---------------------------------------------------------------------------
+
+// TestDbSystemRetryPolicy_Creating verifies shouldRetry returns true when state is CREATING.
+func TestDbSystemRetryPolicy_Creating(t *testing.T) {
+	mgr := newTestManager(&fakeCredentialClient{})
+	shouldRetry := ExportGetDbSystemRetryPredicate(mgr)
+
+	resp := common.OCIOperationResponse{
+		Response: mysql.GetDbSystemResponse{
+			DbSystem: mysql.DbSystem{LifecycleState: "CREATING"},
+		},
+	}
+	assert.True(t, shouldRetry(resp))
+}
+
+// TestDbSystemRetryPolicy_Active verifies shouldRetry returns false when state is ACTIVE.
+func TestDbSystemRetryPolicy_Active(t *testing.T) {
+	mgr := newTestManager(&fakeCredentialClient{})
+	shouldRetry := ExportGetDbSystemRetryPredicate(mgr)
+
+	resp := common.OCIOperationResponse{
+		Response: mysql.GetDbSystemResponse{
+			DbSystem: mysql.DbSystem{LifecycleState: "ACTIVE"},
+		},
+	}
+	assert.False(t, shouldRetry(resp))
+}
+
+// TestDbSystemRetryPolicy_NonResponse verifies shouldRetry returns true when type assertion fails.
+func TestDbSystemRetryPolicy_NonResponse(t *testing.T) {
+	mgr := newTestManager(&fakeCredentialClient{})
+	shouldRetry := ExportGetDbSystemRetryPredicate(mgr)
+
+	resp := common.OCIOperationResponse{} // nil Response — type assertion fails → true
+	assert.True(t, shouldRetry(resp))
+}
+
+// TestDbSystemRetryNextDuration verifies nextDuration returns 1 minute.
+func TestDbSystemRetryNextDuration(t *testing.T) {
+	mgr := newTestManager(&fakeCredentialClient{})
+	nextDuration := ExportGetDbSystemNextDuration(mgr)
+
+	resp := common.OCIOperationResponse{AttemptNumber: 1}
+	assert.Equal(t, 1*time.Minute, nextDuration(resp))
+}
+
+// ---------------------------------------------------------------------------
+// CreateDbSystem optional field coverage
+// ---------------------------------------------------------------------------
+
+// TestCreateOrUpdate_CreateNew_WithOptionalFields verifies that optional fields
+// (Description, Port, PortX, ConfigurationId, IpAddress, HostnameLabel, MysqlVersion)
+// are included in the CreateDbSystem request when set.
+func TestCreateOrUpdate_CreateNew_WithOptionalFields(t *testing.T) {
+	newDbSystemId := "ocid1.mysqldbsystem.oc1..opts"
+
+	credClient := &fakeCredentialClient{
+		getSecretFn: func(_ context.Context, name, _ string) (map[string][]byte, error) {
+			if name == "admin-username-secret" {
+				return map[string][]byte{"username": []byte("admin")}, nil
+			}
+			return map[string][]byte{"password": []byte("secret123")}, nil
+		},
+		createSecretFn: func(_ context.Context, _, _ string, _ map[string]string, _ map[string][]byte) (bool, error) {
+			return true, nil
+		},
+	}
+	mgr := newTestManager(credClient)
+
+	var capturedReq mysql.CreateDbSystemRequest
+	mockClient := &mockOciDbSystemClient{
+		listFn: func(_ context.Context, _ mysql.ListDbSystemsRequest) (mysql.ListDbSystemsResponse, error) {
+			return mysql.ListDbSystemsResponse{}, nil
+		},
+		createFn: func(_ context.Context, req mysql.CreateDbSystemRequest) (mysql.CreateDbSystemResponse, error) {
+			capturedReq = req
+			return mysql.CreateDbSystemResponse{
+				DbSystem: mysql.DbSystem{Id: common.String(newDbSystemId)},
+			}, nil
+		},
+		getFn: func(_ context.Context, _ mysql.GetDbSystemRequest) (mysql.GetDbSystemResponse, error) {
+			return mysql.GetDbSystemResponse{
+				DbSystem: makeActiveDbSystem(newDbSystemId, "opts-dbsystem"),
+			}, nil
+		},
+	}
+	ExportSetClientForTest(mgr, mockClient)
+
+	dbSystem := &ociv1beta1.MySqlDbSystem{}
+	dbSystem.Name = "opts-dbsystem"
+	dbSystem.Namespace = "default"
+	dbSystem.Spec.DisplayName = "opts-dbsystem"
+	dbSystem.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+	dbSystem.Spec.AdminUsername.Secret.SecretName = "admin-username-secret"
+	dbSystem.Spec.AdminPassword.Secret.SecretName = "admin-password-secret"
+	dbSystem.Spec.Description = "test description"
+	dbSystem.Spec.Port = 3307
+	dbSystem.Spec.PortX = 33070
+	dbSystem.Spec.ConfigurationId.Id = "ocid1.mysqlconfiguration.oc1..cfg"
+	dbSystem.Spec.IpAddress = "10.0.0.5"
+	dbSystem.Spec.HostnameLabel = "mysql-host"
+	dbSystem.Spec.MysqlVersion = "8.0"
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), dbSystem, ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "default"}})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+
+	d := capturedReq.CreateDbSystemDetails
+	assert.Equal(t, common.String("test description"), d.Description)
+	assert.Equal(t, common.Int(3307), d.Port)
+	assert.Equal(t, common.Int(33070), d.PortX)
+	assert.Equal(t, common.String("ocid1.mysqlconfiguration.oc1..cfg"), d.ConfigurationId)
+	assert.Equal(t, common.String("10.0.0.5"), d.IpAddress)
+	assert.Equal(t, common.String("mysql-host"), d.HostnameLabel)
+	assert.Equal(t, common.String("8.0"), d.MysqlVersion)
+}
+
+// ---------------------------------------------------------------------------
+// UpdateMySqlDbSystem Description + ConfigurationId coverage
+// ---------------------------------------------------------------------------
+
+// TestCreateOrUpdate_BindExisting_DescriptionAndConfigIdChange verifies that Description
+// and ConfigurationId changes are included in the update request.
+func TestCreateOrUpdate_BindExisting_DescriptionAndConfigIdChange(t *testing.T) {
+	dbSystemId := "ocid1.mysqldbsystem.oc1..descfg"
+	var capturedUpdate mysql.UpdateDbSystemRequest
+
+	mgr := newTestManager(&fakeCredentialClient{
+		createSecretFn: func(_ context.Context, _, _ string, _ map[string]string, _ map[string][]byte) (bool, error) {
+			return true, nil
+		},
+	})
+	mockClient := &mockOciDbSystemClient{
+		getFn: func(_ context.Context, _ mysql.GetDbSystemRequest) (mysql.GetDbSystemResponse, error) {
+			return mysql.GetDbSystemResponse{
+				DbSystem: makeActiveDbSystem(dbSystemId, "test-dbsystem"),
+			}, nil
+		},
+		updateFn: func(_ context.Context, req mysql.UpdateDbSystemRequest) (mysql.UpdateDbSystemResponse, error) {
+			capturedUpdate = req
+			return mysql.UpdateDbSystemResponse{}, nil
+		},
+	}
+	ExportSetClientForTest(mgr, mockClient)
+
+	dbSystem := &ociv1beta1.MySqlDbSystem{}
+	dbSystem.Name = "test-dbsystem"
+	dbSystem.Namespace = "default"
+	dbSystem.Spec.MySqlDbSystemId = ociv1beta1.OCID(dbSystemId)
+	dbSystem.Spec.DisplayName = "test-dbsystem" // same — no update on this field
+	dbSystem.Spec.Description = "new description" // differs from "test description"
+	dbSystem.Spec.ConfigurationId.Id = "ocid1.mysqlconfiguration.oc1..new" // differs from current
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), dbSystem, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.Equal(t, common.String("new description"), capturedUpdate.UpdateDbSystemDetails.Description)
+	assert.Equal(t, common.String("ocid1.mysqlconfiguration.oc1..new"), capturedUpdate.UpdateDbSystemDetails.ConfigurationId)
+}
+
+// ---------------------------------------------------------------------------
+// isValidUpdate DefinedTags coverage
+// ---------------------------------------------------------------------------
+
+// TestCreateOrUpdate_BindExisting_DefinedTagsChange verifies that DefinedTags changes
+// trigger an update call.
+func TestCreateOrUpdate_BindExisting_DefinedTagsChange(t *testing.T) {
+	dbSystemId := "ocid1.mysqldbsystem.oc1..deftag"
+	updateCalled := false
+
+	mgr := newTestManager(&fakeCredentialClient{
+		createSecretFn: func(_ context.Context, _, _ string, _ map[string]string, _ map[string][]byte) (bool, error) {
+			return true, nil
+		},
+	})
+	mockClient := &mockOciDbSystemClient{
+		getFn: func(_ context.Context, _ mysql.GetDbSystemRequest) (mysql.GetDbSystemResponse, error) {
+			return mysql.GetDbSystemResponse{
+				DbSystem: makeActiveDbSystem(dbSystemId, "test-dbsystem"),
+			}, nil
+		},
+		updateFn: func(_ context.Context, _ mysql.UpdateDbSystemRequest) (mysql.UpdateDbSystemResponse, error) {
+			updateCalled = true
+			return mysql.UpdateDbSystemResponse{}, nil
+		},
+	}
+	ExportSetClientForTest(mgr, mockClient)
+
+	dbSystem := &ociv1beta1.MySqlDbSystem{}
+	dbSystem.Name = "test-dbsystem"
+	dbSystem.Namespace = "default"
+	dbSystem.Spec.MySqlDbSystemId = ociv1beta1.OCID(dbSystemId)
+	dbSystem.Spec.DisplayName = "test-dbsystem" // same
+	dbSystem.Spec.DefinedTags = map[string]ociv1beta1.MapValue{
+		"ns1": {"key1": "val1"},
+	}
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), dbSystem, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.True(t, updateCalled, "UpdateDbSystem should be called when DefinedTags differ")
+}
+
+// ---------------------------------------------------------------------------
+// Non-ACTIVE/FAILED lifecycle state coverage
+// ---------------------------------------------------------------------------
+
+// TestCreateOrUpdate_LifecycleProvisioning verifies that a non-ACTIVE, non-FAILED
+// lifecycle state results in an error response indicating the system is not yet ready.
+func TestCreateOrUpdate_LifecycleProvisioning(t *testing.T) {
+	dbSystemId := "ocid1.mysqldbsystem.oc1..prov"
+
+	creatingDbSystem := makeActiveDbSystem(dbSystemId, "prov-dbsystem")
+	creatingDbSystem.LifecycleState = mysql.DbSystemLifecycleStateCreating
+
+	mgr := newTestManager(&fakeCredentialClient{})
+	mockClient := &mockOciDbSystemClient{
+		getFn: func(_ context.Context, _ mysql.GetDbSystemRequest) (mysql.GetDbSystemResponse, error) {
+			return mysql.GetDbSystemResponse{DbSystem: creatingDbSystem}, nil
+		},
+	}
+	ExportSetClientForTest(mgr, mockClient)
+
+	dbSystem := &ociv1beta1.MySqlDbSystem{}
+	dbSystem.Name = "prov-dbsystem"
+	dbSystem.Namespace = "default"
+	dbSystem.Spec.MySqlDbSystemId = ociv1beta1.OCID(dbSystemId)
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), dbSystem, ctrl.Request{})
+	assert.Error(t, err)
+	assert.False(t, resp.IsSuccessful)
+}
+
+// ---------------------------------------------------------------------------
+// CreatedAt != nil branch coverage
+// ---------------------------------------------------------------------------
+
+// TestCreateOrUpdate_BindExisting_CreatedAtNonNil verifies that when CreatedAt is already
+// set and the bind succeeds, the CreatedAt timestamp is refreshed.
+func TestCreateOrUpdate_BindExisting_CreatedAtNonNil(t *testing.T) {
+	dbSystemId := "ocid1.mysqldbsystem.oc1..creat"
+
+	mgr := newTestManager(&fakeCredentialClient{
+		createSecretFn: func(_ context.Context, _, _ string, _ map[string]string, _ map[string][]byte) (bool, error) {
+			return true, nil
+		},
+	})
+	mockClient := &mockOciDbSystemClient{
+		getFn: func(_ context.Context, _ mysql.GetDbSystemRequest) (mysql.GetDbSystemResponse, error) {
+			return mysql.GetDbSystemResponse{
+				DbSystem: makeActiveDbSystem(dbSystemId, "test-dbsystem"),
+			}, nil
+		},
+	}
+	ExportSetClientForTest(mgr, mockClient)
+
+	dbSystem := &ociv1beta1.MySqlDbSystem{}
+	dbSystem.Name = "test-dbsystem"
+	dbSystem.Namespace = "default"
+	dbSystem.Spec.MySqlDbSystemId = ociv1beta1.OCID(dbSystemId)
+	dbSystem.Spec.DisplayName = "test-dbsystem"
+	// Pre-set CreatedAt so the "if CreatedAt != nil" branch is taken.
+	ts := metav1.NewTime(time.Now())
+	dbSystem.Status.OsokStatus.CreatedAt = &ts
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), dbSystem, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
 }

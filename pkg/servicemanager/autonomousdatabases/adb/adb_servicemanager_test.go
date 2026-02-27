@@ -6,9 +6,15 @@
 package adb_test
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"io"
+	"net/http"
 	"testing"
+	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	"github.com/oracle/oci-go-sdk/v65/database"
@@ -16,8 +22,16 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/loggerutil"
 	. "github.com/oracle/oci-service-operator/pkg/servicemanager/autonomousdatabases/adb"
 	"github.com/stretchr/testify/assert"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
+
+// fakeOCIResponse implements common.OCIResponse with a configurable HTTP response.
+type fakeOCIResponse struct {
+	httpResp *http.Response
+}
+
+func (f *fakeOCIResponse) HTTPResponse() *http.Response { return f.httpResp }
 
 // fakeCredentialClient implements credhelper.CredentialClient for testing.
 type fakeCredentialClient struct {
@@ -584,6 +598,259 @@ func TestCreateOrUpdate_CreateNewAdb_OCPU(t *testing.T) {
 	assert.Nil(t, details.ComputeCount, "ComputeCount must be nil when using OCPU model")
 }
 
+// ---------------------------------------------------------------------------
+// DeleteAdb test
+// ---------------------------------------------------------------------------
+
+// TestDeleteAdb verifies DeleteAdb returns empty string and no error (stub implementation).
+func TestDeleteAdb(t *testing.T) {
+	mgr := newTestManager(&fakeCredentialClient{})
+
+	ocid, err := mgr.DeleteAdb()
+	assert.NoError(t, err)
+	assert.Equal(t, "", ocid)
+}
+
+// ---------------------------------------------------------------------------
+// Retry policy predicate tests
+// ---------------------------------------------------------------------------
+
+// TestAdbRetryPolicy_Provisioning verifies shouldRetry returns true when ADB is PROVISIONING.
+func TestAdbRetryPolicy_Provisioning(t *testing.T) {
+	mgr := newTestManager(&fakeCredentialClient{})
+	shouldRetry := ExportAdbRetryPredicate(mgr)
+
+	resp := common.OCIOperationResponse{
+		Response: database.GetAutonomousDatabaseResponse{
+			AutonomousDatabase: database.AutonomousDatabase{
+				LifecycleState: "PROVISIONING",
+			},
+		},
+	}
+	assert.True(t, shouldRetry(resp), "shouldRetry should be true when ADB is PROVISIONING")
+}
+
+// TestAdbRetryPolicy_Available verifies shouldRetry returns false when ADB is AVAILABLE.
+func TestAdbRetryPolicy_Available(t *testing.T) {
+	mgr := newTestManager(&fakeCredentialClient{})
+	shouldRetry := ExportAdbRetryPredicate(mgr)
+
+	resp := common.OCIOperationResponse{
+		Response: database.GetAutonomousDatabaseResponse{
+			AutonomousDatabase: database.AutonomousDatabase{
+				LifecycleState: "AVAILABLE",
+			},
+		},
+	}
+	assert.False(t, shouldRetry(resp), "shouldRetry should be false when ADB is AVAILABLE")
+}
+
+// TestAdbRetryPolicy_NonResponse verifies shouldRetry returns true when type assertion fails.
+func TestAdbRetryPolicy_NonResponse(t *testing.T) {
+	mgr := newTestManager(&fakeCredentialClient{})
+	shouldRetry := ExportAdbRetryPredicate(mgr)
+
+	resp := common.OCIOperationResponse{} // nil Response → type assertion fails → true
+	assert.True(t, shouldRetry(resp))
+}
+
+// TestAdbRetryNextDuration verifies the nextDuration computes exponential backoff.
+func TestAdbRetryNextDuration(t *testing.T) {
+	mgr := newTestManager(&fakeCredentialClient{})
+	nextDuration := ExportAdbRetryNextDuration(mgr)
+
+	resp := common.OCIOperationResponse{AttemptNumber: 1}
+	assert.Equal(t, 1*time.Second, nextDuration(resp))
+}
+
+// TestExponentialBackoffPolicy_SuccessResponse verifies the predicate returns false (no retry)
+// when the response has no error and a 2xx HTTP status.
+func TestExponentialBackoffPolicy_SuccessResponse(t *testing.T) {
+	mgr := newTestManager(&fakeCredentialClient{})
+	shouldRetry := ExportExponentialBackoffPredicate(mgr)
+
+	// Build a fake HTTP response with 200 status.
+	httpResp := &http.Response{StatusCode: 200}
+	fakeResp := &fakeOCIResponse{httpResp: httpResp}
+	resp := common.OCIOperationResponse{
+		Response: fakeResp,
+		Error:    nil,
+	}
+	assert.False(t, shouldRetry(resp), "shouldRetry should be false for a successful 2xx response")
+}
+
+// TestExponentialBackoffPolicy_ErrorResponse verifies the predicate returns true (retry)
+// when the response has an error.
+func TestExponentialBackoffPolicy_ErrorResponse(t *testing.T) {
+	mgr := newTestManager(&fakeCredentialClient{})
+	shouldRetry := ExportExponentialBackoffPredicate(mgr)
+
+	resp := common.OCIOperationResponse{
+		Error: errors.New("network error"),
+	}
+	assert.True(t, shouldRetry(resp), "shouldRetry should be true when there is an error")
+}
+
+// TestExponentialBackoffNextDuration verifies nextDuration returns exponential backoff.
+func TestExponentialBackoffNextDuration(t *testing.T) {
+	mgr := newTestManager(&fakeCredentialClient{})
+	nextDuration := ExportExponentialBackoffNextDuration(mgr)
+
+	resp := common.OCIOperationResponse{AttemptNumber: 1}
+	assert.Equal(t, 1*time.Second, nextDuration(resp))
+}
+
+// ---------------------------------------------------------------------------
+// isValidUpdate DefinedTags coverage
+// ---------------------------------------------------------------------------
+
+// TestCreateOrUpdate_BindExistingAdb_DefinedTagsChange verifies that when DefinedTags
+// in the spec differ from the existing ADB, UpdateAdb is called.
+func TestCreateOrUpdate_BindExistingAdb_DefinedTagsChange(t *testing.T) {
+	adbId := "ocid1.autonomousdatabase.oc1..deftags"
+	updateCalled := false
+
+	mgr := newTestManager(&fakeCredentialClient{})
+	mockClient := &mockOciDbClient{
+		getFn: func(_ context.Context, _ database.GetAutonomousDatabaseRequest) (database.GetAutonomousDatabaseResponse, error) {
+			return database.GetAutonomousDatabaseResponse{
+				AutonomousDatabase: makeActiveAdb(adbId, "test-adb"),
+				// makeActiveAdb has no DefinedTags
+			}, nil
+		},
+		updateFn: func(_ context.Context, _ database.UpdateAutonomousDatabaseRequest) (database.UpdateAutonomousDatabaseResponse, error) {
+			updateCalled = true
+			return database.UpdateAutonomousDatabaseResponse{}, nil
+		},
+	}
+	ExportSetClientForTest(mgr, mockClient)
+
+	adb := &ociv1beta1.AutonomousDatabases{}
+	adb.Spec.AdbId = ociv1beta1.OCID(adbId)
+	adb.Spec.DisplayName = "test-adb" // same — no display name update
+	adb.Spec.DefinedTags = map[string]ociv1beta1.MapValue{
+		"ns1": {"key1": "val1"},
+	}
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), adb, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.True(t, updateCalled, "UpdateAdb should be called when DefinedTags differ")
+}
+
+// ---------------------------------------------------------------------------
+// UpdateAdb additional field coverage
+// ---------------------------------------------------------------------------
+
+// TestCreateOrUpdate_UpdateAdb_AdditionalFields verifies that DbWorkload, IsFreeTier,
+// LicenseModel, DbVersion, and FreeFormTags changes trigger an update with correct values.
+func TestCreateOrUpdate_UpdateAdb_AdditionalFields(t *testing.T) {
+	adbId := "ocid1.autonomousdatabase.oc1..addfields"
+	var capturedUpdate database.UpdateAutonomousDatabaseRequest
+
+	mgr := newTestManager(&fakeCredentialClient{})
+	mockClient := &mockOciDbClient{
+		getFn: func(_ context.Context, _ database.GetAutonomousDatabaseRequest) (database.GetAutonomousDatabaseResponse, error) {
+			return database.GetAutonomousDatabaseResponse{
+				AutonomousDatabase: makeActiveAdb(adbId, "test-adb"),
+				// makeActiveAdb has DbWorkload=OLTP, IsFreeTier=false, LicenseModel=LICENSE_INCLUDED, DbVersion=19c
+			}, nil
+		},
+		updateFn: func(_ context.Context, req database.UpdateAutonomousDatabaseRequest) (database.UpdateAutonomousDatabaseResponse, error) {
+			capturedUpdate = req
+			return database.UpdateAutonomousDatabaseResponse{}, nil
+		},
+	}
+	ExportSetClientForTest(mgr, mockClient)
+
+	adb := &ociv1beta1.AutonomousDatabases{}
+	adb.Spec.AdbId = ociv1beta1.OCID(adbId)
+	adb.Spec.DbWorkload = "DW"                   // differs from OLTP
+	adb.Spec.IsFreeTier = true                   // differs from false
+	adb.Spec.LicenseModel = "BRING_YOUR_OWN_LICENSE" // differs from LICENSE_INCLUDED
+	adb.Spec.DbVersion = "21c"                   // differs from 19c
+	adb.Spec.FreeFormTags = map[string]string{"env": "prod"} // differs from nil
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), adb, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+
+	details := capturedUpdate.UpdateAutonomousDatabaseDetails
+	assert.Equal(t, database.UpdateAutonomousDatabaseDetailsDbWorkloadEnum("DW"), details.DbWorkload)
+	assert.Equal(t, common.Bool(true), details.IsFreeTier)
+	assert.Equal(t, database.UpdateAutonomousDatabaseDetailsLicenseModelEnum("BRING_YOUR_OWN_LICENSE"), details.LicenseModel)
+	assert.Equal(t, common.String("21c"), details.DbVersion)
+	assert.Equal(t, map[string]string{"env": "prod"}, details.FreeformTags)
+}
+
+// ---------------------------------------------------------------------------
+// getWalletPassword missing key coverage
+// ---------------------------------------------------------------------------
+
+// TestCreateOrUpdate_WalletPassword_MissingKey verifies that when the wallet password
+// secret exists but lacks the "walletPassword" key, the operation fails with a clear error.
+func TestCreateOrUpdate_WalletPassword_MissingKey(t *testing.T) {
+	adbId := "ocid1.autonomousdatabase.oc1..walpwd"
+	callCount := 0
+
+	credClient := &fakeCredentialClient{
+		getSecretFn: func(_ context.Context, _, _ string) (map[string][]byte, error) {
+			callCount++
+			if callCount == 1 {
+				// First call: wallet existence check → return error (wallet doesn't exist yet)
+				return nil, errors.New("wallet not found")
+			}
+			// Second call: wallet password fetch → key is wrong
+			return map[string][]byte{"wrongkey": []byte("value")}, nil
+		},
+	}
+	mgr := newTestManager(credClient)
+
+	mockClient := &mockOciDbClient{
+		getFn: func(_ context.Context, _ database.GetAutonomousDatabaseRequest) (database.GetAutonomousDatabaseResponse, error) {
+			return database.GetAutonomousDatabaseResponse{
+				AutonomousDatabase: makeActiveAdb(adbId, "test-adb"),
+			}, nil
+		},
+	}
+	ExportSetClientForTest(mgr, mockClient)
+
+	adb := &ociv1beta1.AutonomousDatabases{}
+	adb.Name = "test-adb"
+	adb.Namespace = "default"
+	adb.Spec.AdbId = ociv1beta1.OCID(adbId)
+	adb.Spec.DisplayName = "test-adb"
+	adb.Spec.Wallet.WalletPassword.Secret.SecretName = "wallet-pwd-secret"
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), adb, ctrl.Request{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "walletPassword")
+	assert.False(t, resp.IsSuccessful)
+}
+
+// ---------------------------------------------------------------------------
+// TestCreateOrUpdate_CreateNewAdb_MissingPasswordKey
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// fakeServiceError implements common.ServiceError + error for testing.
+// ---------------------------------------------------------------------------
+
+type fakeServiceError struct {
+	statusCode int
+	code       string
+	message    string
+}
+
+func (f *fakeServiceError) GetHTTPStatusCode() int  { return f.statusCode }
+func (f *fakeServiceError) GetMessage() string      { return f.message }
+func (f *fakeServiceError) GetCode() string         { return f.code }
+func (f *fakeServiceError) GetOpcRequestID() string { return "" }
+func (f *fakeServiceError) Error() string {
+	return fmt.Sprintf("%d %s: %s", f.statusCode, f.code, f.message)
+}
+
+// ---------------------------------------------------------------------------
 // TestCreateOrUpdate_CreateNewAdb_MissingPasswordKey verifies that a missing "password"
 // key in the admin secret causes a clear error before any OCI call is made.
 func TestCreateOrUpdate_CreateNewAdb_MissingPasswordKey(t *testing.T) {
@@ -610,4 +877,241 @@ func TestCreateOrUpdate_CreateNewAdb_MissingPasswordKey(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "password key")
 	assert.False(t, resp.IsSuccessful)
+}
+
+// ---------------------------------------------------------------------------
+// CreateAdb optional field coverage (DbVersion + LicenseModel)
+// ---------------------------------------------------------------------------
+
+// TestCreateOrUpdate_CreateNewAdb_WithVersionAndLicense verifies that when DbVersion and
+// LicenseModel are set in the spec, they are included in the create request.
+func TestCreateOrUpdate_CreateNewAdb_WithVersionAndLicense(t *testing.T) {
+	newAdbId := "ocid1.autonomousdatabase.oc1..verlic"
+	credClient := &fakeCredentialClient{
+		getSecretFn: func(_ context.Context, _, _ string) (map[string][]byte, error) {
+			return map[string][]byte{"password": []byte("admin123")}, nil
+		},
+	}
+	mgr := newTestManager(credClient)
+
+	var capturedReq database.CreateAutonomousDatabaseRequest
+	mockClient := &mockOciDbClient{
+		listFn: func(_ context.Context, _ database.ListAutonomousDatabasesRequest) (database.ListAutonomousDatabasesResponse, error) {
+			return database.ListAutonomousDatabasesResponse{}, nil
+		},
+		createFn: func(_ context.Context, req database.CreateAutonomousDatabaseRequest) (database.CreateAutonomousDatabaseResponse, error) {
+			capturedReq = req
+			return database.CreateAutonomousDatabaseResponse{
+				AutonomousDatabase: database.AutonomousDatabase{Id: common.String(newAdbId)},
+			}, nil
+		},
+		getFn: func(_ context.Context, _ database.GetAutonomousDatabaseRequest) (database.GetAutonomousDatabaseResponse, error) {
+			return database.GetAutonomousDatabaseResponse{
+				AutonomousDatabase: makeActiveAdb(newAdbId, "test-adb"),
+			}, nil
+		},
+	}
+	ExportSetClientForTest(mgr, mockClient)
+
+	adb := &ociv1beta1.AutonomousDatabases{}
+	adb.Spec.DisplayName = "test-adb"
+	adb.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+	adb.Spec.AdminPassword.Secret.SecretName = "adb-admin-secret"
+	adb.Spec.CpuCoreCount = 2
+	adb.Spec.DbVersion = "21c"
+	adb.Spec.LicenseModel = "BRING_YOUR_OWN_LICENSE"
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), adb, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+
+	details := capturedReq.CreateAutonomousDatabaseDetails.(database.CreateAutonomousDatabaseDetails)
+	assert.Equal(t, common.String("21c"), details.DbVersion)
+	assert.Equal(t, database.CreateAutonomousDatabaseBaseLicenseModelEnum("BRING_YOUR_OWN_LICENSE"), details.LicenseModel)
+}
+
+// ---------------------------------------------------------------------------
+// UpdateAdb DbName branch coverage
+// ---------------------------------------------------------------------------
+
+// TestCreateOrUpdate_BindExistingAdb_DbNameChange verifies that when DbName in the spec
+// differs from the existing ADB, the update request includes the new DbName.
+func TestCreateOrUpdate_BindExistingAdb_DbNameChange(t *testing.T) {
+	adbId := "ocid1.autonomousdatabase.oc1..dbname"
+	var capturedUpdate database.UpdateAutonomousDatabaseRequest
+
+	mgr := newTestManager(&fakeCredentialClient{})
+	mockClient := &mockOciDbClient{
+		getFn: func(_ context.Context, _ database.GetAutonomousDatabaseRequest) (database.GetAutonomousDatabaseResponse, error) {
+			return database.GetAutonomousDatabaseResponse{
+				AutonomousDatabase: makeActiveAdb(adbId, "test-adb"),
+			}, nil
+		},
+		updateFn: func(_ context.Context, req database.UpdateAutonomousDatabaseRequest) (database.UpdateAutonomousDatabaseResponse, error) {
+			capturedUpdate = req
+			return database.UpdateAutonomousDatabaseResponse{}, nil
+		},
+	}
+	ExportSetClientForTest(mgr, mockClient)
+
+	adb := &ociv1beta1.AutonomousDatabases{}
+	adb.Spec.AdbId = ociv1beta1.OCID(adbId)
+	adb.Spec.DisplayName = "new-name" // triggers updateNeeded
+	adb.Spec.DbName = "newdb"         // differs from "testdb" — exercises DbName branch
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), adb, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.Equal(t, common.String("newdb"), capturedUpdate.UpdateAutonomousDatabaseDetails.DbName)
+}
+
+// ---------------------------------------------------------------------------
+// CreateOrUpdate error path coverage (CreateAdb failure)
+// ---------------------------------------------------------------------------
+
+// TestCreateOrUpdate_CreateNewAdb_InvalidParameterError verifies that a 400/InvalidParameter
+// error from CreateAdb results in a failed response with nil error (not retried).
+func TestCreateOrUpdate_CreateNewAdb_InvalidParameterError(t *testing.T) {
+	credClient := &fakeCredentialClient{
+		getSecretFn: func(_ context.Context, _, _ string) (map[string][]byte, error) {
+			return map[string][]byte{"password": []byte("admin123")}, nil
+		},
+	}
+	mgr := newTestManager(credClient)
+
+	mockClient := &mockOciDbClient{
+		listFn: func(_ context.Context, _ database.ListAutonomousDatabasesRequest) (database.ListAutonomousDatabasesResponse, error) {
+			return database.ListAutonomousDatabasesResponse{}, nil
+		},
+		createFn: func(_ context.Context, _ database.CreateAutonomousDatabaseRequest) (database.CreateAutonomousDatabaseResponse, error) {
+			return database.CreateAutonomousDatabaseResponse{},
+				&fakeServiceError{statusCode: 400, code: "InvalidParameter", message: "bad param"}
+		},
+	}
+	ExportSetClientForTest(mgr, mockClient)
+
+	adb := &ociv1beta1.AutonomousDatabases{}
+	adb.Spec.DisplayName = "test-adb"
+	adb.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+	adb.Spec.AdminPassword.Secret.SecretName = "adb-admin-secret"
+	adb.Spec.CpuCoreCount = 1
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), adb, ctrl.Request{})
+	assert.NoError(t, err, "InvalidParameter errors should not propagate as Go errors")
+	assert.False(t, resp.IsSuccessful)
+}
+
+// TestCreateOrUpdate_CreateNewAdb_OciCreateError verifies that a non-400 OCI error
+// from CreateAdb propagates as an error from CreateOrUpdate.
+func TestCreateOrUpdate_CreateNewAdb_OciCreateError(t *testing.T) {
+	credClient := &fakeCredentialClient{
+		getSecretFn: func(_ context.Context, _, _ string) (map[string][]byte, error) {
+			return map[string][]byte{"password": []byte("admin123")}, nil
+		},
+	}
+	mgr := newTestManager(credClient)
+
+	mockClient := &mockOciDbClient{
+		listFn: func(_ context.Context, _ database.ListAutonomousDatabasesRequest) (database.ListAutonomousDatabasesResponse, error) {
+			return database.ListAutonomousDatabasesResponse{}, nil
+		},
+		createFn: func(_ context.Context, _ database.CreateAutonomousDatabaseRequest) (database.CreateAutonomousDatabaseResponse, error) {
+			return database.CreateAutonomousDatabaseResponse{},
+				&fakeServiceError{statusCode: 500, code: "InternalServerError", message: "server error"}
+		},
+	}
+	ExportSetClientForTest(mgr, mockClient)
+
+	adb := &ociv1beta1.AutonomousDatabases{}
+	adb.Spec.DisplayName = "test-adb"
+	adb.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+	adb.Spec.AdminPassword.Secret.SecretName = "adb-admin-secret"
+	adb.Spec.CpuCoreCount = 1
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), adb, ctrl.Request{})
+	assert.Error(t, err, "non-400 errors should propagate")
+	assert.False(t, resp.IsSuccessful)
+}
+
+// ---------------------------------------------------------------------------
+// CreatedAt != nil branch coverage in bind path
+// ---------------------------------------------------------------------------
+
+// TestCreateOrUpdate_BindExistingAdb_UpdateNeeded_WithCreatedAt verifies that when
+// CreatedAt is already set and an update is performed, the CreatedAt timestamp is refreshed.
+func TestCreateOrUpdate_BindExistingAdb_UpdateNeeded_WithCreatedAt(t *testing.T) {
+	adbId := "ocid1.autonomousdatabase.oc1..creat"
+	mgr := newTestManager(&fakeCredentialClient{})
+
+	mockClient := &mockOciDbClient{
+		getFn: func(_ context.Context, _ database.GetAutonomousDatabaseRequest) (database.GetAutonomousDatabaseResponse, error) {
+			return database.GetAutonomousDatabaseResponse{
+				AutonomousDatabase: makeActiveAdb(adbId, "old-name"),
+			}, nil
+		},
+		updateFn: func(_ context.Context, _ database.UpdateAutonomousDatabaseRequest) (database.UpdateAutonomousDatabaseResponse, error) {
+			return database.UpdateAutonomousDatabaseResponse{}, nil
+		},
+	}
+	ExportSetClientForTest(mgr, mockClient)
+
+	adb := &ociv1beta1.AutonomousDatabases{}
+	adb.Spec.AdbId = ociv1beta1.OCID(adbId)
+	adb.Spec.DisplayName = "new-name"
+	// Pre-set CreatedAt so the "if CreatedAt != nil" branch is taken after update.
+	ts := metav1.NewTime(time.Now())
+	adb.Status.OsokStatus.CreatedAt = &ts
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), adb, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+}
+
+// ---------------------------------------------------------------------------
+// getCredentialMap coverage via export
+// ---------------------------------------------------------------------------
+
+// TestGetCredentialMap_Valid verifies that getCredentialMap correctly parses a zip archive
+// and returns its file contents as a map.
+func TestGetCredentialMap_Valid(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	fw, err := zw.Create("tnsnames.ora")
+	assert.NoError(t, err)
+	_, err = fw.Write([]byte("MY_SERVICE = (DESCRIPTION=...)"))
+	assert.NoError(t, err)
+	assert.NoError(t, zw.Close())
+
+	resp := database.GenerateAutonomousDatabaseWalletResponse{
+		Content: io.NopCloser(bytes.NewReader(buf.Bytes())),
+	}
+
+	credMap, err := ExportGetCredentialMapForTest("test-adb", resp)
+	assert.NoError(t, err)
+	assert.Contains(t, credMap, "tnsnames.ora")
+	assert.Equal(t, []byte("MY_SERVICE = (DESCRIPTION=...)"), credMap["tnsnames.ora"])
+}
+
+// TestGetCredentialMap_MultipleFiles verifies that multiple files in the zip are all captured.
+func TestGetCredentialMap_MultipleFiles(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for _, name := range []string{"tnsnames.ora", "sqlnet.ora", "cwallet.sso"} {
+		fw, err := zw.Create(name)
+		assert.NoError(t, err)
+		_, err = fw.Write([]byte("content of " + name))
+		assert.NoError(t, err)
+	}
+	assert.NoError(t, zw.Close())
+
+	resp := database.GenerateAutonomousDatabaseWalletResponse{
+		Content: io.NopCloser(bytes.NewReader(buf.Bytes())),
+	}
+
+	credMap, err := ExportGetCredentialMapForTest("test-adb", resp)
+	assert.NoError(t, err)
+	assert.Len(t, credMap, 3)
+	assert.Equal(t, []byte("content of tnsnames.ora"), credMap["tnsnames.ora"])
+	assert.Equal(t, []byte("content of sqlnet.ora"), credMap["sqlnet.ora"])
+	assert.Equal(t, []byte("content of cwallet.sso"), credMap["cwallet.sso"])
 }

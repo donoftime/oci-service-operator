@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -19,7 +20,15 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/loggerutil"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/discovery/cached/memory"
+	discfake "k8s.io/client-go/discovery/fake"
+	dynfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/restmapper"
+	k8stesting "k8s.io/client-go/testing"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
@@ -337,4 +346,210 @@ func TestUnzipWallet_UnsupportedCompression(t *testing.T) {
 
 	_, err := UnzipWallet(zipPath)
 	assert.Error(t, err)
+}
+
+// makeZipWithBadDeflateData builds a ZIP whose single entry uses Deflate
+// compression but whose "compressed" bytes are not a valid deflate stream.
+// file.Open() succeeds (returns a flate reader), but ioutil.ReadAll fails.
+func makeZipWithBadDeflateData(t *testing.T) string {
+	t.Helper()
+	const filename = "data.txt"
+	garbage := []byte{0xFF, 0xFE} // not a valid deflate stream
+
+	var buf bytes.Buffer
+	writeU16 := func(v uint16) { binary.Write(&buf, binary.LittleEndian, v) }
+	writeU32 := func(v uint32) { binary.Write(&buf, binary.LittleEndian, v) }
+
+	localOffset := 0
+
+	// Local file header
+	writeU32(0x04034b50)
+	writeU16(20)
+	writeU16(0)
+	writeU16(8) // Deflate
+	writeU16(0); writeU16(0)
+	writeU32(0)                    // CRC-32 (wrong, but only checked at EOF)
+	writeU32(uint32(len(garbage))) // compressed size
+	writeU32(10)                   // uncompressed size (claimed)
+	writeU16(uint16(len(filename)))
+	writeU16(0)
+	buf.WriteString(filename)
+	buf.Write(garbage)
+
+	cdOffset := buf.Len()
+
+	// Central directory header
+	writeU32(0x02014b50)
+	writeU16(20); writeU16(20)
+	writeU16(0)
+	writeU16(8) // Deflate
+	writeU16(0); writeU16(0)
+	writeU32(0)
+	writeU32(uint32(len(garbage)))
+	writeU32(10)
+	writeU16(uint16(len(filename)))
+	writeU16(0); writeU16(0); writeU16(0); writeU16(0)
+	writeU32(0)
+	writeU32(uint32(localOffset))
+	buf.WriteString(filename)
+
+	cdSize := buf.Len() - cdOffset
+
+	// End of central directory
+	writeU32(0x06054b50)
+	writeU16(0); writeU16(0)
+	writeU16(1); writeU16(1)
+	writeU32(uint32(cdSize))
+	writeU32(uint32(cdOffset))
+	writeU16(0)
+
+	tmp, err := os.CreateTemp("", "baddeflate*.zip")
+	assert.NoError(t, err)
+	_, err = tmp.Write(buf.Bytes())
+	assert.NoError(t, err)
+	tmp.Close()
+	return tmp.Name()
+}
+
+func TestUnzipWallet_ReadAllError(t *testing.T) {
+	zipPath := makeZipWithBadDeflateData(t)
+	defer os.Remove(zipPath)
+
+	_, err := UnzipWallet(zipPath)
+	assert.Error(t, err)
+}
+
+// makeInstallMapper builds a DeferredDiscoveryRESTMapper backed by a fake
+// discovery client that advertises the given API resource lists.
+func makeInstallMapper(resources []*metav1.APIResourceList) *restmapper.DeferredDiscoveryRESTMapper {
+	fakeDisc := &discfake.FakeDiscovery{Fake: &k8stesting.Fake{}}
+	fakeDisc.Resources = resources
+	return restmapper.NewDeferredDiscoveryRESTMapper(memory.NewMemCacheClient(fakeDisc))
+}
+
+func TestInstallResource_CreateNamespacedResource(t *testing.T) {
+	mapper := makeInstallMapper([]*metav1.APIResourceList{
+		{
+			GroupVersion: "v1",
+			APIResources: []metav1.APIResource{
+				{Name: "configmaps", Namespaced: true, Kind: "ConfigMap"},
+			},
+		},
+	})
+	fakeDyn := dynfake.NewSimpleDynamicClient(runtime.NewScheme())
+
+	yaml := `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-cm
+  namespace: default
+`
+	err := installResource(context.Background(), []byte(yaml), mapper, fakeDyn)
+	assert.NoError(t, err)
+}
+
+func TestInstallResource_PatchNamespacedResource(t *testing.T) {
+	mapper := makeInstallMapper([]*metav1.APIResourceList{
+		{
+			GroupVersion: "v1",
+			APIResources: []metav1.APIResource{
+				{Name: "configmaps", Namespaced: true, Kind: "ConfigMap"},
+			},
+		},
+	})
+	existing := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": "v1",
+			"kind":       "ConfigMap",
+			"metadata":   map[string]interface{}{"name": "test-cm", "namespace": "default"},
+		},
+	}
+	fakeDyn := dynfake.NewSimpleDynamicClient(runtime.NewScheme(), existing)
+	// Patch reactor: StrategicMergePatch on unstructured is fine, but add an
+	// explicit reactor so the test does not depend on strategicpatch behaviour.
+	fakeDyn.PrependReactor("patch", "configmaps", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		return true, &unstructured.Unstructured{Object: map[string]interface{}{
+			"apiVersion": "v1", "kind": "ConfigMap",
+			"metadata": map[string]interface{}{"name": "test-cm", "namespace": "default"},
+		}}, nil
+	})
+
+	yaml := `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-cm
+  namespace: default
+`
+	err := installResource(context.Background(), []byte(yaml), mapper, fakeDyn)
+	assert.NoError(t, err)
+}
+
+func TestInstallResource_ClusterScoped(t *testing.T) {
+	mapper := makeInstallMapper([]*metav1.APIResourceList{
+		{
+			GroupVersion: "v1",
+			APIResources: []metav1.APIResource{
+				{Name: "namespaces", Namespaced: false, Kind: "Namespace"},
+			},
+		},
+	})
+	fakeDyn := dynfake.NewSimpleDynamicClient(runtime.NewScheme())
+
+	yaml := `apiVersion: v1
+kind: Namespace
+metadata:
+  name: test-ns
+`
+	err := installResource(context.Background(), []byte(yaml), mapper, fakeDyn)
+	assert.NoError(t, err)
+}
+
+func TestInstallResource_MapperNoMatch(t *testing.T) {
+	// Discovery has ConfigMap, but the YAML requests an unknown CRD type.
+	// The mapper cache is populated (Fresh()=true) so RESTMapping returns a
+	// NoMatchError immediately without retrying.
+	mapper := makeInstallMapper([]*metav1.APIResourceList{
+		{
+			GroupVersion: "v1",
+			APIResources: []metav1.APIResource{
+				{Name: "configmaps", Namespaced: true, Kind: "ConfigMap"},
+			},
+		},
+	})
+	fakeDyn := dynfake.NewSimpleDynamicClient(runtime.NewScheme())
+
+	yaml := `apiVersion: custom.group.io/v1alpha1
+kind: MyCustomResource
+metadata:
+  name: test-crd
+  namespace: default
+`
+	err := installResource(context.Background(), []byte(yaml), mapper, fakeDyn)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to get resource mapping")
+}
+
+func TestInstallResource_GetError_NonNotFound(t *testing.T) {
+	mapper := makeInstallMapper([]*metav1.APIResourceList{
+		{
+			GroupVersion: "v1",
+			APIResources: []metav1.APIResource{
+				{Name: "configmaps", Namespaced: true, Kind: "ConfigMap"},
+			},
+		},
+	})
+	fakeDyn := dynfake.NewSimpleDynamicClient(runtime.NewScheme())
+	fakeDyn.PrependReactor("get", "configmaps", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, fmt.Errorf("internal server error")
+	})
+
+	yaml := `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-cm
+  namespace: default
+`
+	err := installResource(context.Background(), []byte(yaml), mapper, fakeDyn)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to get resource by name")
 }

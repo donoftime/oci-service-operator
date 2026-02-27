@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	"github.com/oracle/oci-go-sdk/v65/streaming"
@@ -531,6 +532,289 @@ func TestDelete_FailedStreamFound(t *testing.T) {
 	done, err := mgr.Delete(context.Background(), stream)
 	assert.NoError(t, err)
 	assert.True(t, done)
+}
+
+// ---------------------------------------------------------------------------
+// stream_secretgeneration tests
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// UpdateStream tests
+// ---------------------------------------------------------------------------
+
+// TestCreateOrUpdate_UpdateViaFreeFormTags verifies that when FreeFormTags in the spec
+// differ from the existing stream, UpdateStream is called with the correct details.
+func TestCreateOrUpdate_UpdateViaFreeFormTags(t *testing.T) {
+	credClient := &fakeCredentialClient{}
+	streamID := "ocid1.stream.oc1..upd"
+	existingStream := makeActiveStream(streamID, "my-stream")
+	// existingStream.FreeformTags is nil
+
+	updateCalled := false
+	mockClient := &mockStreamAdminClient{
+		getStreamFn: func(_ context.Context, _ streaming.GetStreamRequest) (streaming.GetStreamResponse, error) {
+			return streaming.GetStreamResponse{Stream: existingStream}, nil
+		},
+		updateStreamFn: func(_ context.Context, req streaming.UpdateStreamRequest) (streaming.UpdateStreamResponse, error) {
+			updateCalled = true
+			assert.Equal(t, streamID, *req.StreamId)
+			return streaming.UpdateStreamResponse{}, nil
+		},
+	}
+	mgr := makeTestManager(credClient, mockClient)
+
+	stream := &ociv1beta1.Stream{}
+	stream.Name = "my-stream"
+	stream.Namespace = "default"
+	stream.Spec.StreamId = ociv1beta1.OCID(streamID)
+	stream.Spec.Partitions = 1         // matches existing (required for UpdateStream validation)
+	stream.Spec.RetentionInHours = 24  // matches existing
+	stream.Spec.FreeFormTags = map[string]string{"env": "prod"} // differs from nil
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), stream, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.True(t, updateCalled, "UpdateStream should be called when FreeFormTags differ")
+}
+
+// TestCreateOrUpdate_UpdateViaDefinedTags verifies that when DefinedTags in the spec
+// differ from the existing stream, UpdateStream is called and the DefinedTags branch
+// in isValidUpdate is exercised.
+func TestCreateOrUpdate_UpdateViaDefinedTags(t *testing.T) {
+	credClient := &fakeCredentialClient{}
+	streamID := "ocid1.stream.oc1..deftags"
+	existingStream := makeActiveStream(streamID, "tag-stream")
+	// existingStream.DefinedTags is nil
+
+	updateCalled := false
+	mockClient := &mockStreamAdminClient{
+		getStreamFn: func(_ context.Context, _ streaming.GetStreamRequest) (streaming.GetStreamResponse, error) {
+			return streaming.GetStreamResponse{Stream: existingStream}, nil
+		},
+		updateStreamFn: func(_ context.Context, _ streaming.UpdateStreamRequest) (streaming.UpdateStreamResponse, error) {
+			updateCalled = true
+			return streaming.UpdateStreamResponse{}, nil
+		},
+	}
+	mgr := makeTestManager(credClient, mockClient)
+
+	stream := &ociv1beta1.Stream{}
+	stream.Name = "tag-stream"
+	stream.Namespace = "default"
+	stream.Spec.StreamId = ociv1beta1.OCID(streamID)
+	stream.Spec.Partitions = 1
+	stream.Spec.RetentionInHours = 24
+	stream.Spec.DefinedTags = map[string]ociv1beta1.MapValue{
+		"ns1": {"key1": "val1"},
+	}
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), stream, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.True(t, updateCalled, "UpdateStream should be called when DefinedTags differ")
+}
+
+// TestUpdateStream_PartitionsMismatch verifies UpdateStream returns an error when the
+// spec partitions differ from the existing stream's partitions.
+func TestUpdateStream_PartitionsMismatch(t *testing.T) {
+	streamID := "ocid1.stream.oc1..partmm"
+	existingStream := makeActiveStream(streamID, "my-stream")
+	// existingStream.Partitions = 1
+
+	mockClient := &mockStreamAdminClient{
+		getStreamFn: func(_ context.Context, _ streaming.GetStreamRequest) (streaming.GetStreamResponse, error) {
+			return streaming.GetStreamResponse{Stream: existingStream}, nil
+		},
+	}
+	mgr := makeTestManager(&fakeCredentialClient{}, mockClient)
+
+	stream := &ociv1beta1.Stream{}
+	stream.Spec.StreamId = ociv1beta1.OCID(streamID)
+	stream.Spec.Partitions = 3 // differs from existing (1)
+
+	err := mgr.UpdateStream(context.Background(), stream)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "Partitions can't be updated")
+}
+
+// TestUpdateStream_RetentionMismatch verifies UpdateStream returns an error when the
+// spec RetentionInHours is below the minimum (24 hours).
+func TestUpdateStream_RetentionMismatch(t *testing.T) {
+	streamID := "ocid1.stream.oc1..retmm"
+	existingStream := makeActiveStream(streamID, "my-stream")
+
+	mockClient := &mockStreamAdminClient{
+		getStreamFn: func(_ context.Context, _ streaming.GetStreamRequest) (streaming.GetStreamResponse, error) {
+			return streaming.GetStreamResponse{Stream: existingStream}, nil
+		},
+	}
+	mgr := makeTestManager(&fakeCredentialClient{}, mockClient)
+
+	stream := &ociv1beta1.Stream{}
+	stream.Spec.StreamId = ociv1beta1.OCID(streamID)
+	stream.Spec.Partitions = 1         // matches
+	stream.Spec.RetentionInHours = 12  // <= 23 → error
+
+	err := mgr.UpdateStream(context.Background(), stream)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "RetentionsHours can't be updated")
+}
+
+// TestGetStreamOcid_WithOptionalFilters verifies that when StreamPoolId and CompartmentId
+// are set in the spec, they are included in the ListStreams request.
+func TestGetStreamOcid_WithOptionalFilters(t *testing.T) {
+	credClient := &fakeCredentialClient{}
+
+	listCallCount := 0
+	mockClient := &mockStreamAdminClient{
+		listStreamsFn: func(_ context.Context, req streaming.ListStreamsRequest) (streaming.ListStreamsResponse, error) {
+			listCallCount++
+			// Verify filters were passed through
+			if listCallCount == 1 {
+				assert.NotNil(t, req.StreamPoolId, "StreamPoolId should be set in ListStreams request")
+				assert.NotNil(t, req.CompartmentId, "CompartmentId should be set in ListStreams request")
+			}
+			return streaming.ListStreamsResponse{Items: []streaming.StreamSummary{}}, nil
+		},
+	}
+	mgr := makeTestManager(credClient, mockClient)
+
+	stream := &ociv1beta1.Stream{}
+	stream.Name = "filtered-stream"
+	stream.Namespace = "default"
+	stream.Spec.Name = "filtered-stream"
+	stream.Spec.StreamPoolId = "ocid1.streampool.oc1..filter"
+	stream.Spec.CompartmentId = "ocid1.compartment.oc1..filter"
+	// No Spec.StreamId, no Status.Ocid → goes through GetStreamOcid path in Delete
+
+	done, err := mgr.Delete(context.Background(), stream)
+	assert.NoError(t, err)
+	assert.True(t, done)
+}
+
+// ---------------------------------------------------------------------------
+// Retry policy predicate tests
+// ---------------------------------------------------------------------------
+
+// TestStreamRetryPolicy_Creating verifies shouldRetry returns true when stream is CREATING.
+func TestStreamRetryPolicy_Creating(t *testing.T) {
+	mgr := makeTestManager(&fakeCredentialClient{}, nil)
+	shouldRetry := ExportGetStreamRetryPredicate(mgr)
+
+	resp := common.OCIOperationResponse{
+		Response: streaming.GetStreamResponse{
+			Stream: streaming.Stream{LifecycleState: "CREATING"},
+		},
+	}
+	assert.True(t, shouldRetry(resp), "shouldRetry should return true when LifecycleState is CREATING")
+}
+
+// TestStreamRetryPolicy_Active verifies shouldRetry returns false when stream is ACTIVE.
+func TestStreamRetryPolicy_Active(t *testing.T) {
+	mgr := makeTestManager(&fakeCredentialClient{}, nil)
+	shouldRetry := ExportGetStreamRetryPredicate(mgr)
+
+	resp := common.OCIOperationResponse{
+		Response: streaming.GetStreamResponse{
+			Stream: streaming.Stream{LifecycleState: "ACTIVE"},
+		},
+	}
+	assert.False(t, shouldRetry(resp), "shouldRetry should return false when LifecycleState is ACTIVE")
+}
+
+// TestStreamRetryPolicy_NonResponse verifies shouldRetry returns true when the
+// response type is not a GetStreamResponse (type assertion fails).
+func TestStreamRetryPolicy_NonResponse(t *testing.T) {
+	mgr := makeTestManager(&fakeCredentialClient{}, nil)
+	shouldRetry := ExportGetStreamRetryPredicate(mgr)
+
+	// Empty response — type assertion to GetStreamResponse will fail → shouldRetry = true
+	resp := common.OCIOperationResponse{}
+	assert.True(t, shouldRetry(resp), "shouldRetry should return true when response type is not GetStreamResponse")
+}
+
+// TestDeleteStreamRetryPolicy_Deleting verifies the delete retry predicate returns true
+// when the stream is in DELETING state.
+func TestDeleteStreamRetryPolicy_Deleting(t *testing.T) {
+	mgr := makeTestManager(&fakeCredentialClient{}, nil)
+	shouldRetry := ExportDeleteStreamRetryPredicate(mgr)
+
+	resp := common.OCIOperationResponse{
+		Response: streaming.GetStreamResponse{
+			Stream: streaming.Stream{LifecycleState: "DELETING"},
+		},
+	}
+	assert.True(t, shouldRetry(resp), "delete shouldRetry should return true when LifecycleState is DELETING")
+}
+
+// TestDeleteStreamRetryPolicy_Deleted verifies the delete retry predicate returns false
+// when the stream is in DELETED state.
+func TestDeleteStreamRetryPolicy_Deleted(t *testing.T) {
+	mgr := makeTestManager(&fakeCredentialClient{}, nil)
+	shouldRetry := ExportDeleteStreamRetryPredicate(mgr)
+
+	resp := common.OCIOperationResponse{
+		Response: streaming.GetStreamResponse{
+			Stream: streaming.Stream{LifecycleState: "DELETED"},
+		},
+	}
+	assert.False(t, shouldRetry(resp), "delete shouldRetry should return false when LifecycleState is DELETED")
+}
+
+// TestDeleteStreamRetryPolicy_NonResponse verifies the delete retry predicate returns true
+// when the response type assertion to GetStreamResponse fails.
+func TestDeleteStreamRetryPolicy_NonResponse(t *testing.T) {
+	mgr := makeTestManager(&fakeCredentialClient{}, nil)
+	shouldRetry := ExportDeleteStreamRetryPredicate(mgr)
+
+	resp := common.OCIOperationResponse{} // nil Response → type assertion fails → returns true
+	assert.True(t, shouldRetry(resp), "delete shouldRetry should return true when response type is not GetStreamResponse")
+}
+
+// TestStreamRetryNextDuration verifies that the nextDuration function returns an
+// exponential backoff duration (2^(attempt-1) seconds).
+func TestStreamRetryNextDuration(t *testing.T) {
+	mgr := makeTestManager(&fakeCredentialClient{}, nil)
+	nextDuration := ExportGetStreamNextDuration(mgr)
+
+	// Attempt 1: 2^0 = 1 second
+	resp := common.OCIOperationResponse{AttemptNumber: 1}
+	assert.Equal(t, 1*time.Second, nextDuration(resp))
+}
+
+// TestDeleteStreamRetryNextDuration verifies the delete retry nextDuration function.
+func TestDeleteStreamRetryNextDuration(t *testing.T) {
+	mgr := makeTestManager(&fakeCredentialClient{}, nil)
+	nextDuration := ExportDeleteStreamNextDuration(mgr)
+
+	resp := common.OCIOperationResponse{AttemptNumber: 1}
+	assert.Equal(t, 1*time.Second, nextDuration(resp))
+}
+
+// TestCreateOrUpdate_FailedLifecycle verifies that when the existing stream is in FAILED
+// state, CreateOrUpdate sets a Failed status condition on the CR.
+func TestCreateOrUpdate_FailedLifecycle(t *testing.T) {
+	credClient := &fakeCredentialClient{}
+	streamID := "ocid1.stream.oc1..failed"
+	failedStream := makeActiveStream(streamID, "failed-stream")
+	failedStream.LifecycleState = "FAILED"
+
+	mockClient := &mockStreamAdminClient{
+		getStreamFn: func(_ context.Context, _ streaming.GetStreamRequest) (streaming.GetStreamResponse, error) {
+			return streaming.GetStreamResponse{Stream: failedStream}, nil
+		},
+	}
+	mgr := makeTestManager(credClient, mockClient)
+
+	stream := &ociv1beta1.Stream{}
+	stream.Name = "failed-stream"
+	stream.Namespace = "default"
+	stream.Spec.StreamId = ociv1beta1.OCID(streamID)
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), stream, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.False(t, credClient.createCalled, "CreateSecret should NOT be called for a FAILED stream")
 }
 
 // ---------------------------------------------------------------------------

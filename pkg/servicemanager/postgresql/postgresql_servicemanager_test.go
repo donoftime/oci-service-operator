@@ -8,6 +8,7 @@ package postgresql_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
@@ -18,6 +19,21 @@ import (
 	"github.com/stretchr/testify/assert"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
+
+// fakeServiceError implements common.ServiceError + error for testing.
+type fakeServiceError struct {
+	statusCode int
+	code       string
+	message    string
+}
+
+func (f *fakeServiceError) GetHTTPStatusCode() int  { return f.statusCode }
+func (f *fakeServiceError) GetMessage() string      { return f.message }
+func (f *fakeServiceError) GetCode() string         { return f.code }
+func (f *fakeServiceError) GetOpcRequestID() string { return "" }
+func (f *fakeServiceError) Error() string {
+	return fmt.Sprintf("%d %s: %s", f.statusCode, f.code, f.message)
+}
 
 // fakeCredentialClient implements credhelper.CredentialClient for testing.
 type fakeCredentialClient struct {
@@ -486,4 +502,341 @@ func TestGetPostgresDbSystemByName_NotFound(t *testing.T) {
 	ocid, err := mgr.GetPostgresDbSystemByName(context.Background(), *dbSystem)
 	assert.NoError(t, err)
 	assert.Nil(t, ocid)
+}
+
+// ---------------------------------------------------------------------------
+// GetPostgresDbSystemByName list error coverage
+// ---------------------------------------------------------------------------
+
+// TestGetPostgresDbSystemByName_ListError verifies that a ListDbSystems error propagates.
+func TestGetPostgresDbSystemByName_ListError(t *testing.T) {
+	ociClient := &mockOciPostgresClient{
+		listFn: func(_ context.Context, _ ocipsql.ListDbSystemsRequest) (ocipsql.ListDbSystemsResponse, error) {
+			return ocipsql.ListDbSystemsResponse{}, errors.New("list API error")
+		},
+	}
+	mgr := newPostgresMgr(t, ociClient, nil)
+
+	dbSystem := &ociv1beta1.PostgresDbSystem{}
+	dbSystem.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+	dbSystem.Spec.DisplayName = "my-db"
+
+	ocid, err := mgr.GetPostgresDbSystemByName(context.Background(), *dbSystem)
+	assert.Error(t, err)
+	assert.Nil(t, ocid)
+}
+
+// ---------------------------------------------------------------------------
+// CreateOrUpdate LifecycleFailed path
+// ---------------------------------------------------------------------------
+
+// TestCreateOrUpdate_LifecycleFailed verifies that a FAILED lifecycle state after
+// create/bind results in a failed response.
+func TestCreateOrUpdate_LifecycleFailed(t *testing.T) {
+	const dbOcid = "ocid1.postgresql.oc1..failed"
+	failedDbSystem := makeActiveDbSystem(dbOcid, "test-db")
+	failedDbSystem.LifecycleState = ocipsql.DbSystemLifecycleStateFailed
+
+	ociClient := &mockOciPostgresClient{
+		getFn: func(_ context.Context, _ ocipsql.GetDbSystemRequest) (ocipsql.GetDbSystemResponse, error) {
+			return ocipsql.GetDbSystemResponse{DbSystem: failedDbSystem}, nil
+		},
+	}
+	mgr := newPostgresMgr(t, ociClient, nil)
+
+	dbSystem := &ociv1beta1.PostgresDbSystem{}
+	dbSystem.Name = "test-db"
+	dbSystem.Namespace = "default"
+	dbSystem.Spec.PostgresDbSystemId = dbOcid
+	dbSystem.Status.OsokStatus.Ocid = dbOcid
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), dbSystem, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.False(t, resp.IsSuccessful)
+}
+
+// ---------------------------------------------------------------------------
+// Delete error path coverage
+// ---------------------------------------------------------------------------
+
+// TestDelete_DeleteError_404 verifies that a 404 error from DeleteDbSystem is treated
+// as "already deleted" and does not return an error.
+func TestDelete_DeleteError_404(t *testing.T) {
+	ociClient := &mockOciPostgresClient{
+		deleteFn: func(_ context.Context, _ ocipsql.DeleteDbSystemRequest) (ocipsql.DeleteDbSystemResponse, error) {
+			return ocipsql.DeleteDbSystemResponse{}, &fakeServiceError{statusCode: 404, code: "NotFound", message: "not found"}
+		},
+	}
+	mgr := newPostgresMgr(t, ociClient, nil)
+
+	dbSystem := &ociv1beta1.PostgresDbSystem{}
+	dbSystem.Name = "test-db"
+	dbSystem.Namespace = "default"
+	dbSystem.Status.OsokStatus.Ocid = "ocid1.postgresql.oc1..gone"
+
+	done, err := mgr.Delete(context.Background(), dbSystem)
+	assert.NoError(t, err)
+	assert.True(t, done)
+}
+
+// TestDelete_DeleteError_NonNotFound verifies that a non-404 error from DeleteDbSystem
+// propagates as an error.
+func TestDelete_DeleteError_NonNotFound(t *testing.T) {
+	ociClient := &mockOciPostgresClient{
+		deleteFn: func(_ context.Context, _ ocipsql.DeleteDbSystemRequest) (ocipsql.DeleteDbSystemResponse, error) {
+			return ocipsql.DeleteDbSystemResponse{}, &fakeServiceError{statusCode: 500, code: "InternalServerError", message: "server error"}
+		},
+	}
+	mgr := newPostgresMgr(t, ociClient, nil)
+
+	dbSystem := &ociv1beta1.PostgresDbSystem{}
+	dbSystem.Name = "test-db"
+	dbSystem.Namespace = "default"
+	dbSystem.Status.OsokStatus.Ocid = "ocid1.postgresql.oc1..err"
+
+	done, err := mgr.Delete(context.Background(), dbSystem)
+	assert.Error(t, err)
+	assert.False(t, done)
+}
+
+// ---------------------------------------------------------------------------
+// CreateOrUpdate bind path GetDbSystem error coverage
+// ---------------------------------------------------------------------------
+
+// TestCreateOrUpdate_Bind_GetError verifies that a GetDbSystem error in the bind path
+// propagates from CreateOrUpdate.
+func TestCreateOrUpdate_Bind_GetError(t *testing.T) {
+	ociClient := &mockOciPostgresClient{
+		getFn: func(_ context.Context, _ ocipsql.GetDbSystemRequest) (ocipsql.GetDbSystemResponse, error) {
+			return ocipsql.GetDbSystemResponse{}, errors.New("get error")
+		},
+	}
+	mgr := newPostgresMgr(t, ociClient, nil)
+
+	dbSystem := &ociv1beta1.PostgresDbSystem{}
+	dbSystem.Name = "test-db"
+	dbSystem.Namespace = "default"
+	dbSystem.Spec.PostgresDbSystemId = "ocid1.postgresql.oc1..bind"
+	dbSystem.Status.OsokStatus.Ocid = "ocid1.postgresql.oc1..bind"
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), dbSystem, ctrl.Request{})
+	assert.Error(t, err)
+	assert.False(t, resp.IsSuccessful)
+}
+
+// ---------------------------------------------------------------------------
+// CreatePostgresDbSystem optional field and credential coverage
+// ---------------------------------------------------------------------------
+
+// TestCreateOrUpdate_CreateNew_WithOptionalFields verifies that optional fields
+// (Description, InstanceCount, InstanceOcpuCount, InstanceMemoryInGBs, FreeFormTags, DefinedTags)
+// are included in the CreateDbSystem request when set.
+func TestCreateOrUpdate_CreateNew_WithOptionalFields(t *testing.T) {
+	const newOcid = "ocid1.postgresql.oc1..opts"
+	activeDbSystem := makeActiveDbSystem(newOcid, "test-db")
+
+	var capturedReq ocipsql.CreateDbSystemRequest
+	ociClient := &mockOciPostgresClient{
+		listFn: func(_ context.Context, _ ocipsql.ListDbSystemsRequest) (ocipsql.ListDbSystemsResponse, error) {
+			return ocipsql.ListDbSystemsResponse{}, nil
+		},
+		createFn: func(_ context.Context, req ocipsql.CreateDbSystemRequest) (ocipsql.CreateDbSystemResponse, error) {
+			capturedReq = req
+			return ocipsql.CreateDbSystemResponse{DbSystem: activeDbSystem}, nil
+		},
+		getFn: func(_ context.Context, _ ocipsql.GetDbSystemRequest) (ocipsql.GetDbSystemResponse, error) {
+			return ocipsql.GetDbSystemResponse{DbSystem: activeDbSystem}, nil
+		},
+	}
+	mgr := newPostgresMgr(t, ociClient, nil)
+
+	dbSystem := &ociv1beta1.PostgresDbSystem{}
+	dbSystem.Name = "test-db"
+	dbSystem.Namespace = "default"
+	dbSystem.Spec.DisplayName = "test-db"
+	dbSystem.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+	dbSystem.Spec.DbVersion = "14.10"
+	dbSystem.Spec.Shape = "VM.Standard.E4.Flex"
+	dbSystem.Spec.SubnetId = "ocid1.subnet.oc1..xxx"
+	dbSystem.Spec.Description = "A test DB"
+	dbSystem.Spec.InstanceCount = 2
+	dbSystem.Spec.InstanceOcpuCount = 4
+	dbSystem.Spec.InstanceMemoryInGBs = 32
+	dbSystem.Spec.FreeFormTags = map[string]string{"env": "test"}
+	dbSystem.Spec.DefinedTags = map[string]ociv1beta1.MapValue{
+		"ns1": {"key1": "val1"},
+	}
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), dbSystem, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+
+	d := capturedReq.CreateDbSystemDetails
+	assert.Equal(t, common.String("A test DB"), d.Description)
+	assert.Equal(t, common.Int(2), d.InstanceCount)
+	assert.Equal(t, common.Int(4), d.InstanceOcpuCount)
+	assert.Equal(t, common.Int(32), d.InstanceMemorySizeInGBs)
+	assert.Equal(t, map[string]string{"env": "test"}, d.FreeformTags)
+}
+
+// TestCreateOrUpdate_CreateNew_WithCredentials verifies that admin credentials from
+// k8s secrets are included in the CreateDbSystem request.
+func TestCreateOrUpdate_CreateNew_WithCredentials(t *testing.T) {
+	const newOcid = "ocid1.postgresql.oc1..creds"
+	activeDbSystem := makeActiveDbSystem(newOcid, "creds-db")
+
+	credClient := &fakeCredentialClient{
+		getSecretFn: func(_ context.Context, name, _ string) (map[string][]byte, error) {
+			if name == "pg-admin-user" {
+				return map[string][]byte{"username": []byte("pgadmin")}, nil
+			}
+			return map[string][]byte{"password": []byte("p@ssw0rd")}, nil
+		},
+	}
+
+	var capturedReq ocipsql.CreateDbSystemRequest
+	ociClient := &mockOciPostgresClient{
+		listFn: func(_ context.Context, _ ocipsql.ListDbSystemsRequest) (ocipsql.ListDbSystemsResponse, error) {
+			return ocipsql.ListDbSystemsResponse{}, nil
+		},
+		createFn: func(_ context.Context, req ocipsql.CreateDbSystemRequest) (ocipsql.CreateDbSystemResponse, error) {
+			capturedReq = req
+			return ocipsql.CreateDbSystemResponse{DbSystem: activeDbSystem}, nil
+		},
+		getFn: func(_ context.Context, _ ocipsql.GetDbSystemRequest) (ocipsql.GetDbSystemResponse, error) {
+			return ocipsql.GetDbSystemResponse{DbSystem: activeDbSystem}, nil
+		},
+	}
+	mgr := newPostgresMgr(t, ociClient, credClient)
+
+	dbSystem := &ociv1beta1.PostgresDbSystem{}
+	dbSystem.Name = "creds-db"
+	dbSystem.Namespace = "default"
+	dbSystem.Spec.DisplayName = "creds-db"
+	dbSystem.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+	dbSystem.Spec.DbVersion = "14.10"
+	dbSystem.Spec.Shape = "VM.Standard.E4.Flex"
+	dbSystem.Spec.SubnetId = "ocid1.subnet.oc1..xxx"
+	dbSystem.Spec.AdminUsername.Secret.SecretName = "pg-admin-user"
+	dbSystem.Spec.AdminPassword.Secret.SecretName = "pg-admin-pass"
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), dbSystem, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+
+	assert.NotNil(t, capturedReq.CreateDbSystemDetails.Credentials)
+	pwdDetails, ok := capturedReq.CreateDbSystemDetails.Credentials.PasswordDetails.(ocipsql.PlainTextPasswordDetails)
+	assert.True(t, ok)
+	assert.Equal(t, common.String("pgadmin"), capturedReq.CreateDbSystemDetails.Credentials.Username)
+	assert.Equal(t, common.String("p@ssw0rd"), pwdDetails.Password)
+}
+
+// TestCreateOrUpdate_CreateNew_MissingUsernameKey verifies that a missing "username"
+// key in the admin secret causes a clear error.
+func TestCreateOrUpdate_CreateNew_MissingUsernameKey(t *testing.T) {
+	credClient := &fakeCredentialClient{
+		getSecretFn: func(_ context.Context, _, _ string) (map[string][]byte, error) {
+			return map[string][]byte{"wrongkey": []byte("value")}, nil
+		},
+	}
+	ociClient := &mockOciPostgresClient{
+		listFn: func(_ context.Context, _ ocipsql.ListDbSystemsRequest) (ocipsql.ListDbSystemsResponse, error) {
+			return ocipsql.ListDbSystemsResponse{}, nil
+		},
+		createFn: func(_ context.Context, _ ocipsql.CreateDbSystemRequest) (ocipsql.CreateDbSystemResponse, error) {
+			return ocipsql.CreateDbSystemResponse{}, nil
+		},
+	}
+	mgr := newPostgresMgr(t, ociClient, credClient)
+
+	dbSystem := &ociv1beta1.PostgresDbSystem{}
+	dbSystem.Name = "test-db"
+	dbSystem.Namespace = "default"
+	dbSystem.Spec.DisplayName = "test-db"
+	dbSystem.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+	dbSystem.Spec.DbVersion = "14.10"
+	dbSystem.Spec.Shape = "VM.Standard.E4.Flex"
+	dbSystem.Spec.SubnetId = "ocid1.subnet.oc1..xxx"
+	dbSystem.Spec.AdminUsername.Secret.SecretName = "pg-admin-user"
+	dbSystem.Spec.AdminPassword.Secret.SecretName = "pg-admin-pass"
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), dbSystem, ctrl.Request{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "username key")
+	assert.False(t, resp.IsSuccessful)
+}
+
+// TestCreateOrUpdate_CreateNew_MissingPasswordKey verifies that a missing "password"
+// key in the password secret causes a clear error.
+func TestCreateOrUpdate_CreateNew_MissingPasswordKey(t *testing.T) {
+	callCount := 0
+	credClient := &fakeCredentialClient{
+		getSecretFn: func(_ context.Context, _, _ string) (map[string][]byte, error) {
+			callCount++
+			if callCount == 1 {
+				return map[string][]byte{"username": []byte("pgadmin")}, nil
+			}
+			return map[string][]byte{"wrongkey": []byte("value")}, nil
+		},
+	}
+	ociClient := &mockOciPostgresClient{
+		listFn: func(_ context.Context, _ ocipsql.ListDbSystemsRequest) (ocipsql.ListDbSystemsResponse, error) {
+			return ocipsql.ListDbSystemsResponse{}, nil
+		},
+		createFn: func(_ context.Context, _ ocipsql.CreateDbSystemRequest) (ocipsql.CreateDbSystemResponse, error) {
+			return ocipsql.CreateDbSystemResponse{}, nil
+		},
+	}
+	mgr := newPostgresMgr(t, ociClient, credClient)
+
+	dbSystem := &ociv1beta1.PostgresDbSystem{}
+	dbSystem.Name = "test-db"
+	dbSystem.Namespace = "default"
+	dbSystem.Spec.DisplayName = "test-db"
+	dbSystem.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+	dbSystem.Spec.DbVersion = "14.10"
+	dbSystem.Spec.Shape = "VM.Standard.E4.Flex"
+	dbSystem.Spec.SubnetId = "ocid1.subnet.oc1..xxx"
+	dbSystem.Spec.AdminUsername.Secret.SecretName = "pg-admin-user"
+	dbSystem.Spec.AdminPassword.Secret.SecretName = "pg-admin-pass"
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), dbSystem, ctrl.Request{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "password key")
+	assert.False(t, resp.IsSuccessful)
+}
+
+// TestCreateOrUpdate_UpdateWithDescription verifies that when Description changes in the
+// bind path, UpdateDbSystem is called with the new description.
+func TestCreateOrUpdate_UpdateWithDescription(t *testing.T) {
+	const dbOcid = "ocid1.postgresql.oc1..desc"
+	existingDbSystem := makeActiveDbSystem(dbOcid, "test-db")
+	desc := "old description"
+	existingDbSystem.Description = &desc
+	updateCalled := false
+
+	ociClient := &mockOciPostgresClient{
+		getFn: func(_ context.Context, _ ocipsql.GetDbSystemRequest) (ocipsql.GetDbSystemResponse, error) {
+			return ocipsql.GetDbSystemResponse{DbSystem: existingDbSystem}, nil
+		},
+		updateFn: func(_ context.Context, req ocipsql.UpdateDbSystemRequest) (ocipsql.UpdateDbSystemResponse, error) {
+			updateCalled = true
+			assert.Equal(t, "new description", *req.UpdateDbSystemDetails.Description)
+			return ocipsql.UpdateDbSystemResponse{}, nil
+		},
+	}
+	mgr := newPostgresMgr(t, ociClient, nil)
+
+	dbSystem := &ociv1beta1.PostgresDbSystem{}
+	dbSystem.Name = "test-db"
+	dbSystem.Namespace = "default"
+	dbSystem.Spec.PostgresDbSystemId = dbOcid
+	dbSystem.Spec.DisplayName = "test-db"
+	dbSystem.Spec.Description = "new description"
+	dbSystem.Status.OsokStatus.Ocid = dbOcid
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), dbSystem, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.True(t, updateCalled, "UpdateDbSystem should be called when Description differs")
 }
