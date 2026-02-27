@@ -149,6 +149,9 @@ spec:
       nosqlTableName: string      # No hyphens — used in DDL (e.g. myplatform_events)
       containerImageUrl: string
       imageId: string             # Boot image OCID for the Compute VM
+      # Legacy fields retained for schema compatibility; not referenced by resource templates
+      subnetId: string
+      vcnId: string
 
   resources:
 
@@ -205,7 +208,8 @@ spec:
           displayName: ${schema.metadata.name}-adb
           dbName: ${schema.spec.adbDbName}
           dbWorkload: OLTP
-          cpuCoreCount: 1
+          computeModel: ECPU
+          computeCount: 2
           dataStorageSizeInTBs: 1
           isAutoScalingEnabled: false
           isFreeTier: false
@@ -229,7 +233,8 @@ spec:
           dnsLabel: platform
 
     # ── 6. Internet Gateway ───────────────────────────────────────────────────
-    # Provides outbound internet access. Route Table depends on this OCID.
+    # Available for public-IP resources in the VCN. The private subnet uses the
+    # NAT Gateway for outbound internet traffic.
     - id: internetGateway
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -244,8 +249,40 @@ spec:
       readyWhen:
         - ${internetGateway.status.status.ocid != ""}
 
+    # ── 6b. NAT Gateway ────────────────────────────────────────────────────────
+    - id: natGateway
+      template:
+        apiVersion: oci.oracle.com/v1beta1
+        kind: OciNatGateway
+        metadata:
+          name: ${schema.metadata.name}-ngw
+        spec:
+          compartmentId: ${schema.spec.compartmentId}
+          vcnId: ${vcn.status.status.ocid}
+          displayName: ${schema.metadata.name}-ngw
+          blockTraffic: false
+      readyWhen:
+        - ${natGateway.status.status.ocid != ""}
+
+    # ── 6c. Service Gateway ───────────────────────────────────────────────────
+    - id: serviceGateway
+      template:
+        apiVersion: oci.oracle.com/v1beta1
+        kind: OciServiceGateway
+        metadata:
+          name: ${schema.metadata.name}-sgw
+        spec:
+          compartmentId: ${schema.spec.compartmentId}
+          vcnId: ${vcn.status.status.ocid}
+          displayName: ${schema.metadata.name}-sgw
+          services:
+            - ocid1.service.oc1.iad.aaaaaaaam4zfmy2rjue6fmglumm3czgisxzrnvrwqeodtztg7hwa272mlfna
+      readyWhen:
+        - ${serviceGateway.status.status.ocid != ""}
+
     # ── 7. Route Table ────────────────────────────────────────────────────────
-    # Default route via Internet Gateway. Subnet depends on this OCID.
+    # Routes via NAT Gateway (outbound internet) and Service Gateway (OCI services).
+    # Subnet depends on this OCID.
     - id: routeTable
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -258,10 +295,38 @@ spec:
           displayName: ${schema.metadata.name}-rt
           routeRules:
             - destination: "0.0.0.0/0"
-              networkEntityId: ${internetGateway.status.status.ocid}
+              networkEntityId: ${natGateway.status.status.ocid}
               destinationType: CIDR_BLOCK
+            - destination: all-iad-services-in-oracle-services-network
+              networkEntityId: ${serviceGateway.status.status.ocid}
+              destinationType: SERVICE_CIDR_BLOCK
       readyWhen:
         - ${routeTable.status.status.ocid != ""}
+
+    # ── 7b. Security List ─────────────────────────────────────────────────────
+    - id: securityList
+      template:
+        apiVersion: oci.oracle.com/v1beta1
+        kind: OciSecurityList
+        metadata:
+          name: ${schema.metadata.name}-seclist
+        spec:
+          compartmentId: ${schema.spec.compartmentId}
+          vcnId: ${vcn.status.status.ocid}
+          displayName: ${schema.metadata.name}-seclist
+          egressSecurityRules:
+            - protocol: "all"
+              destination: all-iad-services-in-oracle-services-network
+              destinationType: SERVICE_CIDR_BLOCK
+              isStateless: false
+              description: "Allow all egress to OCI services via SGW"
+          ingressSecurityRules:
+            - protocol: "6"
+              source: ${schema.spec.subnetCidrBlock}
+              isStateless: false
+              description: "Allow TCP within subnet"
+      readyWhen:
+        - ${securityList.status.status.ocid != ""}
 
     # ── 8. Subnet ─────────────────────────────────────────────────────────────
     # Private subnet (no public IPs). All network-attached services use this.
@@ -279,6 +344,8 @@ spec:
           dnsLabel: private
           prohibitPublicIpOnVnic: true
           routeTableId: ${routeTable.status.status.ocid}
+          securityListIds:
+            - ${securityList.status.status.ocid}
 
     # ── 9. MySQL DB System ───────────────────────────────────────────────────
     - id: mysql
@@ -323,6 +390,12 @@ spec:
           instanceCount: 1
           instanceOcpuCount: 2
           instanceMemoryInGBs: 32
+          adminUsername:
+            secret:
+              secretName: ${schema.spec.mysqlCredentialsSecret}
+          adminPassword:
+            secret:
+              secretName: ${schema.spec.mysqlCredentialsSecret}
 
     # ── 11. NoSQL Table ───────────────────────────────────────────────────────
     - id: nosqlTable
@@ -446,7 +519,7 @@ spec:
           compartmentId: ${schema.spec.compartmentId}
           availabilityDomain: ${schema.spec.availabilityDomain}
           displayName: ${schema.metadata.name}-ci
-          shape: CI.Standard.A1.Flex
+          shape: CI.Standard.x86.Generic
           shapeConfig:
             ocpus: 1
             memoryInGBs: 4
@@ -554,7 +627,7 @@ Check individual resources as they come up:
 ```bash
 kubectl get \
   objectstoragebucket,stream,ociqueue,autonomousdatabases,\
-  ocivcn,ociinternetgateway,ociroutetable,ocisubnet,\
+  ocivcn,ociinternetgateway,ocinatgateway,ociservicegateway,ociroutetable,ocisecuritylist,ocisubnet,\
   mysqldbsystem,postgresdbsystem,nosqldatabase,rediscluster,opensearchcluster,\
   apigateway,apigatewaydeployment,containerinstance,computeinstance \
   -o custom-columns='KIND:.kind,NAME:.metadata.name,STATUS:.status.status.conditions[-1].type'
@@ -592,19 +665,23 @@ queue               ─┤  (independent — run in parallel)
 adb                 ─┤
 apiGateway ──────────┤──► apiGatewayDeployment
                      │
-vcn ─────────────────┤──► internetGateway ──► routeTable ──► subnet ──► mysql
-                     │                                              ├──► postgres
-                     │                                              ├──► redisCluster
-                     │                                              ├──► opensearch
-                     │                                              ├──► containerInstance
-                     │                                              └──► computeInstance
-                     │
+vcn ─────────────────┤──► internetGateway
+                     ├──► natGateway ─────┐
+                     ├──► serviceGateway ──┼──► routeTable ──┐
+                     ├──► securityList ──────────────────────────┼──► subnet ──► mysql
+                     │                                           │           ├──► postgres
+                     │                                           │           ├──► redisCluster
+                     │                                           │           ├──► opensearch
+                     │                                           │           ├──► containerInstance
+                     │                                           │           └──► computeInstance
 nosqlTable ──────────┘
 ```
 
-The VCN topology chain (`vcn → internetGateway → routeTable → subnet`) must
-complete before any subnet-attached service is created. kro handles this
-automatically by tracking the `${resource.status.status.ocid}` references.
+The VCN topology requires both chains to complete before `subnet` is created:
+- `vcn → {natGateway, serviceGateway} → routeTable`
+- `vcn → securityList`
+
+kro handles this automatically by tracking the `${resource.status.status.ocid}` references.
 
 > **readyWhen pattern**: Use `${resource.status.status.ocid != ""}` to gate
 > downstream resources on a gateway becoming active. kro's CEL evaluator does

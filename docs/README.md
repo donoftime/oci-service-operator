@@ -6,7 +6,7 @@
   - [Install Operator SDK](installation.md#install-operator-sdk)
   - [Install Operator Lifecycle Manager (OLM)](installation.md#install-olm)
   - [Deploy OCI Service Operator for Kuberentes](installation.md#deploy-osok)
-- [Services](services.md#services)
+- [Services](#services)
   - [Oracle Autonomous Database Service](adb.md#autonomous-databases-service)
     - [Introduction](adb.md#introduction)
     - [OCI Permission requirement](adb.md#oci-permission-requirement)
@@ -106,6 +106,10 @@
     - [OciSubnet CRD](networking.md#ocisubnet-crd)
     - [Examples](networking.md#examples)
     - [Deletion](networking.md#deletion)
+
+## Services
+
+See the service-specific pages linked in the table of contents above.
 
 ## Introduction
 
