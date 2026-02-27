@@ -7,6 +7,43 @@ dependency ordering and lifecycle.
 
 ---
 
+## Dependency Graph
+
+kro resolves resources in parallel where possible and serializes where dependencies
+exist. The graph for this platform is:
+
+```
+objectStorageBucket ─┐
+stream              ─┤
+queue               ─┤  (independent — run in parallel)
+adb                 ─┤
+apiGateway ──────────┤──► apiGatewayDeployment
+                     │
+vcn ─────────────────┤──► internetGateway
+                     ├──► natGateway ─────┐
+                     ├──► serviceGateway ──┼──► routeTable ──┐
+                     ├──► securityList ──────────────────────────┼──► subnet ──► mysql
+                     │                                           │           ├──► postgres
+                     │                                           │           ├──► redisCluster
+                     │                                           │           ├──► opensearch
+                     │                                           │           ├──► containerInstance
+                     │                                           │           └──► computeInstance
+nosqlTable ──────────┘
+```
+
+The VCN topology requires both chains to complete before `subnet` is created:
+- `vcn → {natGateway, serviceGateway} → routeTable`
+- `vcn → securityList`
+
+kro handles this automatically by tracking the `${resource.status.status.ocid}` references.
+
+> **readyWhen pattern**: Use `${resource.status.status.ocid != ""}` to gate
+> downstream resources on a gateway becoming active. kro's CEL evaluator does
+> not support negative list indices (`conditions[-1]`), so always use OCID
+> presence checks as readiness signals.
+
+---
+
 ## Required IAM Policies
 
 Apply these policies in the OCI Console or CLI before deploying OSOK. They grant OKE
@@ -650,43 +687,6 @@ The API Gateway endpoint is in the gateway status message:
 kubectl get apigateway my-platform-apigw \
   -o jsonpath='{.status.status.conditions[?(@.type=="Active")].message}'
 ```
-
----
-
-## Dependency Graph
-
-kro resolves resources in parallel where possible and serializes where dependencies
-exist. The graph for this platform is:
-
-```
-objectStorageBucket ─┐
-stream              ─┤
-queue               ─┤  (independent — run in parallel)
-adb                 ─┤
-apiGateway ──────────┤──► apiGatewayDeployment
-                     │
-vcn ─────────────────┤──► internetGateway
-                     ├──► natGateway ─────┐
-                     ├──► serviceGateway ──┼──► routeTable ──┐
-                     ├──► securityList ──────────────────────────┼──► subnet ──► mysql
-                     │                                           │           ├──► postgres
-                     │                                           │           ├──► redisCluster
-                     │                                           │           ├──► opensearch
-                     │                                           │           ├──► containerInstance
-                     │                                           │           └──► computeInstance
-nosqlTable ──────────┘
-```
-
-The VCN topology requires both chains to complete before `subnet` is created:
-- `vcn → {natGateway, serviceGateway} → routeTable`
-- `vcn → securityList`
-
-kro handles this automatically by tracking the `${resource.status.status.ocid}` references.
-
-> **readyWhen pattern**: Use `${resource.status.status.ocid != ""}` to gate
-> downstream resources on a gateway becoming active. kro's CEL evaluator does
-> not support negative list indices (`conditions[-1]`), so always use OCID
-> presence checks as readiness signals.
 
 ---
 
