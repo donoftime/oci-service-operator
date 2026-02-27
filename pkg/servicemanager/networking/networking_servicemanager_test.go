@@ -1702,3 +1702,109 @@ func TestDelete_RouteTable_Succeeds(t *testing.T) {
 	assert.True(t, done)
 	assert.True(t, deleteCalled)
 }
+
+// ---------------------------------------------------------------------------
+// UpdateRouteTable reconciliation tests
+// ---------------------------------------------------------------------------
+
+func TestUpdateRouteTable_IncludesRouteRulesInRequest(t *testing.T) {
+	var capturedReq ocicore.UpdateRouteTableRequest
+	fake := &fakeVirtualNetworkClient{
+		updateRouteTableFn: func(_ context.Context, req ocicore.UpdateRouteTableRequest) (ocicore.UpdateRouteTableResponse, error) {
+			capturedReq = req
+			return ocicore.UpdateRouteTableResponse{}, nil
+		},
+	}
+	mgr := routeTableMgrWithFake(fake)
+
+	rt := &ociv1beta1.OciRouteTable{}
+	rt.Status.OsokStatus.Ocid = "ocid1.routetable.oc1..test"
+	rt.Spec.DisplayName = "my-rt"
+	rt.Spec.RouteRules = []ociv1beta1.RouteRule{
+		{NetworkEntityId: "ocid1.internetgateway.oc1..igw", Destination: "0.0.0.0/0", DestinationType: "CIDR_BLOCK"},
+	}
+
+	err := mgr.UpdateRouteTable(context.Background(), rt)
+	assert.NoError(t, err)
+	assert.Equal(t, "ocid1.routetable.oc1..test", *capturedReq.RtId)
+	assert.Len(t, capturedReq.UpdateRouteTableDetails.RouteRules, 1)
+	assert.Equal(t, "ocid1.internetgateway.oc1..igw", *capturedReq.UpdateRouteTableDetails.RouteRules[0].NetworkEntityId)
+	assert.Equal(t, "0.0.0.0/0", *capturedReq.UpdateRouteTableDetails.RouteRules[0].Destination)
+}
+
+func TestUpdateRouteTable_EmptyRulesClearsRules(t *testing.T) {
+	var capturedReq ocicore.UpdateRouteTableRequest
+	fake := &fakeVirtualNetworkClient{
+		updateRouteTableFn: func(_ context.Context, req ocicore.UpdateRouteTableRequest) (ocicore.UpdateRouteTableResponse, error) {
+			capturedReq = req
+			return ocicore.UpdateRouteTableResponse{}, nil
+		},
+	}
+	mgr := routeTableMgrWithFake(fake)
+
+	rt := &ociv1beta1.OciRouteTable{}
+	rt.Status.OsokStatus.Ocid = "ocid1.routetable.oc1..test"
+	rt.Spec.RouteRules = nil
+
+	err := mgr.UpdateRouteTable(context.Background(), rt)
+	assert.NoError(t, err)
+	// Update is always sent even with no rules (clears existing rules to match spec).
+	assert.NotNil(t, capturedReq.UpdateRouteTableDetails)
+	assert.Empty(t, capturedReq.UpdateRouteTableDetails.RouteRules)
+}
+
+// ---------------------------------------------------------------------------
+// UpdateSecurityList reconciliation tests
+// ---------------------------------------------------------------------------
+
+func TestUpdateSecurityList_IncludesRulesInRequest(t *testing.T) {
+	var capturedReq ocicore.UpdateSecurityListRequest
+	fake := &fakeVirtualNetworkClient{
+		updateSecurityListFn: func(_ context.Context, req ocicore.UpdateSecurityListRequest) (ocicore.UpdateSecurityListResponse, error) {
+			capturedReq = req
+			return ocicore.UpdateSecurityListResponse{}, nil
+		},
+	}
+	mgr := securityListMgrWithFake(fake)
+
+	sl := &ociv1beta1.OciSecurityList{}
+	sl.Status.OsokStatus.Ocid = "ocid1.securitylist.oc1..test"
+	sl.Spec.DisplayName = "my-sl"
+	sl.Spec.EgressSecurityRules = []ociv1beta1.EgressSecurityRule{
+		{Protocol: "all", Destination: "0.0.0.0/0", IsStateless: false},
+	}
+	sl.Spec.IngressSecurityRules = []ociv1beta1.IngressSecurityRule{
+		{Protocol: "6", Source: "10.0.0.0/8", IsStateless: false},
+	}
+
+	err := mgr.UpdateSecurityList(context.Background(), sl)
+	assert.NoError(t, err)
+	assert.Equal(t, "ocid1.securitylist.oc1..test", *capturedReq.SecurityListId)
+	assert.Len(t, capturedReq.UpdateSecurityListDetails.EgressSecurityRules, 1)
+	assert.Equal(t, "0.0.0.0/0", *capturedReq.UpdateSecurityListDetails.EgressSecurityRules[0].Destination)
+	assert.Len(t, capturedReq.UpdateSecurityListDetails.IngressSecurityRules, 1)
+	assert.Equal(t, "10.0.0.0/8", *capturedReq.UpdateSecurityListDetails.IngressSecurityRules[0].Source)
+}
+
+func TestUpdateSecurityList_EmptyRulesClearsRules(t *testing.T) {
+	var capturedReq ocicore.UpdateSecurityListRequest
+	fake := &fakeVirtualNetworkClient{
+		updateSecurityListFn: func(_ context.Context, req ocicore.UpdateSecurityListRequest) (ocicore.UpdateSecurityListResponse, error) {
+			capturedReq = req
+			return ocicore.UpdateSecurityListResponse{}, nil
+		},
+	}
+	mgr := securityListMgrWithFake(fake)
+
+	sl := &ociv1beta1.OciSecurityList{}
+	sl.Status.OsokStatus.Ocid = "ocid1.securitylist.oc1..test"
+	sl.Spec.EgressSecurityRules = nil
+	sl.Spec.IngressSecurityRules = nil
+
+	err := mgr.UpdateSecurityList(context.Background(), sl)
+	assert.NoError(t, err)
+	// Update is always sent (clears rules to match empty spec).
+	assert.NotNil(t, capturedReq.UpdateSecurityListDetails)
+	assert.Empty(t, capturedReq.UpdateSecurityListDetails.EgressSecurityRules)
+	assert.Empty(t, capturedReq.UpdateSecurityListDetails.IngressSecurityRules)
+}

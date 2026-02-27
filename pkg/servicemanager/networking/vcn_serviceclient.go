@@ -1065,20 +1065,16 @@ func (c *OciSecurityListServiceManager) UpdateSecurityList(ctx context.Context, 
 	}
 
 	updateDetails := ocicore.UpdateSecurityListDetails{}
-	updateNeeded := false
 
 	if sl.Spec.DisplayName != "" {
 		updateDetails.DisplayName = common.String(sl.Spec.DisplayName)
-		updateNeeded = true
 	}
 	if len(sl.Spec.FreeFormTags) > 0 {
 		updateDetails.FreeformTags = sl.Spec.FreeFormTags
-		updateNeeded = true
 	}
-
-	if !updateNeeded {
-		return nil
-	}
+	// Always reconcile egress and ingress rules so spec changes are applied on every update.
+	updateDetails.EgressSecurityRules = buildEgressRules(sl.Spec.EgressSecurityRules)
+	updateDetails.IngressSecurityRules = buildIngressRules(sl.Spec.IngressSecurityRules)
 
 	_, err = client.UpdateSecurityList(ctx, ocicore.UpdateSecurityListRequest{
 		SecurityListId:            common.String(string(sl.Status.OsokStatus.Ocid)),
@@ -1317,20 +1313,15 @@ func (c *OciRouteTableServiceManager) UpdateRouteTable(ctx context.Context, rt *
 	}
 
 	updateDetails := ocicore.UpdateRouteTableDetails{}
-	updateNeeded := false
 
 	if rt.Spec.DisplayName != "" {
 		updateDetails.DisplayName = common.String(rt.Spec.DisplayName)
-		updateNeeded = true
 	}
 	if len(rt.Spec.FreeFormTags) > 0 {
 		updateDetails.FreeformTags = rt.Spec.FreeFormTags
-		updateNeeded = true
 	}
-
-	if !updateNeeded {
-		return nil
-	}
+	// Always reconcile route rules so spec changes are applied on every update.
+	updateDetails.RouteRules = buildRouteRules(rt.Spec.RouteRules)
 
 	_, err = client.UpdateRouteTable(ctx, ocicore.UpdateRouteTableRequest{
 		RtId:                    common.String(string(rt.Status.OsokStatus.Ocid)),
