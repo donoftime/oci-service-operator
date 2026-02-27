@@ -364,7 +364,7 @@ spec:
           compartmentId: ${schema.spec.compartmentId}
           availabilityDomain: ${schema.spec.availabilityDomain}
           displayName: ${schema.metadata.name}-ci
-          shape: CI.Standard.A1.Flex
+          shape: CI.Standard.x86.Generic
           shapeConfig:
             ocpus: 1
             memoryInGBs: 4
