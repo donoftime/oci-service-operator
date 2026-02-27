@@ -329,7 +329,9 @@ spec:
 
     # ── 11. PostgreSQL DB System ──────────────────────────────────────────────
     # dbVersion accepts major versions only: "14", "15", or "16".
-    # shape must use the PostgreSQL. prefix (e.g. PostgreSQL.VM.Standard.E4.Flex).
+    # shape must use the PostgreSQL. prefix. Available shapes vary by compartment;
+    # check with: oci psql shape-summary list-shapes --compartment-id <ocid>
+    # Common shapes: PostgreSQL.VM.Standard.E5.Flex, PostgreSQL.VM.Standard.E6.Flex
     - id: postgres
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -340,7 +342,7 @@ spec:
           compartmentId: ${schema.spec.compartmentId}
           displayName: ${schema.metadata.name}-postgres
           dbVersion: "14"
-          shape: PostgreSQL.VM.Standard.E4.Flex
+          shape: PostgreSQL.VM.Standard.E5.Flex
           subnetId: ${subnet.status.status.ocid}
           storageType: HighPerformance
           instanceCount: 1

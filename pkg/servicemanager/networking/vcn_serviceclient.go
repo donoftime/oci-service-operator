@@ -942,6 +942,9 @@ func buildEgressRules(rules []ociv1beta1.EgressSecurityRule) []ocicore.EgressSec
 			Destination: common.String(r.Destination),
 			IsStateless: common.Bool(r.IsStateless),
 		}
+		if r.DestinationType != "" {
+			rule.DestinationType = ocicore.EgressSecurityRuleDestinationTypeEnum(r.DestinationType)
+		}
 		if r.Description != "" {
 			rule.Description = common.String(r.Description)
 		}

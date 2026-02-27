@@ -181,9 +181,10 @@ spec:
           displayName: ${schema.metadata.name}-seclist
           egressSecurityRules:
             - protocol: "all"
-              destination: "0.0.0.0/0"
+              destination: all-iad-services-in-oracle-services-network
+              destinationType: SERVICE_CIDR_BLOCK
               isStateless: false
-              description: "Allow all egress (route table directs OCI service traffic to SGW)"
+              description: "Allow all egress to OCI services via SGW"
           ingressSecurityRules:
             - protocol: "6"
               source: ${schema.spec.subnetCidrBlock}
@@ -243,7 +244,7 @@ spec:
           compartmentId: ${schema.spec.compartmentId}
           displayName: ${schema.metadata.name}-postgres
           dbVersion: "14"
-          shape: PostgreSQL.VM.Standard.E4.Flex
+          shape: PostgreSQL.VM.Standard.E5.Flex
           subnetId: ${subnet.status.status.ocid}
           storageType: HighPerformance
           instanceCount: 1

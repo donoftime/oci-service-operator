@@ -373,12 +373,13 @@ type IngressSecurityRule struct {
 
 // EgressSecurityRule defines an egress rule
 type EgressSecurityRule struct {
-	Protocol    string      `json:"protocol"`
-	Destination string      `json:"destination"`
-	IsStateless bool        `json:"isStateless,omitempty"`
-	Description string      `json:"description,omitempty"`
-	TcpOptions  *TcpOptions `json:"tcpOptions,omitempty"`
-	UdpOptions  *UdpOptions `json:"udpOptions,omitempty"`
+	Protocol        string      `json:"protocol"`
+	Destination     string      `json:"destination"`
+	DestinationType string      `json:"destinationType,omitempty"`
+	IsStateless     bool        `json:"isStateless,omitempty"`
+	Description     string      `json:"description,omitempty"`
+	TcpOptions      *TcpOptions `json:"tcpOptions,omitempty"`
+	UdpOptions      *UdpOptions `json:"udpOptions,omitempty"`
 }
 
 // PortRange defines min/max port
