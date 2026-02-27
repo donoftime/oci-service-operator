@@ -57,14 +57,6 @@ Allow any-user to manage nosql-family in compartment <resources_compartment_name
   where all {request.principal.type = 'instance',
               request.principal.compartment.id = '<oke_nodes_compartment_ocid>'}
 
-# Vault and Key Management
-Allow any-user to manage vaults in compartment <resources_compartment_name>
-  where all {request.principal.type = 'instance',
-              request.principal.compartment.id = '<oke_nodes_compartment_ocid>'}
-Allow any-user to manage keys in compartment <resources_compartment_name>
-  where all {request.principal.type = 'instance',
-              request.principal.compartment.id = '<oke_nodes_compartment_ocid>'}
-
 # Container Instances
 Allow any-user to manage compute-container-family in compartment <resources_compartment_name>
   where all {request.principal.type = 'instance',
@@ -160,24 +152,7 @@ spec:
 
   resources:
 
-    # ── 1. Vault ─────────────────────────────────────────────────────────────
-    - id: vault
-      template:
-        apiVersion: oci.oracle.com/v1beta1
-        kind: OciVault
-        metadata:
-          name: ${schema.metadata.name}-vault
-        spec:
-          compartmentId: ${schema.spec.compartmentId}
-          displayName: ${schema.metadata.name}-vault
-          vaultType: DEFAULT
-          key:
-            displayName: ${schema.metadata.name}-key
-            keyShape:
-              algorithm: AES
-              length: 32
-
-    # ── 2. Object Storage Bucket ──────────────────────────────────────────────
+    # ── 1. Object Storage Bucket ──────────────────────────────────────────────
     - id: objectStorageBucket
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -191,7 +166,7 @@ spec:
           storageType: Standard
           versioning: Enabled
 
-    # ── 3. Oracle Streaming Service ───────────────────────────────────────────
+    # ── 2. Oracle Streaming Service ───────────────────────────────────────────
     - id: stream
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -204,7 +179,7 @@ spec:
           partitions: 1
           retentionInHours: 24
 
-    # ── 4. OCI Queue ──────────────────────────────────────────────────────────
+    # ── 3. OCI Queue ──────────────────────────────────────────────────────────
     - id: queue
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -218,7 +193,7 @@ spec:
           visibilityInSeconds: 30
           deadLetterQueueDeliveryCount: 3
 
-    # ── 5. Autonomous Database ────────────────────────────────────────────────
+    # ── 4. Autonomous Database ────────────────────────────────────────────────
     - id: adb
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -238,7 +213,7 @@ spec:
             secret:
               secretName: ${schema.spec.adbAdminPasswordSecret}
 
-    # ── 6. VCN ────────────────────────────────────────────────────────────────
+    # ── 5. VCN ────────────────────────────────────────────────────────────────
     # Foundation of the network topology. Internet Gateway and Route Table
     # depend on this OCID.
     - id: vcn
@@ -253,7 +228,7 @@ spec:
           cidrBlock: ${schema.spec.cidrBlock}
           dnsLabel: platform
 
-    # ── 7. Internet Gateway ───────────────────────────────────────────────────
+    # ── 6. Internet Gateway ───────────────────────────────────────────────────
     # Provides outbound internet access. Route Table depends on this OCID.
     - id: internetGateway
       template:
@@ -269,7 +244,7 @@ spec:
       readyWhen:
         - ${internetGateway.status.status.ocid != ""}
 
-    # ── 8. Route Table ────────────────────────────────────────────────────────
+    # ── 7. Route Table ────────────────────────────────────────────────────────
     # Default route via Internet Gateway. Subnet depends on this OCID.
     - id: routeTable
       template:
@@ -288,7 +263,7 @@ spec:
       readyWhen:
         - ${routeTable.status.status.ocid != ""}
 
-    # ── 9. Subnet ─────────────────────────────────────────────────────────────
+    # ── 8. Subnet ─────────────────────────────────────────────────────────────
     # Private subnet (no public IPs). All network-attached services use this.
     - id: subnet
       template:
@@ -305,7 +280,7 @@ spec:
           prohibitPublicIpOnVnic: true
           routeTableId: ${routeTable.status.status.ocid}
 
-    # ── 10. MySQL DB System ───────────────────────────────────────────────────
+    # ── 9. MySQL DB System ───────────────────────────────────────────────────
     - id: mysql
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -327,7 +302,7 @@ spec:
             secret:
               secretName: ${schema.spec.mysqlCredentialsSecret}
 
-    # ── 11. PostgreSQL DB System ──────────────────────────────────────────────
+    # ── 10. PostgreSQL DB System ──────────────────────────────────────────────
     # dbVersion accepts major versions only: "14", "15", or "16".
     # shape must use the PostgreSQL. prefix. Available shapes vary by compartment;
     # check with: oci psql shape-summary list-shapes --compartment-id <ocid>
@@ -349,7 +324,7 @@ spec:
           instanceOcpuCount: 2
           instanceMemoryInGBs: 32
 
-    # ── 12. NoSQL Table ───────────────────────────────────────────────────────
+    # ── 11. NoSQL Table ───────────────────────────────────────────────────────
     - id: nosqlTable
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -367,7 +342,7 @@ spec:
             maxWriteUnits: 50
             maxStorageInGBs: 1
 
-    # ── 13. OCI Cache with Redis ──────────────────────────────────────────────
+    # ── 12. OCI Cache with Redis ──────────────────────────────────────────────
     - id: redisCluster
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -382,7 +357,7 @@ spec:
           nodeMemoryInGBs: 2
           subnetId: ${subnet.status.status.ocid}
 
-    # ── 14. OpenSearch Cluster ────────────────────────────────────────────────
+    # ── 13. OpenSearch Cluster ────────────────────────────────────────────────
     - id: opensearch
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -410,7 +385,7 @@ spec:
           subnetId: ${subnet.status.status.ocid}
           subnetCompartmentId: ${schema.spec.compartmentId}
 
-    # ── 15. API Gateway ───────────────────────────────────────────────────────
+    # ── 14. API Gateway ───────────────────────────────────────────────────────
     # Uses a pre-existing public/LB subnet (lbSubnetId) — the platform subnet
     # prohibits public IPs, so API Gateway needs its own public-facing subnet.
     - id: apiGateway
@@ -425,7 +400,7 @@ spec:
           endpointType: PUBLIC
           subnetId: ${schema.spec.lbSubnetId}
 
-    # ── 16. API Gateway Deployment ────────────────────────────────────────────
+    # ── 15. API Gateway Deployment ────────────────────────────────────────────
     # Depends on apiGateway. Serves a stock health-check response.
     - id: apiGatewayDeployment
       template:
@@ -447,7 +422,7 @@ spec:
                 status: 200
                 body: '{"status":"ok"}'
 
-    # ── 17. Container Instance ────────────────────────────────────────────────
+    # ── 16. Container Instance ────────────────────────────────────────────────
     # displayName is required for idempotency: OSOK uses it to look up existing
     # instances so that reconcile does not create a new instance on every cycle.
     # gcPolicy (optional): controls how many historical instances are retained.
@@ -489,7 +464,7 @@ spec:
               displayName: primary-vnic
           containerRestartPolicy: ON_FAILURE
 
-    # ── 18. Compute Instance ──────────────────────────────────────────────────
+    # ── 17. Compute Instance ──────────────────────────────────────────────────
     # A full VM in the platform subnet. imageId must be an OCI image OCID
     # valid in your region (e.g. Oracle Linux 8).
     - id: computeInstance
@@ -578,7 +553,7 @@ Check individual resources as they come up:
 
 ```bash
 kubectl get \
-  ocivault,objectstoragebucket,stream,ociqueue,autonomousdatabases,\
+  objectstoragebucket,stream,ociqueue,autonomousdatabases,\
   ocivcn,ociinternetgateway,ociroutetable,ocisubnet,\
   mysqldbsystem,postgresdbsystem,nosqldatabase,rediscluster,opensearchcluster,\
   apigateway,apigatewaydeployment,containerinstance,computeinstance \
@@ -611,8 +586,7 @@ kro resolves resources in parallel where possible and serializes where dependenc
 exist. The graph for this platform is:
 
 ```
-vault               ─┐
-objectStorageBucket ─┤
+objectStorageBucket ─┐
 stream              ─┤
 queue               ─┤  (independent — run in parallel)
 adb                 ─┤
@@ -649,7 +623,6 @@ kubectl delete osokplatform my-platform
 
 OSOK finalizers ensure each OCI resource is deleted before the Kubernetes object
 is removed. Note that some services impose deletion delays:
-- **Vault**: OCI schedules deletion with a minimum 7-day grace period
 - **ADB**: Terminates immediately but may take a few minutes
 - **OpenSearch / MySQL / PostgreSQL**: Active deletion, may take several minutes
 - **VCN resources**: Subnet must be deleted before Route Table, Internet Gateway,

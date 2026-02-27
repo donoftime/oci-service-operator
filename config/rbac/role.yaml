@@ -40,7 +40,6 @@ rules:
   - ocisecuritylists
   - ociservicegateways
   - ocisubnets
-  - ocivaults
   - ocivcns
   - opensearchclusters
   - postgresdbsystems
@@ -77,7 +76,6 @@ rules:
   - ocisecuritylists/finalizers
   - ociservicegateways/finalizers
   - ocisubnets/finalizers
-  - ocivaults/finalizers
   - ocivcns/finalizers
   - opensearchclusters/finalizers
   - postgresdbsystems/finalizers
@@ -108,7 +106,6 @@ rules:
   - ocisecuritylists/status
   - ociservicegateways/status
   - ocisubnets/status
-  - ocivaults/status
   - ocivcns/status
   - opensearchclusters/status
   - postgresdbsystems/status

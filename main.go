@@ -48,7 +48,6 @@ import (
 	ociqueue "github.com/oracle/oci-service-operator/pkg/servicemanager/queue"
 	ociredis "github.com/oracle/oci-service-operator/pkg/servicemanager/redis"
 	"github.com/oracle/oci-service-operator/pkg/servicemanager/streams"
-	ocivault "github.com/oracle/oci-service-operator/pkg/servicemanager/vault"
 	"github.com/oracle/oci-service-operator/pkg/util"
 	// +kubebuilder:scaffold:imports
 )
@@ -341,21 +340,6 @@ func main() {
 		},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.ErrorLog(err, "unable to create controller", "controller", "FunctionsFunction")
-		os.Exit(1)
-	}
-
-	if err = (&controllers.OciVaultReconciler{
-		Reconciler: &core.BaseReconciler{
-			Client:             mgr.GetClient(),
-			OSOKServiceManager: ocivault.NewOciVaultServiceManager(provider, credClient, scheme, loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("service-manager").WithName("OciVault")}),
-			Finalizer:          core.NewBaseFinalizer(mgr.GetClient(), ctrl.Log),
-			Log:                loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("controllers").WithName("OciVault")},
-			Metrics:            metricsClient,
-			Recorder:           mgr.GetEventRecorderFor("OciVault"),
-			Scheme:             scheme,
-		},
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.ErrorLog(err, "unable to create controller", "controller", "OciVault")
 		os.Exit(1)
 	}
 

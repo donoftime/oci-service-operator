@@ -11,7 +11,6 @@ resources:
 - bases/oci.oracle.com_streams.yaml
 - bases/oci.oracle.com_mysqldbsystems.yaml
 - bases/oci.oracle.com_opensearchclusters.yaml
-- bases/oci.oracle.com_ocivaults.yaml
 - bases/oci.oracle.com_apigateways.yaml
 - bases/oci.oracle.com_apigatewaydeployments.yaml
 - bases/oci.oracle.com_containerinstances.yaml

@@ -39,7 +39,7 @@ spec:
           storageType: Standard
           versioning: Enabled
 
-    # ── 3. Oracle Streaming Service ───────────────────────────────────────────
+    # ── 2. Oracle Streaming Service ───────────────────────────────────────────
     - id: stream
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -52,7 +52,7 @@ spec:
           partitions: 1
           retentionInHours: 24
 
-    # ── 4. OCI Queue ──────────────────────────────────────────────────────────
+    # ── 3. OCI Queue ──────────────────────────────────────────────────────────
     - id: queue
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -66,7 +66,7 @@ spec:
           visibilityInSeconds: 30
           deadLetterQueueDeliveryCount: 3
 
-    # ── 5. Autonomous Database ────────────────────────────────────────────────
+    # ── 4. Autonomous Database ────────────────────────────────────────────────
     - id: adb
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -87,7 +87,7 @@ spec:
             secret:
               secretName: ${schema.spec.adbAdminPasswordSecret}
 
-    # ── 6. VCN ────────────────────────────────────────────────────────────────
+    # ── 5. VCN ────────────────────────────────────────────────────────────────
     - id: vcn
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -100,7 +100,7 @@ spec:
           cidrBlock: ${schema.spec.cidrBlock}
           dnsLabel: platform
 
-    # ── 7. Internet Gateway ───────────────────────────────────────────────────
+    # ── 6. Internet Gateway ───────────────────────────────────────────────────
     - id: internetGateway
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -115,7 +115,7 @@ spec:
       readyWhen:
         - ${internetGateway.status.status.ocid != ""}
 
-    # ── 7b. NAT Gateway ────────────────────────────────────────────────────────
+    # ── 6b. NAT Gateway ────────────────────────────────────────────────────────
     - id: natGateway
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -130,7 +130,7 @@ spec:
       readyWhen:
         - ${natGateway.status.status.ocid != ""}
 
-    # ── 7c. Service Gateway ───────────────────────────────────────────────────
+    # ── 6c. Service Gateway ───────────────────────────────────────────────────
     - id: serviceGateway
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -146,7 +146,7 @@ spec:
       readyWhen:
         - ${serviceGateway.status.status.ocid != ""}
 
-    # ── 8. Route Table ────────────────────────────────────────────────────────
+    # ── 7. Route Table ────────────────────────────────────────────────────────
     - id: routeTable
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -167,7 +167,7 @@ spec:
       readyWhen:
         - ${routeTable.status.status.ocid != ""}
 
-    # ── 8b. Security List ─────────────────────────────────────────────────────
+    # ── 7b. Security List ─────────────────────────────────────────────────────
     - id: securityList
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -192,7 +192,7 @@ spec:
       readyWhen:
         - ${securityList.status.status.ocid != ""}
 
-    # ── 9. Subnet ─────────────────────────────────────────────────────────────
+    # ── 8. Subnet ─────────────────────────────────────────────────────────────
     - id: subnet
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -210,7 +210,7 @@ spec:
           securityListIds:
             - ${securityList.status.status.ocid}
 
-    # ── 10. MySQL DB System ───────────────────────────────────────────────────
+    # ── 9. MySQL DB System ───────────────────────────────────────────────────
     - id: mysql
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -232,7 +232,7 @@ spec:
             secret:
               secretName: ${schema.spec.mysqlCredentialsSecret}
 
-    # ── 11. PostgreSQL DB System ──────────────────────────────────────────────
+    # ── 10. PostgreSQL DB System ──────────────────────────────────────────────
     - id: postgres
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -256,7 +256,7 @@ spec:
             secret:
               secretName: ${schema.spec.mysqlCredentialsSecret}
 
-    # ── 12. NoSQL Table ───────────────────────────────────────────────────────
+    # ── 11. NoSQL Table ───────────────────────────────────────────────────────
     - id: nosqlTable
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -274,7 +274,7 @@ spec:
             maxWriteUnits: 50
             maxStorageInGBs: 1
 
-    # ── 13. OCI Cache with Redis ──────────────────────────────────────────────
+    # ── 12. OCI Cache with Redis ──────────────────────────────────────────────
     - id: redisCluster
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -289,7 +289,7 @@ spec:
           nodeMemoryInGBs: 2
           subnetId: ${subnet.status.status.ocid}
 
-    # ── 14. OpenSearch Cluster ────────────────────────────────────────────────
+    # ── 13. OpenSearch Cluster ────────────────────────────────────────────────
     - id: opensearch
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -317,7 +317,7 @@ spec:
           subnetId: ${subnet.status.status.ocid}
           subnetCompartmentId: ${schema.spec.compartmentId}
 
-    # ── 15. API Gateway ───────────────────────────────────────────────────────
+    # ── 14. API Gateway ───────────────────────────────────────────────────────
     - id: apiGateway
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -330,7 +330,7 @@ spec:
           endpointType: PUBLIC
           subnetId: ${schema.spec.lbSubnetId}
 
-    # ── 16. API Gateway Deployment ────────────────────────────────────────────
+    # ── 15. API Gateway Deployment ────────────────────────────────────────────
     # Stock responses only — no function backend required.
     - id: apiGatewayDeployment
       template:
@@ -352,7 +352,7 @@ spec:
                 status: 200
                 body: '{"status":"ok"}'
 
-    # ── 17. Container Instance ────────────────────────────────────────────────
+    # ── 16. Container Instance ────────────────────────────────────────────────
     - id: containerInstance
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -381,7 +381,7 @@ spec:
               displayName: primary-vnic
           containerRestartPolicy: ON_FAILURE
 
-    # ── 18. Compute Instance ──────────────────────────────────────────────────
+    # ── 17. Compute Instance ──────────────────────────────────────────────────
     - id: computeInstance
       template:
         apiVersion: oci.oracle.com/v1beta1
