@@ -567,8 +567,8 @@ func TestCreateOrUpdate_UpdateViaFreeFormTags(t *testing.T) {
 	stream.Name = "my-stream"
 	stream.Namespace = "default"
 	stream.Spec.StreamId = ociv1beta1.OCID(streamID)
-	stream.Spec.Partitions = 1         // matches existing (required for UpdateStream validation)
-	stream.Spec.RetentionInHours = 24  // matches existing
+	stream.Spec.Partitions = 1                                  // matches existing (required for UpdateStream validation)
+	stream.Spec.RetentionInHours = 24                           // matches existing
 	stream.Spec.FreeFormTags = map[string]string{"env": "prod"} // differs from nil
 
 	resp, err := mgr.CreateOrUpdate(context.Background(), stream, ctrl.Request{})
@@ -652,8 +652,8 @@ func TestUpdateStream_RetentionMismatch(t *testing.T) {
 
 	stream := &ociv1beta1.Stream{}
 	stream.Spec.StreamId = ociv1beta1.OCID(streamID)
-	stream.Spec.Partitions = 1         // matches
-	stream.Spec.RetentionInHours = 12  // <= 23 → error
+	stream.Spec.Partitions = 1        // matches
+	stream.Spec.RetentionInHours = 12 // <= 23 → error
 
 	err := mgr.UpdateStream(context.Background(), stream)
 	assert.Error(t, err)

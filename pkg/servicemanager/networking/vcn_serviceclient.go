@@ -480,7 +480,7 @@ func (c *OciInternetGatewayServiceManager) UpdateInternetGateway(ctx context.Con
 	}
 
 	_, err = client.UpdateInternetGateway(ctx, ocicore.UpdateInternetGatewayRequest{
-		IgId:                        common.String(string(igw.Status.OsokStatus.Ocid)),
+		IgId:                         common.String(string(igw.Status.OsokStatus.Ocid)),
 		UpdateInternetGatewayDetails: updateDetails,
 	})
 	return err
@@ -601,7 +601,7 @@ func (c *OciNatGatewayServiceManager) UpdateNatGateway(ctx context.Context, nat 
 	}
 
 	_, err = client.UpdateNatGateway(ctx, ocicore.UpdateNatGatewayRequest{
-		NatGatewayId:          common.String(string(nat.Status.OsokStatus.Ocid)),
+		NatGatewayId:            common.String(string(nat.Status.OsokStatus.Ocid)),
 		UpdateNatGatewayDetails: updateDetails,
 	})
 	return err

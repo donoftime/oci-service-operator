@@ -3,6 +3,8 @@ cover.out
 bin/
 testbin/
 bundle/
+unittests.cover
+unittests.percent
 
 # This is to remediate SCA findings wrt downloads from dockerfiles present in go vendor tree
 vendor/**/Dockerfile

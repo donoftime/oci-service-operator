@@ -113,10 +113,10 @@ func (m *mockK8sClient) Patch(ctx context.Context, obj client.Object, patch clie
 func (m *mockK8sClient) DeleteAllOf(ctx context.Context, obj client.Object, opts ...client.DeleteAllOfOption) error {
 	return nil
 }
-func (m *mockK8sClient) Status() client.SubResourceWriter                           { return nil }
-func (m *mockK8sClient) SubResource(sr string) client.SubResourceClient             { return nil }
-func (m *mockK8sClient) Scheme() *runtime.Scheme                                    { return nil }
-func (m *mockK8sClient) RESTMapper() meta.RESTMapper                                { return nil }
+func (m *mockK8sClient) Status() client.SubResourceWriter               { return nil }
+func (m *mockK8sClient) SubResource(sr string) client.SubResourceClient { return nil }
+func (m *mockK8sClient) Scheme() *runtime.Scheme                        { return nil }
+func (m *mockK8sClient) RESTMapper() meta.RESTMapper                    { return nil }
 func (m *mockK8sClient) GroupVersionKindFor(obj runtime.Object) (schema.GroupVersionKind, error) {
 	return schema.GroupVersionKind{}, nil
 }

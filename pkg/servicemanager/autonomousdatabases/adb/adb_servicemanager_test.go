@@ -765,10 +765,10 @@ func TestCreateOrUpdate_UpdateAdb_AdditionalFields(t *testing.T) {
 
 	adb := &ociv1beta1.AutonomousDatabases{}
 	adb.Spec.AdbId = ociv1beta1.OCID(adbId)
-	adb.Spec.DbWorkload = "DW"                   // differs from OLTP
-	adb.Spec.IsFreeTier = true                   // differs from false
-	adb.Spec.LicenseModel = "BRING_YOUR_OWN_LICENSE" // differs from LICENSE_INCLUDED
-	adb.Spec.DbVersion = "21c"                   // differs from 19c
+	adb.Spec.DbWorkload = "DW"                               // differs from OLTP
+	adb.Spec.IsFreeTier = true                               // differs from false
+	adb.Spec.LicenseModel = "BRING_YOUR_OWN_LICENSE"         // differs from LICENSE_INCLUDED
+	adb.Spec.DbVersion = "21c"                               // differs from 19c
 	adb.Spec.FreeFormTags = map[string]string{"env": "prod"} // differs from nil
 
 	resp, err := mgr.CreateOrUpdate(context.Background(), adb, ctrl.Request{})

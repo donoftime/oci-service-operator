@@ -367,7 +367,8 @@ func makeZipWithBadDeflateData(t *testing.T) string {
 	writeU16(20)
 	writeU16(0)
 	writeU16(8) // Deflate
-	writeU16(0); writeU16(0)
+	writeU16(0)
+	writeU16(0)
 	writeU32(0)                    // CRC-32 (wrong, but only checked at EOF)
 	writeU32(uint32(len(garbage))) // compressed size
 	writeU32(10)                   // uncompressed size (claimed)
@@ -380,15 +381,20 @@ func makeZipWithBadDeflateData(t *testing.T) string {
 
 	// Central directory header
 	writeU32(0x02014b50)
-	writeU16(20); writeU16(20)
+	writeU16(20)
+	writeU16(20)
 	writeU16(0)
 	writeU16(8) // Deflate
-	writeU16(0); writeU16(0)
+	writeU16(0)
+	writeU16(0)
 	writeU32(0)
 	writeU32(uint32(len(garbage)))
 	writeU32(10)
 	writeU16(uint16(len(filename)))
-	writeU16(0); writeU16(0); writeU16(0); writeU16(0)
+	writeU16(0)
+	writeU16(0)
+	writeU16(0)
+	writeU16(0)
 	writeU32(0)
 	writeU32(uint32(localOffset))
 	buf.WriteString(filename)
@@ -397,8 +403,10 @@ func makeZipWithBadDeflateData(t *testing.T) string {
 
 	// End of central directory
 	writeU32(0x06054b50)
-	writeU16(0); writeU16(0)
-	writeU16(1); writeU16(1)
+	writeU16(0)
+	writeU16(0)
+	writeU16(1)
+	writeU16(1)
 	writeU32(uint32(cdSize))
 	writeU32(uint32(cdOffset))
 	writeU16(0)

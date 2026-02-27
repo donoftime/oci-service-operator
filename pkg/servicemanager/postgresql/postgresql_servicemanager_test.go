@@ -123,18 +123,18 @@ func (m *mockOciPostgresClient) DeleteDbSystem(ctx context.Context, req ocipsql.
 func makeActiveDbSystem(id, displayName string) ocipsql.DbSystem {
 	privateIp := "10.0.0.5"
 	return ocipsql.DbSystem{
-		Id:                    common.String(id),
-		DisplayName:           common.String(displayName),
-		CompartmentId:         common.String("ocid1.compartment.oc1..xxx"),
-		LifecycleState:        ocipsql.DbSystemLifecycleStateActive,
-		SystemType:            ocipsql.DbSystemSystemTypeOciOptimizedStorage,
-		DbVersion:             common.String("14.10"),
-		Shape:                 common.String("VM.Standard.E4.Flex"),
-		InstanceOcpuCount:     common.Int(2),
+		Id:                      common.String(id),
+		DisplayName:             common.String(displayName),
+		CompartmentId:           common.String("ocid1.compartment.oc1..xxx"),
+		LifecycleState:          ocipsql.DbSystemLifecycleStateActive,
+		SystemType:              ocipsql.DbSystemSystemTypeOciOptimizedStorage,
+		DbVersion:               common.String("14.10"),
+		Shape:                   common.String("VM.Standard.E4.Flex"),
+		InstanceOcpuCount:       common.Int(2),
 		InstanceMemorySizeInGBs: common.Int(32),
-		StorageDetails:        ocipsql.OciOptimizedStorageDetails{IsRegionallyDurable: common.Bool(true)},
+		StorageDetails:          ocipsql.OciOptimizedStorageDetails{IsRegionallyDurable: common.Bool(true)},
 		NetworkDetails: &ocipsql.NetworkDetails{
-			SubnetId:                    common.String("ocid1.subnet.oc1..xxx"),
+			SubnetId:                   common.String("ocid1.subnet.oc1..xxx"),
 			PrimaryDbEndpointPrivateIp: &privateIp,
 		},
 		ManagementPolicy: &ocipsql.ManagementPolicy{},
@@ -171,9 +171,9 @@ func TestGetCredentialMap(t *testing.T) {
 // TestGetCredentialMap_NilFields verifies nil pointer fields are handled gracefully.
 func TestGetCredentialMap_NilFields(t *testing.T) {
 	dbSystem := ocipsql.DbSystem{
-		Id:             common.String("ocid1.postgresql.xxx"),
-		DisplayName:    nil,
-		StorageDetails: ocipsql.OciOptimizedStorageDetails{IsRegionallyDurable: common.Bool(true)},
+		Id:               common.String("ocid1.postgresql.xxx"),
+		DisplayName:      nil,
+		StorageDetails:   ocipsql.OciOptimizedStorageDetails{IsRegionallyDurable: common.Bool(true)},
 		ManagementPolicy: &ocipsql.ManagementPolicy{},
 	}
 	credMap := GetCredentialMapForTest(dbSystem)

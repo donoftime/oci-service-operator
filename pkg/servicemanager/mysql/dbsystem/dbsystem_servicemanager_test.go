@@ -696,8 +696,8 @@ func TestCreateOrUpdate_BindExisting_DescriptionAndConfigIdChange(t *testing.T) 
 	dbSystem.Name = "test-dbsystem"
 	dbSystem.Namespace = "default"
 	dbSystem.Spec.MySqlDbSystemId = ociv1beta1.OCID(dbSystemId)
-	dbSystem.Spec.DisplayName = "test-dbsystem" // same — no update on this field
-	dbSystem.Spec.Description = "new description" // differs from "test description"
+	dbSystem.Spec.DisplayName = "test-dbsystem"                            // same — no update on this field
+	dbSystem.Spec.Description = "new description"                          // differs from "test description"
 	dbSystem.Spec.ConfigurationId.Id = "ocid1.mysqlconfiguration.oc1..new" // differs from current
 
 	resp, err := mgr.CreateOrUpdate(context.Background(), dbSystem, ctrl.Request{})

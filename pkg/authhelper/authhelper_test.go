@@ -23,18 +23,18 @@ func testLogger() loggerutil.OSOKLogger {
 // nilOsokConfig implements config.OsokConfig returning empty values — simulates absent user auth.
 type nilStyleConfig struct{}
 
-func (n nilStyleConfig) Auth() config.UserAuthConfig  { return config.UserAuthConfig{} }
-func (n nilStyleConfig) UseInstancePrincipals() bool  { return false }
-func (n nilStyleConfig) VaultDetails() string         { return "" }
+func (n nilStyleConfig) Auth() config.UserAuthConfig { return config.UserAuthConfig{} }
+func (n nilStyleConfig) UseInstancePrincipals() bool { return false }
+func (n nilStyleConfig) VaultDetails() string        { return "" }
 
 // userPrincipalConfig implements config.OsokConfig with full user auth fields.
 type userPrincipalConfig struct {
 	auth config.UserAuthConfig
 }
 
-func (u userPrincipalConfig) Auth() config.UserAuthConfig  { return u.auth }
-func (u userPrincipalConfig) UseInstancePrincipals() bool  { return false }
-func (u userPrincipalConfig) VaultDetails() string         { return "" }
+func (u userPrincipalConfig) Auth() config.UserAuthConfig { return u.auth }
+func (u userPrincipalConfig) UseInstancePrincipals() bool { return false }
+func (u userPrincipalConfig) VaultDetails() string        { return "" }
 
 // ---------------------------------------------------------------------------
 // Tests: GetAuthProvider — nil config path
