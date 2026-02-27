@@ -50,6 +50,12 @@ type PostgresDbSystemSpec struct {
 	// InstanceMemoryInGBs is the total memory available to each instance node, in gigabytes
 	InstanceMemoryInGBs int `json:"instanceMemoryInGBs,omitempty"`
 
+	// AdminUsername is the admin username for the PostgreSQL DB system, read from a Kubernetes secret
+	AdminUsername UsernameSource `json:"adminUsername,omitempty"`
+
+	// AdminPassword is the admin password for the PostgreSQL DB system, read from a Kubernetes secret
+	AdminPassword PasswordSource `json:"adminPassword,omitempty"`
+
 	TagResources `json:",inline,omitempty"`
 }
 

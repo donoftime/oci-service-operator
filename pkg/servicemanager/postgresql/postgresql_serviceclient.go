@@ -7,6 +7,7 @@ package postgresql
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
@@ -75,6 +76,36 @@ func (c *PostgresDbSystemServiceManager) CreatePostgresDbSystem(ctx context.Cont
 	}
 	if dbSystem.Spec.DefinedTags != nil {
 		details.DefinedTags = *util.ConvertToOciDefinedTags(&dbSystem.Spec.DefinedTags)
+	}
+
+	if dbSystem.Spec.AdminUsername.Secret.SecretName != "" && dbSystem.Spec.AdminPassword.Secret.SecretName != "" {
+		c.Log.DebugLog("Getting Admin Username from Secret")
+		unameMap, err := c.CredentialClient.GetSecret(ctx, dbSystem.Spec.AdminUsername.Secret.SecretName, dbSystem.Namespace)
+		if err != nil {
+			return psql.CreateDbSystemResponse{}, err
+		}
+		uname, ok := unameMap["username"]
+		if !ok {
+			return psql.CreateDbSystemResponse{}, errors.New("username key in admin secret is not found")
+		}
+
+		c.Log.DebugLog("Getting Admin Password from Secret")
+		pwdMap, err := c.CredentialClient.GetSecret(ctx, dbSystem.Spec.AdminPassword.Secret.SecretName, dbSystem.Namespace)
+		if err != nil {
+			return psql.CreateDbSystemResponse{}, err
+		}
+		pwd, ok := pwdMap["password"]
+		if !ok {
+			return psql.CreateDbSystemResponse{}, errors.New("password key in admin secret is not found")
+		}
+
+		credentials := psql.Credentials{
+			Username: common.String(string(uname)),
+			PasswordDetails: psql.PlainTextPasswordDetails{
+				Password: common.String(string(pwd)),
+			},
+		}
+		details.Credentials = &credentials
 	}
 
 	req := psql.CreateDbSystemRequest{

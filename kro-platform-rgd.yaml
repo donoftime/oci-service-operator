@@ -249,6 +249,12 @@ spec:
           instanceCount: 1
           instanceOcpuCount: 2
           instanceMemoryInGBs: 32
+          adminUsername:
+            secret:
+              secretName: ${schema.spec.mysqlCredentialsSecret}
+          adminPassword:
+            secret:
+              secretName: ${schema.spec.mysqlCredentialsSecret}
 
     # ── 12. NoSQL Table ───────────────────────────────────────────────────────
     - id: nosqlTable

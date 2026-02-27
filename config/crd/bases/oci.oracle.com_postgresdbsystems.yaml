@@ -56,6 +56,26 @@ spec:
           spec:
             description: PostgresDbSystemSpec defines the desired state of PostgresDbSystem
             properties:
+              adminPassword:
+                description: AdminPassword is the admin password for the PostgreSQL
+                  DB system, read from a Kubernetes secret
+                properties:
+                  secret:
+                    properties:
+                      secretName:
+                        type: string
+                    type: object
+                type: object
+              adminUsername:
+                description: AdminUsername is the admin username for the PostgreSQL
+                  DB system, read from a Kubernetes secret
+                properties:
+                  secret:
+                    properties:
+                      secretName:
+                        type: string
+                    type: object
+                type: object
               compartmentId:
                 description: CompartmentId is the OCID of the compartment in which
                   to create the PostgreSQL DB system
