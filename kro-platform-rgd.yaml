@@ -198,7 +198,7 @@ spec:
           compartmentId: ${schema.spec.compartmentId}
           displayName: ${schema.metadata.name}-postgres
           dbVersion: "14"
-          shape: VM.Standard.E4.Flex
+          shape: PostgreSQL.VM.Standard.E4.Flex
           subnetId: ${subnet.status.status.ocid}
           storageType: HighPerformance
           instanceCount: 1
@@ -312,7 +312,7 @@ spec:
           compartmentId: ${schema.spec.compartmentId}
           availabilityDomain: ${schema.spec.availabilityDomain}
           displayName: ${schema.metadata.name}-ci
-          shape: CI.Standard.E4.Flex
+          shape: CI.Standard.A1.Flex
           shapeConfig:
             ocpus: 1
             memoryInGBs: 4
