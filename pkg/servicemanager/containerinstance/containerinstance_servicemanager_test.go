@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	ocicontainerinstances "github.com/oracle/oci-go-sdk/v65/containerinstances"
@@ -624,6 +625,159 @@ func TestCreateOrUpdate_NoDisplayNameCreatesWithoutList(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, resp.IsSuccessful)
 	assert.True(t, ociClient.createCalled)
+}
+
+// gcFakeOciClient is a mock OCI client that records deleted instance OCIDs.
+type gcFakeOciClient struct {
+	fakeOciClient
+	deletedIds []string
+	deleteErr  error
+}
+
+func (g *gcFakeOciClient) DeleteContainerInstance(ctx context.Context, req ocicontainerinstances.DeleteContainerInstanceRequest) (ocicontainerinstances.DeleteContainerInstanceResponse, error) {
+	g.deletedIds = append(g.deletedIds, *req.ContainerInstanceId)
+	if g.deleteErr != nil {
+		return ocicontainerinstances.DeleteContainerInstanceResponse{}, g.deleteErr
+	}
+	return ocicontainerinstances.DeleteContainerInstanceResponse{}, nil
+}
+
+var gcBaseTime = time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+
+func makeSummaryWithTime(id string, offsetSeconds int) ocicontainerinstances.ContainerInstanceSummary {
+	ts := common.SDKTime{Time: gcBaseTime.Add(time.Duration(offsetSeconds) * time.Second)}
+	return ocicontainerinstances.ContainerInstanceSummary{
+		Id:             common.String(id),
+		LifecycleState: ocicontainerinstances.ContainerInstanceLifecycleStateActive,
+		TimeCreated:    &ts,
+	}
+}
+
+func makeGCListFn(items []ocicontainerinstances.ContainerInstanceSummary) func(context.Context, ocicontainerinstances.ListContainerInstancesRequest) (ocicontainerinstances.ListContainerInstancesResponse, error) {
+	return func(_ context.Context, _ ocicontainerinstances.ListContainerInstancesRequest) (ocicontainerinstances.ListContainerInstancesResponse, error) {
+		return ocicontainerinstances.ListContainerInstancesResponse{
+			ContainerInstanceCollection: ocicontainerinstances.ContainerInstanceCollection{
+				Items: items,
+			},
+		}, nil
+	}
+}
+
+// TestGarbageCollect_NilDisplayName: GCPolicy set, displayName nil → no calls, no error.
+func TestGarbageCollect_NilDisplayName(t *testing.T) {
+	gc := &gcFakeOciClient{}
+	mgr := newTestManager(&gc.fakeOciClient)
+	ExportSetClientForTest(mgr, gc)
+
+	ci := makeContainerInstanceSpec("") // nil display name
+	ci.Spec.GCPolicy = &ociv1beta1.ContainerInstanceGCPolicy{MaxInstances: 3}
+
+	err := ExportGarbageCollect(mgr, context.Background(), *ci)
+	assert.NoError(t, err)
+	assert.Empty(t, gc.deletedIds)
+}
+
+// TestGarbageCollect_BelowMax: 2 instances, maxInstances=3 → no deletions.
+func TestGarbageCollect_BelowMax(t *testing.T) {
+	gc := &gcFakeOciClient{}
+	gc.fakeOciClient.listFn = makeGCListFn([]ocicontainerinstances.ContainerInstanceSummary{
+		makeSummaryWithTime("ocid1.ci.1", 1),
+		makeSummaryWithTime("ocid1.ci.2", 2),
+	})
+	mgr := newTestManager(&gc.fakeOciClient)
+	ExportSetClientForTest(mgr, gc)
+
+	ci := makeContainerInstanceSpec("test-ci")
+	ci.Spec.GCPolicy = &ociv1beta1.ContainerInstanceGCPolicy{MaxInstances: 3}
+
+	err := ExportGarbageCollect(mgr, context.Background(), *ci)
+	assert.NoError(t, err)
+	assert.Empty(t, gc.deletedIds)
+}
+
+// TestGarbageCollect_AtMax: 3 instances, maxInstances=3 → no deletions.
+func TestGarbageCollect_AtMax(t *testing.T) {
+	gc := &gcFakeOciClient{}
+	gc.fakeOciClient.listFn = makeGCListFn([]ocicontainerinstances.ContainerInstanceSummary{
+		makeSummaryWithTime("ocid1.ci.1", 1),
+		makeSummaryWithTime("ocid1.ci.2", 2),
+		makeSummaryWithTime("ocid1.ci.3", 3),
+	})
+	mgr := newTestManager(&gc.fakeOciClient)
+	ExportSetClientForTest(mgr, gc)
+
+	ci := makeContainerInstanceSpec("test-ci")
+	ci.Spec.GCPolicy = &ociv1beta1.ContainerInstanceGCPolicy{MaxInstances: 3}
+
+	err := ExportGarbageCollect(mgr, context.Background(), *ci)
+	assert.NoError(t, err)
+	assert.Empty(t, gc.deletedIds)
+}
+
+// TestGarbageCollect_AboveMax: 5 instances, maxInstances=3 → oldest 2 deleted.
+func TestGarbageCollect_AboveMax(t *testing.T) {
+	gc := &gcFakeOciClient{}
+	gc.fakeOciClient.listFn = makeGCListFn([]ocicontainerinstances.ContainerInstanceSummary{
+		makeSummaryWithTime("ocid1.ci.1", 1),
+		makeSummaryWithTime("ocid1.ci.2", 2),
+		makeSummaryWithTime("ocid1.ci.3", 3),
+		makeSummaryWithTime("ocid1.ci.4", 4),
+		makeSummaryWithTime("ocid1.ci.5", 5),
+	})
+	mgr := newTestManager(&gc.fakeOciClient)
+	ExportSetClientForTest(mgr, gc)
+
+	ci := makeContainerInstanceSpec("test-ci")
+	ci.Spec.GCPolicy = &ociv1beta1.ContainerInstanceGCPolicy{MaxInstances: 3}
+
+	err := ExportGarbageCollect(mgr, context.Background(), *ci)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"ocid1.ci.1", "ocid1.ci.2"}, gc.deletedIds)
+}
+
+// TestGarbageCollect_NilPolicy_DefaultMax: nil GCPolicy → uses default of 3, 5 instances → 2 deleted.
+func TestGarbageCollect_NilPolicy_DefaultMax(t *testing.T) {
+	gc := &gcFakeOciClient{}
+	gc.fakeOciClient.listFn = makeGCListFn([]ocicontainerinstances.ContainerInstanceSummary{
+		makeSummaryWithTime("ocid1.ci.1", 1),
+		makeSummaryWithTime("ocid1.ci.2", 2),
+		makeSummaryWithTime("ocid1.ci.3", 3),
+		makeSummaryWithTime("ocid1.ci.4", 4),
+		makeSummaryWithTime("ocid1.ci.5", 5),
+	})
+	mgr := newTestManager(&gc.fakeOciClient)
+	ExportSetClientForTest(mgr, gc)
+
+	ci := makeContainerInstanceSpec("test-ci")
+	// GCPolicy is nil — should default to maxInstances=3
+
+	err := ExportGarbageCollect(mgr, context.Background(), *ci)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"ocid1.ci.1", "ocid1.ci.2"}, gc.deletedIds)
+}
+
+// TestGarbageCollect_DeleteError: DeleteContainerInstance returns error → GC continues for
+// remaining instances and returns first error.
+func TestGarbageCollect_DeleteError(t *testing.T) {
+	gc := &gcFakeOciClient{}
+	gc.fakeOciClient.listFn = makeGCListFn([]ocicontainerinstances.ContainerInstanceSummary{
+		makeSummaryWithTime("ocid1.ci.1", 1),
+		makeSummaryWithTime("ocid1.ci.2", 2),
+		makeSummaryWithTime("ocid1.ci.3", 3),
+		makeSummaryWithTime("ocid1.ci.4", 4),
+		makeSummaryWithTime("ocid1.ci.5", 5),
+	})
+	gc.deleteErr = errors.New("delete failed")
+	mgr := newTestManager(&gc.fakeOciClient)
+	ExportSetClientForTest(mgr, gc)
+
+	ci := makeContainerInstanceSpec("test-ci")
+	ci.Spec.GCPolicy = &ociv1beta1.ContainerInstanceGCPolicy{MaxInstances: 3}
+
+	err := ExportGarbageCollect(mgr, context.Background(), *ci)
+	assert.Error(t, err, "should return first delete error")
+	// Both instances to delete should have been attempted despite errors
+	assert.Equal(t, []string{"ocid1.ci.1", "ocid1.ci.2"}, gc.deletedIds)
 }
 
 // TestCreateContainerInstance_ContainerList verifies multiple containers are mapped correctly.

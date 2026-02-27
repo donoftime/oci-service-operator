@@ -164,6 +164,20 @@ spec:
                 additionalProperties:
                   type: string
                 type: object
+              gcPolicy:
+                description: |-
+                  GCPolicy controls garbage collection of old container instances.
+                  Defaults to keeping the 3 most recent non-DELETED instances.
+                properties:
+                  maxInstances:
+                    default: 3
+                    description: |-
+                      MaxInstances is the maximum number of non-DELETED OCI Container Instances
+                      to keep for this CR. Must be >= 1. Defaults to 3.
+                    format: int32
+                    minimum: 1
+                    type: integer
+                type: object
               gracefulShutdownTimeoutInSeconds:
                 description: GracefulShutdownTimeoutInSeconds is the time in seconds
                   for graceful shutdown.

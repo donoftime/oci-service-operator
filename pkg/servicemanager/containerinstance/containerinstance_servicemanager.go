@@ -70,6 +70,9 @@ func (c *ContainerInstanceServiceManager) CreateOrUpdate(ctx context.Context, ob
 			// Create a new container instance
 			resp, err := c.CreateContainerInstance(ctx, *ci)
 			if err != nil {
+				if gcErr := c.GarbageCollect(ctx, *ci); gcErr != nil {
+					c.Log.ErrorLog(gcErr, "ContainerInstance GC failed (non-fatal)")
+				}
 				ci.Status.OsokStatus = util.UpdateOSOKStatusCondition(ci.Status.OsokStatus,
 					ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), c.Log)
 				if _, ok := err.(errorutil.BadRequestOciError); !ok {
@@ -155,6 +158,9 @@ func (c *ContainerInstanceServiceManager) CreateOrUpdate(ctx context.Context, ob
 		return servicemanager.OSOKResponse{IsSuccessful: false}, nil
 	}
 
+	if err := c.GarbageCollect(ctx, *ci); err != nil {
+		c.Log.ErrorLog(err, "ContainerInstance GC failed (non-fatal)")
+	}
 	return servicemanager.OSOKResponse{IsSuccessful: true}, nil
 }
 

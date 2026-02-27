@@ -8,6 +8,7 @@ package containerinstance
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
@@ -268,6 +269,92 @@ func (c *ContainerInstanceServiceManager) DeleteContainerInstance(ctx context.Co
 
 	_, err = client.DeleteContainerInstance(ctx, req)
 	return err
+}
+
+// ListAllContainerInstances returns all non-DELETED container instances matching
+// the CR's DisplayName, CompartmentId, and AvailabilityDomain, sorted by
+// TimeCreated ascending (oldest first). Returns an empty slice if DisplayName is nil.
+func (c *ContainerInstanceServiceManager) ListAllContainerInstances(
+	ctx context.Context,
+	ci ociv1beta1.ContainerInstance,
+) ([]containerinstances.ContainerInstanceSummary, error) {
+	if ci.Spec.DisplayName == nil {
+		return []containerinstances.ContainerInstanceSummary{}, nil
+	}
+
+	client, err := c.getOCIClient()
+	if err != nil {
+		return nil, err
+	}
+
+	req := containerinstances.ListContainerInstancesRequest{
+		CompartmentId:      common.String(string(ci.Spec.CompartmentId)),
+		DisplayName:        ci.Spec.DisplayName,
+		AvailabilityDomain: common.String(ci.Spec.AvailabilityDomain),
+	}
+
+	resp, err := client.ListContainerInstances(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	var result []containerinstances.ContainerInstanceSummary
+	for _, item := range resp.Items {
+		if item.LifecycleState != containerinstances.ContainerInstanceLifecycleStateDeleted {
+			result = append(result, item)
+		}
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].TimeCreated == nil {
+			return true
+		}
+		if result[j].TimeCreated == nil {
+			return false
+		}
+		return result[i].TimeCreated.Time.Before(result[j].TimeCreated.Time)
+	})
+
+	return result, nil
+}
+
+// GarbageCollect deletes old container instances beyond the configured MaxInstances limit.
+// The oldest instances (by TimeCreated) are deleted first. GC failures are logged but
+// do not prevent further deletions. Returns the first error encountered, if any.
+func (c *ContainerInstanceServiceManager) GarbageCollect(
+	ctx context.Context,
+	ci ociv1beta1.ContainerInstance,
+) error {
+	maxInstances := int32(3)
+	if ci.Spec.GCPolicy != nil && ci.Spec.GCPolicy.MaxInstances > 0 {
+		maxInstances = ci.Spec.GCPolicy.MaxInstances
+	}
+
+	instances, err := c.ListAllContainerInstances(ctx, ci)
+	if err != nil {
+		return err
+	}
+
+	if int32(len(instances)) <= maxInstances {
+		return nil
+	}
+
+	toDelete := instances[:len(instances)-int(maxInstances)]
+	var firstErr error
+	for _, inst := range toDelete {
+		created := ""
+		if inst.TimeCreated != nil {
+			created = inst.TimeCreated.String()
+		}
+		c.Log.InfoLog(fmt.Sprintf("GC: deleting old ContainerInstance %s (created %s)", *inst.Id, created))
+		if delErr := c.DeleteContainerInstance(ctx, ociv1beta1.OCID(*inst.Id)); delErr != nil {
+			c.Log.ErrorLog(delErr, fmt.Sprintf("GC: failed to delete ContainerInstance %s", *inst.Id))
+			if firstErr == nil {
+				firstErr = delErr
+			}
+		}
+	}
+	return firstErr
 }
 
 // getRetryPolicy returns a retry policy that waits while a container instance is in CREATING state.

@@ -102,6 +102,17 @@ type ContainerDetails struct {
 	VolumeMounts []ContainerVolumeMount `json:"volumeMounts,omitempty"`
 }
 
+// ContainerInstanceGCPolicy controls how many historical container instances
+// OSOK retains for this CR. Instances beyond MaxInstances (oldest first) are
+// deleted from OCI when the controller reconciles.
+type ContainerInstanceGCPolicy struct {
+	// MaxInstances is the maximum number of non-DELETED OCI Container Instances
+	// to keep for this CR. Must be >= 1. Defaults to 3.
+	// +kubebuilder:default=3
+	// +kubebuilder:validation:Minimum=1
+	MaxInstances int32 `json:"maxInstances,omitempty"`
+}
+
 // ContainerInstanceSpec defines the desired state of ContainerInstance
 type ContainerInstanceSpec struct {
 	// ContainerInstanceId is the OCID of an existing ContainerInstance to bind to (optional).
@@ -147,6 +158,10 @@ type ContainerInstanceSpec struct {
 
 	// ImagePullSecrets provides credentials for pulling images from private registries.
 	ImagePullSecrets []ContainerImagePullSecret `json:"imagePullSecrets,omitempty"`
+
+	// GCPolicy controls garbage collection of old container instances.
+	// Defaults to keeping the 3 most recent non-DELETED instances.
+	GCPolicy *ContainerInstanceGCPolicy `json:"gcPolicy,omitempty"`
 
 	TagResources `json:",inline,omitempty"`
 }
