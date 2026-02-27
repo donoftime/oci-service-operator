@@ -20,6 +20,8 @@ OSOK is based on the [Operator Framework](https://operatorframework.io/), an ope
 1. [OCI Data Flow](https://www.oracle.com/big-data/data-flow/) — [OSOK docs](docs/dataflow.md)
 1. [OCI Object Storage](https://www.oracle.com/cloud/storage/object-storage/) — [OSOK docs](docs/objectstorage.md)
 1. [OCI PostgreSQL Database](https://www.oracle.com/cloud/database/) — [OSOK docs](docs/postgresql.md)
+1. [OCI Compute Instance](https://www.oracle.com/cloud/compute/) — [OSOK docs](docs/compute.md)
+1. [OCI Networking (VCN, Subnet, Gateways, Security)](https://www.oracle.com/cloud/networking/) — [OSOK docs](docs/networking.md)
 
 ## Installation
 
