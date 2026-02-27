@@ -131,6 +131,22 @@ spec:
       readyWhen:
         - ${internetGateway.status.status.ocid != ""}
 
+    # ── 7b. Service Gateway ───────────────────────────────────────────────────
+    - id: serviceGateway
+      template:
+        apiVersion: oci.oracle.com/v1beta1
+        kind: OciServiceGateway
+        metadata:
+          name: ${schema.metadata.name}-sgw
+        spec:
+          compartmentId: ${schema.spec.compartmentId}
+          vcnId: ${vcn.status.status.ocid}
+          displayName: ${schema.metadata.name}-sgw
+          services:
+            - ocid1.service.oc1.iad.aaaaaaaam4zfmy2rjue6fmglumm3czgisxzrnvrwqeodtztg7hwa272mlfna
+      readyWhen:
+        - ${serviceGateway.status.status.ocid != ""}
+
     # ── 8. Route Table ────────────────────────────────────────────────────────
     - id: routeTable
       template:
@@ -146,8 +162,35 @@ spec:
             - destination: "0.0.0.0/0"
               networkEntityId: ${internetGateway.status.status.ocid}
               destinationType: CIDR_BLOCK
+            - destination: all-iad-services-in-oracle-services-network
+              networkEntityId: ${serviceGateway.status.status.ocid}
+              destinationType: SERVICE_CIDR_BLOCK
       readyWhen:
         - ${routeTable.status.status.ocid != ""}
+
+    # ── 8b. Security List ─────────────────────────────────────────────────────
+    - id: securityList
+      template:
+        apiVersion: oci.oracle.com/v1beta1
+        kind: OciSecurityList
+        metadata:
+          name: ${schema.metadata.name}-seclist
+        spec:
+          compartmentId: ${schema.spec.compartmentId}
+          vcnId: ${vcn.status.status.ocid}
+          displayName: ${schema.metadata.name}-seclist
+          egressSecurityRules:
+            - protocol: "all"
+              destination: all-iad-services-in-oracle-services-network
+              isStateless: false
+              description: "Allow all egress to OCI services via SGW"
+          ingressSecurityRules:
+            - protocol: "6"
+              source: ${schema.spec.subnetCidrBlock}
+              isStateless: false
+              description: "Allow TCP within subnet"
+      readyWhen:
+        - ${securityList.status.status.ocid != ""}
 
     # ── 9. Subnet ─────────────────────────────────────────────────────────────
     - id: subnet
@@ -164,6 +207,8 @@ spec:
           dnsLabel: private
           prohibitPublicIpOnVnic: true
           routeTableId: ${routeTable.status.status.ocid}
+          securityListIds:
+            - ${securityList.status.status.ocid}
 
     # ── 10. MySQL DB System ───────────────────────────────────────────────────
     - id: mysql
