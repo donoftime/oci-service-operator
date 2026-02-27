@@ -1808,3 +1808,1256 @@ func TestUpdateSecurityList_EmptyRulesClearsRules(t *testing.T) {
 	assert.Empty(t, capturedReq.UpdateSecurityListDetails.EgressSecurityRules)
 	assert.Empty(t, capturedReq.UpdateSecurityListDetails.IngressSecurityRules)
 }
+
+// ---------------------------------------------------------------------------
+// GetCrdStatus tests for all remaining resource types
+// ---------------------------------------------------------------------------
+
+func TestIGW_GetCrdStatus_ReturnsStatus(t *testing.T) {
+	mgr := NewOciInternetGatewayServiceManager(emptyProvider(), nil, nil, defaultLog())
+
+	igw := &ociv1beta1.OciInternetGateway{}
+	igw.Status.OsokStatus.Ocid = "ocid1.internetgateway.oc1..xxx"
+
+	status, err := mgr.GetCrdStatus(igw)
+	assert.NoError(t, err)
+	assert.Equal(t, ociv1beta1.OCID("ocid1.internetgateway.oc1..xxx"), status.Ocid)
+}
+
+func TestIGW_GetCrdStatus_WrongType(t *testing.T) {
+	mgr := NewOciInternetGatewayServiceManager(emptyProvider(), nil, nil, defaultLog())
+
+	_, err := mgr.GetCrdStatus(&ociv1beta1.Stream{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed type assertion")
+}
+
+func TestNAT_GetCrdStatus_ReturnsStatus(t *testing.T) {
+	mgr := NewOciNatGatewayServiceManager(emptyProvider(), nil, nil, defaultLog())
+
+	nat := &ociv1beta1.OciNatGateway{}
+	nat.Status.OsokStatus.Ocid = "ocid1.natgateway.oc1..xxx"
+
+	status, err := mgr.GetCrdStatus(nat)
+	assert.NoError(t, err)
+	assert.Equal(t, ociv1beta1.OCID("ocid1.natgateway.oc1..xxx"), status.Ocid)
+}
+
+func TestNAT_GetCrdStatus_WrongType(t *testing.T) {
+	mgr := NewOciNatGatewayServiceManager(emptyProvider(), nil, nil, defaultLog())
+
+	_, err := mgr.GetCrdStatus(&ociv1beta1.Stream{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed type assertion")
+}
+
+func TestSGW_GetCrdStatus_ReturnsStatus(t *testing.T) {
+	mgr := NewOciServiceGatewayServiceManager(emptyProvider(), nil, nil, defaultLog())
+
+	sgw := &ociv1beta1.OciServiceGateway{}
+	sgw.Status.OsokStatus.Ocid = "ocid1.servicegateway.oc1..xxx"
+
+	status, err := mgr.GetCrdStatus(sgw)
+	assert.NoError(t, err)
+	assert.Equal(t, ociv1beta1.OCID("ocid1.servicegateway.oc1..xxx"), status.Ocid)
+}
+
+func TestSGW_GetCrdStatus_WrongType(t *testing.T) {
+	mgr := NewOciServiceGatewayServiceManager(emptyProvider(), nil, nil, defaultLog())
+
+	_, err := mgr.GetCrdStatus(&ociv1beta1.Stream{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed type assertion")
+}
+
+func TestDRG_GetCrdStatus_ReturnsStatus(t *testing.T) {
+	mgr := NewOciDrgServiceManager(emptyProvider(), nil, nil, defaultLog())
+
+	drg := &ociv1beta1.OciDrg{}
+	drg.Status.OsokStatus.Ocid = "ocid1.drg.oc1..xxx"
+
+	status, err := mgr.GetCrdStatus(drg)
+	assert.NoError(t, err)
+	assert.Equal(t, ociv1beta1.OCID("ocid1.drg.oc1..xxx"), status.Ocid)
+}
+
+func TestDRG_GetCrdStatus_WrongType(t *testing.T) {
+	mgr := NewOciDrgServiceManager(emptyProvider(), nil, nil, defaultLog())
+
+	_, err := mgr.GetCrdStatus(&ociv1beta1.Stream{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed type assertion")
+}
+
+func TestSecurityList_GetCrdStatus_ReturnsStatus(t *testing.T) {
+	mgr := NewOciSecurityListServiceManager(emptyProvider(), nil, nil, defaultLog())
+
+	sl := &ociv1beta1.OciSecurityList{}
+	sl.Status.OsokStatus.Ocid = "ocid1.securitylist.oc1..xxx"
+
+	status, err := mgr.GetCrdStatus(sl)
+	assert.NoError(t, err)
+	assert.Equal(t, ociv1beta1.OCID("ocid1.securitylist.oc1..xxx"), status.Ocid)
+}
+
+func TestSecurityList_GetCrdStatus_WrongType(t *testing.T) {
+	mgr := NewOciSecurityListServiceManager(emptyProvider(), nil, nil, defaultLog())
+
+	_, err := mgr.GetCrdStatus(&ociv1beta1.Stream{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed type assertion")
+}
+
+func TestNSG_GetCrdStatus_ReturnsStatus(t *testing.T) {
+	mgr := NewOciNetworkSecurityGroupServiceManager(emptyProvider(), nil, nil, defaultLog())
+
+	nsg := &ociv1beta1.OciNetworkSecurityGroup{}
+	nsg.Status.OsokStatus.Ocid = "ocid1.networksecuritygroup.oc1..xxx"
+
+	status, err := mgr.GetCrdStatus(nsg)
+	assert.NoError(t, err)
+	assert.Equal(t, ociv1beta1.OCID("ocid1.networksecuritygroup.oc1..xxx"), status.Ocid)
+}
+
+func TestNSG_GetCrdStatus_WrongType(t *testing.T) {
+	mgr := NewOciNetworkSecurityGroupServiceManager(emptyProvider(), nil, nil, defaultLog())
+
+	_, err := mgr.GetCrdStatus(&ociv1beta1.Stream{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed type assertion")
+}
+
+func TestRouteTable_GetCrdStatus_ReturnsStatus(t *testing.T) {
+	mgr := NewOciRouteTableServiceManager(emptyProvider(), nil, nil, defaultLog())
+
+	rt := &ociv1beta1.OciRouteTable{}
+	rt.Status.OsokStatus.Ocid = "ocid1.routetable.oc1..xxx"
+
+	status, err := mgr.GetCrdStatus(rt)
+	assert.NoError(t, err)
+	assert.Equal(t, ociv1beta1.OCID("ocid1.routetable.oc1..xxx"), status.Ocid)
+}
+
+func TestRouteTable_GetCrdStatus_WrongType(t *testing.T) {
+	mgr := NewOciRouteTableServiceManager(emptyProvider(), nil, nil, defaultLog())
+
+	_, err := mgr.GetCrdStatus(&ociv1beta1.Stream{})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed type assertion")
+}
+
+// ---------------------------------------------------------------------------
+// Update* tests: 0% coverage functions
+// ---------------------------------------------------------------------------
+
+func TestUpdateInternetGateway_SendsDisplayName(t *testing.T) {
+	var capturedReq ocicore.UpdateInternetGatewayRequest
+	igwID := "ocid1.internetgateway.oc1..test"
+	fake := &fakeVirtualNetworkClient{
+		getInternetGatewayFn: func(_ context.Context, _ ocicore.GetInternetGatewayRequest) (ocicore.GetInternetGatewayResponse, error) {
+			return ocicore.GetInternetGatewayResponse{
+				InternetGateway: ocicore.InternetGateway{
+					Id:          common.String(igwID),
+					DisplayName: common.String("old-name"),
+				},
+			}, nil
+		},
+		updateInternetGatewayFn: func(_ context.Context, req ocicore.UpdateInternetGatewayRequest) (ocicore.UpdateInternetGatewayResponse, error) {
+			capturedReq = req
+			return ocicore.UpdateInternetGatewayResponse{}, nil
+		},
+	}
+	mgr := igwMgrWithFake(fake)
+
+	igw := &ociv1beta1.OciInternetGateway{}
+	igw.Status.OsokStatus.Ocid = ociv1beta1.OCID(igwID)
+	igw.Spec.DisplayName = "new-name"
+
+	err := mgr.UpdateInternetGateway(context.Background(), igw)
+	assert.NoError(t, err)
+	assert.Equal(t, igwID, *capturedReq.IgId)
+	assert.Equal(t, "new-name", *capturedReq.UpdateInternetGatewayDetails.DisplayName)
+}
+
+func TestUpdateInternetGateway_NoUpdateNeeded(t *testing.T) {
+	var updateCalled bool
+	igwID := "ocid1.internetgateway.oc1..test"
+	fake := &fakeVirtualNetworkClient{
+		getInternetGatewayFn: func(_ context.Context, _ ocicore.GetInternetGatewayRequest) (ocicore.GetInternetGatewayResponse, error) {
+			return ocicore.GetInternetGatewayResponse{
+				InternetGateway: ocicore.InternetGateway{
+					Id:          common.String(igwID),
+					DisplayName: common.String("same-name"),
+				},
+			}, nil
+		},
+		updateInternetGatewayFn: func(_ context.Context, _ ocicore.UpdateInternetGatewayRequest) (ocicore.UpdateInternetGatewayResponse, error) {
+			updateCalled = true
+			return ocicore.UpdateInternetGatewayResponse{}, nil
+		},
+	}
+	mgr := igwMgrWithFake(fake)
+
+	igw := &ociv1beta1.OciInternetGateway{}
+	igw.Status.OsokStatus.Ocid = ociv1beta1.OCID(igwID)
+	igw.Spec.DisplayName = "same-name"
+
+	err := mgr.UpdateInternetGateway(context.Background(), igw)
+	assert.NoError(t, err)
+	assert.False(t, updateCalled, "no update should be called when nothing changed")
+}
+
+func TestUpdateNatGateway_SendsDisplayName(t *testing.T) {
+	var capturedReq ocicore.UpdateNatGatewayRequest
+	natID := "ocid1.natgateway.oc1..test"
+	fake := &fakeVirtualNetworkClient{
+		getNatGatewayFn: func(_ context.Context, _ ocicore.GetNatGatewayRequest) (ocicore.GetNatGatewayResponse, error) {
+			return ocicore.GetNatGatewayResponse{
+				NatGateway: ocicore.NatGateway{
+					Id:          common.String(natID),
+					DisplayName: common.String("old-name"),
+				},
+			}, nil
+		},
+		updateNatGatewayFn: func(_ context.Context, req ocicore.UpdateNatGatewayRequest) (ocicore.UpdateNatGatewayResponse, error) {
+			capturedReq = req
+			return ocicore.UpdateNatGatewayResponse{}, nil
+		},
+	}
+	mgr := natMgrWithFake(fake)
+
+	nat := &ociv1beta1.OciNatGateway{}
+	nat.Status.OsokStatus.Ocid = ociv1beta1.OCID(natID)
+	nat.Spec.DisplayName = "new-name"
+
+	err := mgr.UpdateNatGateway(context.Background(), nat)
+	assert.NoError(t, err)
+	assert.Equal(t, natID, *capturedReq.NatGatewayId)
+	assert.Equal(t, "new-name", *capturedReq.UpdateNatGatewayDetails.DisplayName)
+}
+
+func TestUpdateNatGateway_NoUpdateNeeded(t *testing.T) {
+	var updateCalled bool
+	natID := "ocid1.natgateway.oc1..test"
+	fake := &fakeVirtualNetworkClient{
+		getNatGatewayFn: func(_ context.Context, _ ocicore.GetNatGatewayRequest) (ocicore.GetNatGatewayResponse, error) {
+			return ocicore.GetNatGatewayResponse{
+				NatGateway: ocicore.NatGateway{
+					Id:          common.String(natID),
+					DisplayName: common.String("same-name"),
+				},
+			}, nil
+		},
+		updateNatGatewayFn: func(_ context.Context, _ ocicore.UpdateNatGatewayRequest) (ocicore.UpdateNatGatewayResponse, error) {
+			updateCalled = true
+			return ocicore.UpdateNatGatewayResponse{}, nil
+		},
+	}
+	mgr := natMgrWithFake(fake)
+
+	nat := &ociv1beta1.OciNatGateway{}
+	nat.Status.OsokStatus.Ocid = ociv1beta1.OCID(natID)
+	nat.Spec.DisplayName = "same-name"
+
+	err := mgr.UpdateNatGateway(context.Background(), nat)
+	assert.NoError(t, err)
+	assert.False(t, updateCalled)
+}
+
+func TestUpdateServiceGateway_SendsDisplayName(t *testing.T) {
+	var capturedReq ocicore.UpdateServiceGatewayRequest
+	sgwID := "ocid1.servicegateway.oc1..test"
+	fake := &fakeVirtualNetworkClient{
+		getServiceGatewayFn: func(_ context.Context, _ ocicore.GetServiceGatewayRequest) (ocicore.GetServiceGatewayResponse, error) {
+			return ocicore.GetServiceGatewayResponse{
+				ServiceGateway: ocicore.ServiceGateway{
+					Id:          common.String(sgwID),
+					DisplayName: common.String("old-name"),
+				},
+			}, nil
+		},
+		updateServiceGatewayFn: func(_ context.Context, req ocicore.UpdateServiceGatewayRequest) (ocicore.UpdateServiceGatewayResponse, error) {
+			capturedReq = req
+			return ocicore.UpdateServiceGatewayResponse{}, nil
+		},
+	}
+	mgr := sgwMgrWithFake(fake)
+
+	sgw := &ociv1beta1.OciServiceGateway{}
+	sgw.Status.OsokStatus.Ocid = ociv1beta1.OCID(sgwID)
+	sgw.Spec.DisplayName = "new-name"
+
+	err := mgr.UpdateServiceGateway(context.Background(), sgw)
+	assert.NoError(t, err)
+	assert.Equal(t, sgwID, *capturedReq.ServiceGatewayId)
+	assert.Equal(t, "new-name", *capturedReq.UpdateServiceGatewayDetails.DisplayName)
+}
+
+func TestUpdateServiceGateway_NoUpdateNeeded(t *testing.T) {
+	var updateCalled bool
+	sgwID := "ocid1.servicegateway.oc1..test"
+	fake := &fakeVirtualNetworkClient{
+		getServiceGatewayFn: func(_ context.Context, _ ocicore.GetServiceGatewayRequest) (ocicore.GetServiceGatewayResponse, error) {
+			return ocicore.GetServiceGatewayResponse{
+				ServiceGateway: ocicore.ServiceGateway{
+					Id:          common.String(sgwID),
+					DisplayName: common.String("same-name"),
+				},
+			}, nil
+		},
+		updateServiceGatewayFn: func(_ context.Context, _ ocicore.UpdateServiceGatewayRequest) (ocicore.UpdateServiceGatewayResponse, error) {
+			updateCalled = true
+			return ocicore.UpdateServiceGatewayResponse{}, nil
+		},
+	}
+	mgr := sgwMgrWithFake(fake)
+
+	sgw := &ociv1beta1.OciServiceGateway{}
+	sgw.Status.OsokStatus.Ocid = ociv1beta1.OCID(sgwID)
+	sgw.Spec.DisplayName = "same-name"
+
+	err := mgr.UpdateServiceGateway(context.Background(), sgw)
+	assert.NoError(t, err)
+	assert.False(t, updateCalled)
+}
+
+func TestUpdateDrg_SendsDisplayName(t *testing.T) {
+	var capturedReq ocicore.UpdateDrgRequest
+	drgID := "ocid1.drg.oc1..test"
+	fake := &fakeVirtualNetworkClient{
+		getDrgFn: func(_ context.Context, _ ocicore.GetDrgRequest) (ocicore.GetDrgResponse, error) {
+			return ocicore.GetDrgResponse{
+				Drg: ocicore.Drg{
+					Id:          common.String(drgID),
+					DisplayName: common.String("old-name"),
+				},
+			}, nil
+		},
+		updateDrgFn: func(_ context.Context, req ocicore.UpdateDrgRequest) (ocicore.UpdateDrgResponse, error) {
+			capturedReq = req
+			return ocicore.UpdateDrgResponse{}, nil
+		},
+	}
+	mgr := drgMgrWithFake(fake)
+
+	drg := &ociv1beta1.OciDrg{}
+	drg.Status.OsokStatus.Ocid = ociv1beta1.OCID(drgID)
+	drg.Spec.DisplayName = "new-name"
+
+	err := mgr.UpdateDrg(context.Background(), drg)
+	assert.NoError(t, err)
+	assert.Equal(t, drgID, *capturedReq.DrgId)
+	assert.Equal(t, "new-name", *capturedReq.UpdateDrgDetails.DisplayName)
+}
+
+func TestUpdateDrg_NoUpdateNeeded(t *testing.T) {
+	var updateCalled bool
+	drgID := "ocid1.drg.oc1..test"
+	fake := &fakeVirtualNetworkClient{
+		getDrgFn: func(_ context.Context, _ ocicore.GetDrgRequest) (ocicore.GetDrgResponse, error) {
+			return ocicore.GetDrgResponse{
+				Drg: ocicore.Drg{
+					Id:          common.String(drgID),
+					DisplayName: common.String("same-name"),
+				},
+			}, nil
+		},
+		updateDrgFn: func(_ context.Context, _ ocicore.UpdateDrgRequest) (ocicore.UpdateDrgResponse, error) {
+			updateCalled = true
+			return ocicore.UpdateDrgResponse{}, nil
+		},
+	}
+	mgr := drgMgrWithFake(fake)
+
+	drg := &ociv1beta1.OciDrg{}
+	drg.Status.OsokStatus.Ocid = ociv1beta1.OCID(drgID)
+	drg.Spec.DisplayName = "same-name"
+
+	err := mgr.UpdateDrg(context.Background(), drg)
+	assert.NoError(t, err)
+	assert.False(t, updateCalled)
+}
+
+func TestUpdateNetworkSecurityGroup_SendsDisplayName(t *testing.T) {
+	var capturedReq ocicore.UpdateNetworkSecurityGroupRequest
+	nsgID := "ocid1.networksecuritygroup.oc1..test"
+	fake := &fakeVirtualNetworkClient{
+		getNetworkSecurityGroupFn: func(_ context.Context, _ ocicore.GetNetworkSecurityGroupRequest) (ocicore.GetNetworkSecurityGroupResponse, error) {
+			return ocicore.GetNetworkSecurityGroupResponse{
+				NetworkSecurityGroup: ocicore.NetworkSecurityGroup{
+					Id:          common.String(nsgID),
+					DisplayName: common.String("old-name"),
+				},
+			}, nil
+		},
+		updateNetworkSecurityGroupFn: func(_ context.Context, req ocicore.UpdateNetworkSecurityGroupRequest) (ocicore.UpdateNetworkSecurityGroupResponse, error) {
+			capturedReq = req
+			return ocicore.UpdateNetworkSecurityGroupResponse{}, nil
+		},
+	}
+	mgr := nsgMgrWithFake(fake)
+
+	nsg := &ociv1beta1.OciNetworkSecurityGroup{}
+	nsg.Status.OsokStatus.Ocid = ociv1beta1.OCID(nsgID)
+	nsg.Spec.DisplayName = "new-name"
+
+	err := mgr.UpdateNetworkSecurityGroup(context.Background(), nsg)
+	assert.NoError(t, err)
+	assert.Equal(t, nsgID, *capturedReq.NetworkSecurityGroupId)
+	assert.Equal(t, "new-name", *capturedReq.UpdateNetworkSecurityGroupDetails.DisplayName)
+}
+
+func TestUpdateNetworkSecurityGroup_NoUpdateNeeded(t *testing.T) {
+	var updateCalled bool
+	nsgID := "ocid1.networksecuritygroup.oc1..test"
+	fake := &fakeVirtualNetworkClient{
+		getNetworkSecurityGroupFn: func(_ context.Context, _ ocicore.GetNetworkSecurityGroupRequest) (ocicore.GetNetworkSecurityGroupResponse, error) {
+			return ocicore.GetNetworkSecurityGroupResponse{
+				NetworkSecurityGroup: ocicore.NetworkSecurityGroup{
+					Id:          common.String(nsgID),
+					DisplayName: common.String("same-name"),
+				},
+			}, nil
+		},
+		updateNetworkSecurityGroupFn: func(_ context.Context, _ ocicore.UpdateNetworkSecurityGroupRequest) (ocicore.UpdateNetworkSecurityGroupResponse, error) {
+			updateCalled = true
+			return ocicore.UpdateNetworkSecurityGroupResponse{}, nil
+		},
+	}
+	mgr := nsgMgrWithFake(fake)
+
+	nsg := &ociv1beta1.OciNetworkSecurityGroup{}
+	nsg.Status.OsokStatus.Ocid = ociv1beta1.OCID(nsgID)
+	nsg.Spec.DisplayName = "same-name"
+
+	err := mgr.UpdateNetworkSecurityGroup(context.Background(), nsg)
+	assert.NoError(t, err)
+	assert.False(t, updateCalled)
+}
+
+func TestUpdateVcn_SendsDisplayName(t *testing.T) {
+	var capturedReq ocicore.UpdateVcnRequest
+	vcnID := "ocid1.vcn.oc1..test"
+	fake := &fakeVirtualNetworkClient{
+		getVcnFn: func(_ context.Context, _ ocicore.GetVcnRequest) (ocicore.GetVcnResponse, error) {
+			return ocicore.GetVcnResponse{
+				Vcn: ocicore.Vcn{Id: common.String(vcnID), DisplayName: common.String("old-name")},
+			}, nil
+		},
+		updateVcnFn: func(_ context.Context, req ocicore.UpdateVcnRequest) (ocicore.UpdateVcnResponse, error) {
+			capturedReq = req
+			return ocicore.UpdateVcnResponse{}, nil
+		},
+	}
+	mgr := vcnMgrWithFake(fake)
+
+	v := &ociv1beta1.OciVcn{}
+	v.Status.OsokStatus.Ocid = ociv1beta1.OCID(vcnID)
+	v.Spec.DisplayName = "new-name"
+
+	err := mgr.UpdateVcn(context.Background(), v)
+	assert.NoError(t, err)
+	assert.Equal(t, vcnID, *capturedReq.VcnId)
+	assert.Equal(t, "new-name", *capturedReq.UpdateVcnDetails.DisplayName)
+}
+
+func TestUpdateVcn_NoUpdateNeeded(t *testing.T) {
+	var updateCalled bool
+	vcnID := "ocid1.vcn.oc1..test"
+	fake := &fakeVirtualNetworkClient{
+		getVcnFn: func(_ context.Context, _ ocicore.GetVcnRequest) (ocicore.GetVcnResponse, error) {
+			return ocicore.GetVcnResponse{
+				Vcn: ocicore.Vcn{Id: common.String(vcnID), DisplayName: common.String("same-name")},
+			}, nil
+		},
+		updateVcnFn: func(_ context.Context, _ ocicore.UpdateVcnRequest) (ocicore.UpdateVcnResponse, error) {
+			updateCalled = true
+			return ocicore.UpdateVcnResponse{}, nil
+		},
+	}
+	mgr := vcnMgrWithFake(fake)
+
+	v := &ociv1beta1.OciVcn{}
+	v.Status.OsokStatus.Ocid = ociv1beta1.OCID(vcnID)
+	v.Spec.DisplayName = "same-name"
+
+	err := mgr.UpdateVcn(context.Background(), v)
+	assert.NoError(t, err)
+	assert.False(t, updateCalled)
+}
+
+func TestUpdateSubnet_SendsDisplayName(t *testing.T) {
+	var capturedReq ocicore.UpdateSubnetRequest
+	subnetID := "ocid1.subnet.oc1..test"
+	fake := &fakeVirtualNetworkClient{
+		getSubnetFn: func(_ context.Context, _ ocicore.GetSubnetRequest) (ocicore.GetSubnetResponse, error) {
+			return ocicore.GetSubnetResponse{
+				Subnet: ocicore.Subnet{Id: common.String(subnetID), DisplayName: common.String("old-name")},
+			}, nil
+		},
+		updateSubnetFn: func(_ context.Context, req ocicore.UpdateSubnetRequest) (ocicore.UpdateSubnetResponse, error) {
+			capturedReq = req
+			return ocicore.UpdateSubnetResponse{}, nil
+		},
+	}
+	mgr := subnetMgrWithFake(fake)
+
+	s := &ociv1beta1.OciSubnet{}
+	s.Status.OsokStatus.Ocid = ociv1beta1.OCID(subnetID)
+	s.Spec.DisplayName = "new-name"
+
+	err := mgr.UpdateSubnet(context.Background(), s)
+	assert.NoError(t, err)
+	assert.Equal(t, subnetID, *capturedReq.SubnetId)
+	assert.Equal(t, "new-name", *capturedReq.UpdateSubnetDetails.DisplayName)
+}
+
+func TestUpdateSubnet_NoUpdateNeeded(t *testing.T) {
+	var updateCalled bool
+	subnetID := "ocid1.subnet.oc1..test"
+	fake := &fakeVirtualNetworkClient{
+		getSubnetFn: func(_ context.Context, _ ocicore.GetSubnetRequest) (ocicore.GetSubnetResponse, error) {
+			return ocicore.GetSubnetResponse{
+				Subnet: ocicore.Subnet{Id: common.String(subnetID), DisplayName: common.String("same-name")},
+			}, nil
+		},
+		updateSubnetFn: func(_ context.Context, _ ocicore.UpdateSubnetRequest) (ocicore.UpdateSubnetResponse, error) {
+			updateCalled = true
+			return ocicore.UpdateSubnetResponse{}, nil
+		},
+	}
+	mgr := subnetMgrWithFake(fake)
+
+	s := &ociv1beta1.OciSubnet{}
+	s.Status.OsokStatus.Ocid = ociv1beta1.OCID(subnetID)
+	s.Spec.DisplayName = "same-name"
+
+	err := mgr.UpdateSubnet(context.Background(), s)
+	assert.NoError(t, err)
+	assert.False(t, updateCalled)
+}
+
+// ---------------------------------------------------------------------------
+// CreateOrUpdate "bind to existing" path for each resource type
+// ---------------------------------------------------------------------------
+
+func TestIGW_CreateOrUpdate_WithId_Binds(t *testing.T) {
+	igwID := "ocid1.internetgateway.oc1..bind"
+	fake := &fakeVirtualNetworkClient{
+		getInternetGatewayFn: func(_ context.Context, _ ocicore.GetInternetGatewayRequest) (ocicore.GetInternetGatewayResponse, error) {
+			return ocicore.GetInternetGatewayResponse{
+				InternetGateway: ocicore.InternetGateway{
+					Id:             common.String(igwID),
+					DisplayName:    common.String("bind-igw"),
+					LifecycleState: ocicore.InternetGatewayLifecycleStateAvailable,
+				},
+			}, nil
+		},
+	}
+	mgr := igwMgrWithFake(fake)
+
+	igw := &ociv1beta1.OciInternetGateway{}
+	igw.Spec.InternetGatewayId = ociv1beta1.OCID(igwID)
+	igw.Spec.DisplayName = "bind-igw"
+	igw.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+	igw.Spec.VcnId = "ocid1.vcn.oc1..parent"
+	igw.Status.OsokStatus.Ocid = ociv1beta1.OCID(igwID)
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), igw, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.Equal(t, ociv1beta1.OCID(igwID), igw.Status.OsokStatus.Ocid)
+}
+
+func TestNAT_CreateOrUpdate_WithId_Binds(t *testing.T) {
+	natID := "ocid1.natgateway.oc1..bind"
+	fake := &fakeVirtualNetworkClient{
+		getNatGatewayFn: func(_ context.Context, _ ocicore.GetNatGatewayRequest) (ocicore.GetNatGatewayResponse, error) {
+			return ocicore.GetNatGatewayResponse{
+				NatGateway: ocicore.NatGateway{
+					Id:             common.String(natID),
+					DisplayName:    common.String("bind-nat"),
+					LifecycleState: ocicore.NatGatewayLifecycleStateAvailable,
+				},
+			}, nil
+		},
+	}
+	mgr := natMgrWithFake(fake)
+
+	nat := &ociv1beta1.OciNatGateway{}
+	nat.Spec.NatGatewayId = ociv1beta1.OCID(natID)
+	nat.Spec.DisplayName = "bind-nat"
+	nat.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+	nat.Spec.VcnId = "ocid1.vcn.oc1..parent"
+	nat.Status.OsokStatus.Ocid = ociv1beta1.OCID(natID)
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), nat, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.Equal(t, ociv1beta1.OCID(natID), nat.Status.OsokStatus.Ocid)
+}
+
+func TestSGW_CreateOrUpdate_WithId_Binds(t *testing.T) {
+	sgwID := "ocid1.servicegateway.oc1..bind"
+	fake := &fakeVirtualNetworkClient{
+		getServiceGatewayFn: func(_ context.Context, _ ocicore.GetServiceGatewayRequest) (ocicore.GetServiceGatewayResponse, error) {
+			return ocicore.GetServiceGatewayResponse{
+				ServiceGateway: ocicore.ServiceGateway{
+					Id:             common.String(sgwID),
+					DisplayName:    common.String("bind-sgw"),
+					LifecycleState: ocicore.ServiceGatewayLifecycleStateAvailable,
+				},
+			}, nil
+		},
+	}
+	mgr := sgwMgrWithFake(fake)
+
+	sgw := &ociv1beta1.OciServiceGateway{}
+	sgw.Spec.ServiceGatewayId = ociv1beta1.OCID(sgwID)
+	sgw.Spec.DisplayName = "bind-sgw"
+	sgw.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+	sgw.Spec.VcnId = "ocid1.vcn.oc1..parent"
+	sgw.Spec.Services = []string{"ocid1.service.oc1..svc"}
+	sgw.Status.OsokStatus.Ocid = ociv1beta1.OCID(sgwID)
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), sgw, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.Equal(t, ociv1beta1.OCID(sgwID), sgw.Status.OsokStatus.Ocid)
+}
+
+func TestDRG_CreateOrUpdate_WithId_Binds(t *testing.T) {
+	drgID := "ocid1.drg.oc1..bind"
+	fake := &fakeVirtualNetworkClient{
+		getDrgFn: func(_ context.Context, _ ocicore.GetDrgRequest) (ocicore.GetDrgResponse, error) {
+			return ocicore.GetDrgResponse{
+				Drg: ocicore.Drg{
+					Id:             common.String(drgID),
+					DisplayName:    common.String("bind-drg"),
+					LifecycleState: ocicore.DrgLifecycleStateAvailable,
+				},
+			}, nil
+		},
+	}
+	mgr := drgMgrWithFake(fake)
+
+	drg := &ociv1beta1.OciDrg{}
+	drg.Spec.DrgId = ociv1beta1.OCID(drgID)
+	drg.Spec.DisplayName = "bind-drg"
+	drg.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+	drg.Status.OsokStatus.Ocid = ociv1beta1.OCID(drgID)
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), drg, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.Equal(t, ociv1beta1.OCID(drgID), drg.Status.OsokStatus.Ocid)
+}
+
+func TestSecurityList_CreateOrUpdate_WithId_Binds(t *testing.T) {
+	slID := "ocid1.securitylist.oc1..bind"
+	fake := &fakeVirtualNetworkClient{
+		getSecurityListFn: func(_ context.Context, _ ocicore.GetSecurityListRequest) (ocicore.GetSecurityListResponse, error) {
+			return ocicore.GetSecurityListResponse{
+				SecurityList: ocicore.SecurityList{
+					Id:             common.String(slID),
+					DisplayName:    common.String("bind-sl"),
+					LifecycleState: ocicore.SecurityListLifecycleStateAvailable,
+				},
+			}, nil
+		},
+	}
+	mgr := securityListMgrWithFake(fake)
+
+	sl := &ociv1beta1.OciSecurityList{}
+	sl.Spec.SecurityListId = ociv1beta1.OCID(slID)
+	sl.Spec.DisplayName = "bind-sl"
+	sl.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+	sl.Spec.VcnId = "ocid1.vcn.oc1..xxx"
+	sl.Status.OsokStatus.Ocid = ociv1beta1.OCID(slID)
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), sl, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.Equal(t, ociv1beta1.OCID(slID), sl.Status.OsokStatus.Ocid)
+}
+
+func TestNSG_CreateOrUpdate_WithId_Binds(t *testing.T) {
+	nsgID := "ocid1.networksecuritygroup.oc1..bind"
+	fake := &fakeVirtualNetworkClient{
+		getNetworkSecurityGroupFn: func(_ context.Context, _ ocicore.GetNetworkSecurityGroupRequest) (ocicore.GetNetworkSecurityGroupResponse, error) {
+			return ocicore.GetNetworkSecurityGroupResponse{
+				NetworkSecurityGroup: ocicore.NetworkSecurityGroup{
+					Id:             common.String(nsgID),
+					DisplayName:    common.String("bind-nsg"),
+					LifecycleState: ocicore.NetworkSecurityGroupLifecycleStateAvailable,
+				},
+			}, nil
+		},
+	}
+	mgr := nsgMgrWithFake(fake)
+
+	nsg := &ociv1beta1.OciNetworkSecurityGroup{}
+	nsg.Spec.NetworkSecurityGroupId = ociv1beta1.OCID(nsgID)
+	nsg.Spec.DisplayName = "bind-nsg"
+	nsg.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+	nsg.Spec.VcnId = "ocid1.vcn.oc1..xxx"
+	nsg.Status.OsokStatus.Ocid = ociv1beta1.OCID(nsgID)
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), nsg, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.Equal(t, ociv1beta1.OCID(nsgID), nsg.Status.OsokStatus.Ocid)
+}
+
+func TestRouteTable_CreateOrUpdate_WithId_Binds(t *testing.T) {
+	rtID := "ocid1.routetable.oc1..bind"
+	fake := &fakeVirtualNetworkClient{
+		getRouteTableFn: func(_ context.Context, _ ocicore.GetRouteTableRequest) (ocicore.GetRouteTableResponse, error) {
+			return ocicore.GetRouteTableResponse{
+				RouteTable: ocicore.RouteTable{
+					Id:             common.String(rtID),
+					DisplayName:    common.String("bind-rt"),
+					LifecycleState: ocicore.RouteTableLifecycleStateAvailable,
+				},
+			}, nil
+		},
+	}
+	mgr := routeTableMgrWithFake(fake)
+
+	rt := &ociv1beta1.OciRouteTable{}
+	rt.Spec.RouteTableId = ociv1beta1.OCID(rtID)
+	rt.Spec.DisplayName = "bind-rt"
+	rt.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+	rt.Spec.VcnId = "ocid1.vcn.oc1..xxx"
+	rt.Status.OsokStatus.Ocid = ociv1beta1.OCID(rtID)
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), rt, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.Equal(t, ociv1beta1.OCID(rtID), rt.Status.OsokStatus.Ocid)
+}
+
+// ---------------------------------------------------------------------------
+// Delete error / empty OCID path tests
+// ---------------------------------------------------------------------------
+
+func TestIGW_Delete_NoOcid(t *testing.T) {
+	mgr := NewOciInternetGatewayServiceManager(emptyProvider(), nil, nil, defaultLog())
+
+	igw := &ociv1beta1.OciInternetGateway{}
+	done, err := mgr.Delete(context.Background(), igw)
+	assert.NoError(t, err)
+	assert.True(t, done)
+}
+
+func TestIGW_Delete_Error(t *testing.T) {
+	fake := &fakeVirtualNetworkClient{
+		deleteInternetGatewayFn: func(_ context.Context, _ ocicore.DeleteInternetGatewayRequest) (ocicore.DeleteInternetGatewayResponse, error) {
+			return ocicore.DeleteInternetGatewayResponse{}, errors.New("delete failed")
+		},
+	}
+	mgr := igwMgrWithFake(fake)
+
+	igw := &ociv1beta1.OciInternetGateway{}
+	igw.Status.OsokStatus.Ocid = "ocid1.internetgateway.oc1..del"
+
+	done, err := mgr.Delete(context.Background(), igw)
+	assert.Error(t, err)
+	assert.False(t, done)
+}
+
+func TestNAT_Delete_NoOcid(t *testing.T) {
+	mgr := NewOciNatGatewayServiceManager(emptyProvider(), nil, nil, defaultLog())
+
+	nat := &ociv1beta1.OciNatGateway{}
+	done, err := mgr.Delete(context.Background(), nat)
+	assert.NoError(t, err)
+	assert.True(t, done)
+}
+
+func TestNAT_Delete_Error(t *testing.T) {
+	fake := &fakeVirtualNetworkClient{
+		deleteNatGatewayFn: func(_ context.Context, _ ocicore.DeleteNatGatewayRequest) (ocicore.DeleteNatGatewayResponse, error) {
+			return ocicore.DeleteNatGatewayResponse{}, errors.New("delete failed")
+		},
+	}
+	mgr := natMgrWithFake(fake)
+
+	nat := &ociv1beta1.OciNatGateway{}
+	nat.Status.OsokStatus.Ocid = "ocid1.natgateway.oc1..del"
+
+	done, err := mgr.Delete(context.Background(), nat)
+	assert.Error(t, err)
+	assert.False(t, done)
+}
+
+func TestSGW_Delete_NoOcid(t *testing.T) {
+	mgr := NewOciServiceGatewayServiceManager(emptyProvider(), nil, nil, defaultLog())
+
+	sgw := &ociv1beta1.OciServiceGateway{}
+	done, err := mgr.Delete(context.Background(), sgw)
+	assert.NoError(t, err)
+	assert.True(t, done)
+}
+
+func TestSGW_Delete_Error(t *testing.T) {
+	fake := &fakeVirtualNetworkClient{
+		deleteServiceGatewayFn: func(_ context.Context, _ ocicore.DeleteServiceGatewayRequest) (ocicore.DeleteServiceGatewayResponse, error) {
+			return ocicore.DeleteServiceGatewayResponse{}, errors.New("delete failed")
+		},
+	}
+	mgr := sgwMgrWithFake(fake)
+
+	sgw := &ociv1beta1.OciServiceGateway{}
+	sgw.Status.OsokStatus.Ocid = "ocid1.servicegateway.oc1..del"
+
+	done, err := mgr.Delete(context.Background(), sgw)
+	assert.Error(t, err)
+	assert.False(t, done)
+}
+
+func TestDRG_Delete_NoOcid(t *testing.T) {
+	mgr := NewOciDrgServiceManager(emptyProvider(), nil, nil, defaultLog())
+
+	drg := &ociv1beta1.OciDrg{}
+	done, err := mgr.Delete(context.Background(), drg)
+	assert.NoError(t, err)
+	assert.True(t, done)
+}
+
+func TestDRG_Delete_Error(t *testing.T) {
+	fake := &fakeVirtualNetworkClient{
+		deleteDrgFn: func(_ context.Context, _ ocicore.DeleteDrgRequest) (ocicore.DeleteDrgResponse, error) {
+			return ocicore.DeleteDrgResponse{}, errors.New("delete failed")
+		},
+	}
+	mgr := drgMgrWithFake(fake)
+
+	drg := &ociv1beta1.OciDrg{}
+	drg.Status.OsokStatus.Ocid = "ocid1.drg.oc1..del"
+
+	done, err := mgr.Delete(context.Background(), drg)
+	assert.Error(t, err)
+	assert.False(t, done)
+}
+
+func TestSecurityList_Delete_NoOcid(t *testing.T) {
+	mgr := NewOciSecurityListServiceManager(emptyProvider(), nil, nil, defaultLog())
+
+	sl := &ociv1beta1.OciSecurityList{}
+	done, err := mgr.Delete(context.Background(), sl)
+	assert.NoError(t, err)
+	assert.True(t, done)
+}
+
+func TestSecurityList_Delete_Error(t *testing.T) {
+	fake := &fakeVirtualNetworkClient{
+		deleteSecurityListFn: func(_ context.Context, _ ocicore.DeleteSecurityListRequest) (ocicore.DeleteSecurityListResponse, error) {
+			return ocicore.DeleteSecurityListResponse{}, errors.New("delete failed")
+		},
+	}
+	mgr := securityListMgrWithFake(fake)
+
+	sl := &ociv1beta1.OciSecurityList{}
+	sl.Status.OsokStatus.Ocid = "ocid1.securitylist.oc1..del"
+
+	done, err := mgr.Delete(context.Background(), sl)
+	assert.Error(t, err)
+	assert.False(t, done)
+}
+
+func TestNSG_Delete_NoOcid(t *testing.T) {
+	mgr := NewOciNetworkSecurityGroupServiceManager(emptyProvider(), nil, nil, defaultLog())
+
+	nsg := &ociv1beta1.OciNetworkSecurityGroup{}
+	done, err := mgr.Delete(context.Background(), nsg)
+	assert.NoError(t, err)
+	assert.True(t, done)
+}
+
+func TestNSG_Delete_Error(t *testing.T) {
+	fake := &fakeVirtualNetworkClient{
+		deleteNetworkSecurityGroupFn: func(_ context.Context, _ ocicore.DeleteNetworkSecurityGroupRequest) (ocicore.DeleteNetworkSecurityGroupResponse, error) {
+			return ocicore.DeleteNetworkSecurityGroupResponse{}, errors.New("delete failed")
+		},
+	}
+	mgr := nsgMgrWithFake(fake)
+
+	nsg := &ociv1beta1.OciNetworkSecurityGroup{}
+	nsg.Status.OsokStatus.Ocid = "ocid1.networksecuritygroup.oc1..del"
+
+	done, err := mgr.Delete(context.Background(), nsg)
+	assert.Error(t, err)
+	assert.False(t, done)
+}
+
+func TestRouteTable_Delete_NoOcid(t *testing.T) {
+	mgr := NewOciRouteTableServiceManager(emptyProvider(), nil, nil, defaultLog())
+
+	rt := &ociv1beta1.OciRouteTable{}
+	done, err := mgr.Delete(context.Background(), rt)
+	assert.NoError(t, err)
+	assert.True(t, done)
+}
+
+func TestRouteTable_Delete_Error(t *testing.T) {
+	fake := &fakeVirtualNetworkClient{
+		deleteRouteTableFn: func(_ context.Context, _ ocicore.DeleteRouteTableRequest) (ocicore.DeleteRouteTableResponse, error) {
+			return ocicore.DeleteRouteTableResponse{}, errors.New("delete failed")
+		},
+	}
+	mgr := routeTableMgrWithFake(fake)
+
+	rt := &ociv1beta1.OciRouteTable{}
+	rt.Status.OsokStatus.Ocid = "ocid1.routetable.oc1..del"
+
+	done, err := mgr.Delete(context.Background(), rt)
+	assert.Error(t, err)
+	assert.False(t, done)
+}
+
+// ---------------------------------------------------------------------------
+// CreateNatGateway optional fields: BlockTraffic
+// ---------------------------------------------------------------------------
+
+func TestCreateNatGateway_WithBlockTraffic(t *testing.T) {
+	var capturedReq ocicore.CreateNatGatewayRequest
+	natID := "ocid1.natgateway.oc1..block"
+	fake := &fakeVirtualNetworkClient{
+		createNatGatewayFn: func(_ context.Context, req ocicore.CreateNatGatewayRequest) (ocicore.CreateNatGatewayResponse, error) {
+			capturedReq = req
+			return ocicore.CreateNatGatewayResponse{
+				NatGateway: ocicore.NatGateway{
+					Id:             common.String(natID),
+					DisplayName:    common.String("block-nat"),
+					LifecycleState: ocicore.NatGatewayLifecycleStateAvailable,
+				},
+			}, nil
+		},
+	}
+	mgr := natMgrWithFake(fake)
+
+	nat := ociv1beta1.OciNatGateway{}
+	nat.Spec.DisplayName = "block-nat"
+	nat.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+	nat.Spec.VcnId = "ocid1.vcn.oc1..parent"
+	nat.Spec.BlockTraffic = true
+
+	result, err := mgr.CreateNatGateway(context.Background(), nat)
+	assert.NoError(t, err)
+	assert.Equal(t, natID, *result.Id)
+	assert.NotNil(t, capturedReq.CreateNatGatewayDetails.BlockTraffic)
+	assert.True(t, *capturedReq.CreateNatGatewayDetails.BlockTraffic)
+}
+
+// ---------------------------------------------------------------------------
+// CreateSubnet optional fields
+// ---------------------------------------------------------------------------
+
+func TestCreateSubnet_WithOptionalFields(t *testing.T) {
+	var capturedReq ocicore.CreateSubnetRequest
+	subnetID := "ocid1.subnet.oc1..opts"
+	vcnID := "ocid1.vcn.oc1..parent"
+	rtID := "ocid1.routetable.oc1..rt"
+	slID := "ocid1.securitylist.oc1..sl"
+	fake := &fakeVirtualNetworkClient{
+		createSubnetFn: func(_ context.Context, req ocicore.CreateSubnetRequest) (ocicore.CreateSubnetResponse, error) {
+			capturedReq = req
+			return ocicore.CreateSubnetResponse{
+				Subnet: ocicore.Subnet{
+					Id:             common.String(subnetID),
+					DisplayName:    common.String("opts-subnet"),
+					LifecycleState: ocicore.SubnetLifecycleStateAvailable,
+				},
+			}, nil
+		},
+	}
+	mgr := subnetMgrWithFake(fake)
+
+	s := ociv1beta1.OciSubnet{}
+	s.Spec.DisplayName = "opts-subnet"
+	s.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+	s.Spec.VcnId = ociv1beta1.OCID(vcnID)
+	s.Spec.CidrBlock = "10.0.2.0/24"
+	s.Spec.DnsLabel = "optsubnet"
+	s.Spec.ProhibitPublicIpOnVnic = true
+	s.Spec.RouteTableId = ociv1beta1.OCID(rtID)
+	s.Spec.SecurityListIds = []ociv1beta1.OCID{ociv1beta1.OCID(slID)}
+
+	result, err := mgr.CreateSubnet(context.Background(), s)
+	assert.NoError(t, err)
+	assert.Equal(t, subnetID, *result.Id)
+	assert.Equal(t, "optsubnet", *capturedReq.CreateSubnetDetails.DnsLabel)
+	assert.NotNil(t, capturedReq.CreateSubnetDetails.ProhibitPublicIpOnVnic)
+	assert.True(t, *capturedReq.CreateSubnetDetails.ProhibitPublicIpOnVnic)
+	assert.Equal(t, rtID, *capturedReq.CreateSubnetDetails.RouteTableId)
+	assert.Equal(t, []string{slID}, capturedReq.CreateSubnetDetails.SecurityListIds)
+}
+
+// ---------------------------------------------------------------------------
+// buildIngressRules / buildEgressRules — table-driven coverage
+// ---------------------------------------------------------------------------
+
+func TestBuildIngressRules_TableDriven(t *testing.T) {
+	tests := []struct {
+		name  string
+		input ociv1beta1.IngressSecurityRule
+		check func(t *testing.T, r ocicore.IngressSecurityRule)
+	}{
+		{
+			name: "minimal",
+			input: ociv1beta1.IngressSecurityRule{
+				Protocol:    "all",
+				Source:      "0.0.0.0/0",
+				IsStateless: false,
+			},
+			check: func(t *testing.T, r ocicore.IngressSecurityRule) {
+				assert.Equal(t, "all", *r.Protocol)
+				assert.Equal(t, "0.0.0.0/0", *r.Source)
+				assert.False(t, *r.IsStateless)
+				assert.Nil(t, r.Description)
+				assert.Nil(t, r.TcpOptions)
+				assert.Nil(t, r.UdpOptions)
+			},
+		},
+		{
+			name: "with_description",
+			input: ociv1beta1.IngressSecurityRule{
+				Protocol:    "6",
+				Source:      "10.0.0.0/8",
+				Description: "allow tcp",
+				IsStateless: true,
+			},
+			check: func(t *testing.T, r ocicore.IngressSecurityRule) {
+				assert.Equal(t, "allow tcp", *r.Description)
+				assert.True(t, *r.IsStateless)
+			},
+		},
+		{
+			name: "with_tcp_dest_port",
+			input: ociv1beta1.IngressSecurityRule{
+				Protocol: "6",
+				Source:   "10.0.0.0/8",
+				TcpOptions: &ociv1beta1.TcpOptions{
+					DestinationPortRange: &ociv1beta1.PortRange{Min: 443, Max: 443},
+				},
+			},
+			check: func(t *testing.T, r ocicore.IngressSecurityRule) {
+				assert.NotNil(t, r.TcpOptions)
+				assert.Equal(t, 443, *r.TcpOptions.DestinationPortRange.Min)
+				assert.Equal(t, 443, *r.TcpOptions.DestinationPortRange.Max)
+				assert.Nil(t, r.TcpOptions.SourcePortRange)
+			},
+		},
+		{
+			name: "with_tcp_src_port",
+			input: ociv1beta1.IngressSecurityRule{
+				Protocol: "6",
+				Source:   "10.0.0.0/8",
+				TcpOptions: &ociv1beta1.TcpOptions{
+					SourcePortRange: &ociv1beta1.PortRange{Min: 1024, Max: 65535},
+				},
+			},
+			check: func(t *testing.T, r ocicore.IngressSecurityRule) {
+				assert.NotNil(t, r.TcpOptions)
+				assert.Nil(t, r.TcpOptions.DestinationPortRange)
+				assert.Equal(t, 1024, *r.TcpOptions.SourcePortRange.Min)
+			},
+		},
+		{
+			name: "with_udp_dest_port",
+			input: ociv1beta1.IngressSecurityRule{
+				Protocol: "17",
+				Source:   "10.0.0.0/8",
+				UdpOptions: &ociv1beta1.UdpOptions{
+					DestinationPortRange: &ociv1beta1.PortRange{Min: 53, Max: 53},
+				},
+			},
+			check: func(t *testing.T, r ocicore.IngressSecurityRule) {
+				assert.NotNil(t, r.UdpOptions)
+				assert.Equal(t, 53, *r.UdpOptions.DestinationPortRange.Min)
+			},
+		},
+		{
+			name: "with_udp_src_port",
+			input: ociv1beta1.IngressSecurityRule{
+				Protocol: "17",
+				Source:   "10.0.0.0/8",
+				UdpOptions: &ociv1beta1.UdpOptions{
+					SourcePortRange: &ociv1beta1.PortRange{Min: 1024, Max: 65535},
+				},
+			},
+			check: func(t *testing.T, r ocicore.IngressSecurityRule) {
+				assert.NotNil(t, r.UdpOptions)
+				assert.Nil(t, r.UdpOptions.DestinationPortRange)
+				assert.Equal(t, 1024, *r.UdpOptions.SourcePortRange.Min)
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// Exercise buildIngressRules via CreateSecurityList which calls it.
+			slID := "ocid1.securitylist.oc1..build"
+			var capturedReq ocicore.CreateSecurityListRequest
+			fake := &fakeVirtualNetworkClient{
+				createSecurityListFn: func(_ context.Context, req ocicore.CreateSecurityListRequest) (ocicore.CreateSecurityListResponse, error) {
+					capturedReq = req
+					return ocicore.CreateSecurityListResponse{
+						SecurityList: ocicore.SecurityList{
+							Id:             common.String(slID),
+							LifecycleState: ocicore.SecurityListLifecycleStateAvailable,
+						},
+					}, nil
+				},
+			}
+			mgr := securityListMgrWithFake(fake)
+
+			sl := ociv1beta1.OciSecurityList{}
+			sl.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+			sl.Spec.VcnId = "ocid1.vcn.oc1..xxx"
+			sl.Spec.IngressSecurityRules = []ociv1beta1.IngressSecurityRule{tc.input}
+
+			_, err := mgr.CreateSecurityList(context.Background(), sl)
+			assert.NoError(t, err)
+			assert.Len(t, capturedReq.CreateSecurityListDetails.IngressSecurityRules, 1)
+			tc.check(t, capturedReq.CreateSecurityListDetails.IngressSecurityRules[0])
+		})
+	}
+}
+
+func TestBuildEgressRules_TableDriven(t *testing.T) {
+	tests := []struct {
+		name  string
+		input ociv1beta1.EgressSecurityRule
+		check func(t *testing.T, r ocicore.EgressSecurityRule)
+	}{
+		{
+			name: "minimal",
+			input: ociv1beta1.EgressSecurityRule{
+				Protocol:    "all",
+				Destination: "0.0.0.0/0",
+				IsStateless: false,
+			},
+			check: func(t *testing.T, r ocicore.EgressSecurityRule) {
+				assert.Equal(t, "all", *r.Protocol)
+				assert.Equal(t, "0.0.0.0/0", *r.Destination)
+				assert.False(t, *r.IsStateless)
+				assert.Nil(t, r.Description)
+				assert.Nil(t, r.TcpOptions)
+				assert.Nil(t, r.UdpOptions)
+			},
+		},
+		{
+			name: "with_destination_type",
+			input: ociv1beta1.EgressSecurityRule{
+				Protocol:        "all",
+				Destination:     "all-iad-services-in-oracle-services-network",
+				DestinationType: "SERVICE_CIDR_BLOCK",
+			},
+			check: func(t *testing.T, r ocicore.EgressSecurityRule) {
+				assert.Equal(t, ocicore.EgressSecurityRuleDestinationTypeEnum("SERVICE_CIDR_BLOCK"), r.DestinationType)
+			},
+		},
+		{
+			name: "with_description",
+			input: ociv1beta1.EgressSecurityRule{
+				Protocol:    "6",
+				Destination: "10.0.0.0/8",
+				Description: "allow egress tcp",
+				IsStateless: true,
+			},
+			check: func(t *testing.T, r ocicore.EgressSecurityRule) {
+				assert.Equal(t, "allow egress tcp", *r.Description)
+				assert.True(t, *r.IsStateless)
+			},
+		},
+		{
+			name: "with_tcp_dest_port",
+			input: ociv1beta1.EgressSecurityRule{
+				Protocol:    "6",
+				Destination: "10.0.0.0/8",
+				TcpOptions: &ociv1beta1.TcpOptions{
+					DestinationPortRange: &ociv1beta1.PortRange{Min: 80, Max: 80},
+				},
+			},
+			check: func(t *testing.T, r ocicore.EgressSecurityRule) {
+				assert.NotNil(t, r.TcpOptions)
+				assert.Equal(t, 80, *r.TcpOptions.DestinationPortRange.Min)
+			},
+		},
+		{
+			name: "with_tcp_src_port",
+			input: ociv1beta1.EgressSecurityRule{
+				Protocol:    "6",
+				Destination: "10.0.0.0/8",
+				TcpOptions: &ociv1beta1.TcpOptions{
+					SourcePortRange: &ociv1beta1.PortRange{Min: 1024, Max: 65535},
+				},
+			},
+			check: func(t *testing.T, r ocicore.EgressSecurityRule) {
+				assert.NotNil(t, r.TcpOptions)
+				assert.Nil(t, r.TcpOptions.DestinationPortRange)
+				assert.Equal(t, 1024, *r.TcpOptions.SourcePortRange.Min)
+			},
+		},
+		{
+			name: "with_udp_dest_port",
+			input: ociv1beta1.EgressSecurityRule{
+				Protocol:    "17",
+				Destination: "10.0.0.0/8",
+				UdpOptions: &ociv1beta1.UdpOptions{
+					DestinationPortRange: &ociv1beta1.PortRange{Min: 53, Max: 53},
+				},
+			},
+			check: func(t *testing.T, r ocicore.EgressSecurityRule) {
+				assert.NotNil(t, r.UdpOptions)
+				assert.Equal(t, 53, *r.UdpOptions.DestinationPortRange.Min)
+			},
+		},
+		{
+			name: "with_udp_src_port",
+			input: ociv1beta1.EgressSecurityRule{
+				Protocol:    "17",
+				Destination: "10.0.0.0/8",
+				UdpOptions: &ociv1beta1.UdpOptions{
+					SourcePortRange: &ociv1beta1.PortRange{Min: 1024, Max: 65535},
+				},
+			},
+			check: func(t *testing.T, r ocicore.EgressSecurityRule) {
+				assert.NotNil(t, r.UdpOptions)
+				assert.Nil(t, r.UdpOptions.DestinationPortRange)
+				assert.Equal(t, 1024, *r.UdpOptions.SourcePortRange.Min)
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			slID := "ocid1.securitylist.oc1..build"
+			var capturedReq ocicore.CreateSecurityListRequest
+			fake := &fakeVirtualNetworkClient{
+				createSecurityListFn: func(_ context.Context, req ocicore.CreateSecurityListRequest) (ocicore.CreateSecurityListResponse, error) {
+					capturedReq = req
+					return ocicore.CreateSecurityListResponse{
+						SecurityList: ocicore.SecurityList{
+							Id:             common.String(slID),
+							LifecycleState: ocicore.SecurityListLifecycleStateAvailable,
+						},
+					}, nil
+				},
+			}
+			mgr := securityListMgrWithFake(fake)
+
+			sl := ociv1beta1.OciSecurityList{}
+			sl.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+			sl.Spec.VcnId = "ocid1.vcn.oc1..xxx"
+			sl.Spec.EgressSecurityRules = []ociv1beta1.EgressSecurityRule{tc.input}
+
+			_, err := mgr.CreateSecurityList(context.Background(), sl)
+			assert.NoError(t, err)
+			assert.Len(t, capturedReq.CreateSecurityListDetails.EgressSecurityRules, 1)
+			tc.check(t, capturedReq.CreateSecurityListDetails.EgressSecurityRules[0])
+		})
+	}
+}
