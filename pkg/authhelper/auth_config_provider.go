@@ -14,7 +14,7 @@ import (
 	"github.com/oracle/oci-go-sdk/v65/identity"
 	"github.com/pkg/errors"
 
-	. "github.com/oracle/oci-service-operator/pkg/config"
+	configpkg "github.com/oracle/oci-service-operator/pkg/config"
 	"github.com/oracle/oci-service-operator/pkg/loggerutil"
 )
 
@@ -22,22 +22,22 @@ type AuthConfigProvider struct {
 	Log loggerutil.OSOKLogger
 }
 
-func (configProvider *AuthConfigProvider) GetAuthProvider(osokConfig OsokConfig) (common.ConfigurationProvider, error) {
-	var config common.ConfigurationProvider
+func (configProvider *AuthConfigProvider) GetAuthProvider(osokConfig configpkg.OsokConfig) (common.ConfigurationProvider, error) {
+	var providerConfig common.ConfigurationProvider
 	var err error
 	if osokConfig != nil {
 		configProvider.Log.InfoLog("The OSOK config is present, validating config parameters")
 
 		//Check if user principals are present
-		if reflect.DeepEqual(osokConfig.Auth(), UserAuthConfig{}) {
+		if reflect.DeepEqual(osokConfig.Auth(), configpkg.UserAuthConfig{}) {
 			configProvider.Log.InfoLog("User Principals are not present, switching to Instance principals")
-			config, err = auth.InstancePrincipalConfigurationProvider()
+			providerConfig, err = auth.InstancePrincipalConfigurationProvider()
 			if err != nil {
 				configProvider.Log.InfoLog("Failed to instantiate InstancePrincipals")
 			}
 		} else {
 			configProvider.Log.InfoLog("User principals available, validating user credentials")
-			config = common.NewRawConfigurationProvider(
+			providerConfig = common.NewRawConfigurationProvider(
 				osokConfig.Auth().Tenancy,
 				osokConfig.Auth().User,
 				osokConfig.Auth().Region,
@@ -46,19 +46,19 @@ func (configProvider *AuthConfigProvider) GetAuthProvider(osokConfig OsokConfig)
 				common.String(osokConfig.Auth().Passphrase))
 
 			//If user principals failed to validate, setup will stop
-			if !configProvider.authValidate(context.Background(), config, osokConfig) {
+			if !configProvider.authValidate(context.Background(), providerConfig, osokConfig) {
 				configProvider.Log.InfoLog("User Principals are not valid. Setup will now terminate")
 				err = errors.New("Failed to instantiate User Principals")
 			}
 		}
 	} else {
 		configProvider.Log.InfoLog("The OSOK config is not present. Using default Config provider")
-		config = common.DefaultConfigProvider()
+		providerConfig = common.DefaultConfigProvider()
 	}
-	return config, err
+	return providerConfig, err
 }
 
-func (configProvider *AuthConfigProvider) authValidate(ctx context.Context, provider common.ConfigurationProvider, config OsokConfig) bool {
+func (configProvider *AuthConfigProvider) authValidate(ctx context.Context, provider common.ConfigurationProvider, config configpkg.OsokConfig) bool {
 	configProvider.Log.InfoLog("Validating the Configuration Provider")
 	tenancy := config.Auth().Tenancy
 	// Validating the provider to list the ADs

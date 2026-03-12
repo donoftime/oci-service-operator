@@ -982,7 +982,7 @@ func TestCreateOrUpdate_BindExistingAdb_DbNameChange(t *testing.T) {
 	resp, err := mgr.CreateOrUpdate(context.Background(), adb, ctrl.Request{})
 	assert.NoError(t, err)
 	assert.True(t, resp.IsSuccessful)
-	assert.Equal(t, common.String("newdb"), capturedUpdate.UpdateAutonomousDatabaseDetails.DbName)
+	assert.Equal(t, common.String("newdb"), capturedUpdate.DbName)
 }
 
 // ---------------------------------------------------------------------------

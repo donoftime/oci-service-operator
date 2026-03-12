@@ -8,21 +8,14 @@ package nosql
 import (
 	"context"
 	"fmt"
-	"strings"
-	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
-	"github.com/oracle/oci-go-sdk/v65/nosql"
 	ociv1beta1 "github.com/oracle/oci-service-operator/api/v1beta1"
 	"github.com/oracle/oci-service-operator/pkg/credhelper"
-	"github.com/oracle/oci-service-operator/pkg/errorutil"
 	"github.com/oracle/oci-service-operator/pkg/loggerutil"
 	"github.com/oracle/oci-service-operator/pkg/servicemanager"
-	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
-
-	"github.com/oracle/oci-service-operator/pkg/util"
 )
 
 // Compile-time check that NoSQLDatabaseServiceManager implements OSOKServiceManager.
@@ -56,73 +49,12 @@ func (c *NoSQLDatabaseServiceManager) CreateOrUpdate(ctx context.Context, obj ru
 		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
-	var tableInstance *nosql.Table
-
-	if strings.TrimSpace(string(db.Spec.TableId)) == "" {
-		// No ID provided — check by name or create
-		tableOcid, err := c.GetTableOcid(ctx, *db)
-		if err != nil {
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		if tableOcid == nil {
-			// Create a new NoSQL table (async operation — returns work request, not OCID directly)
-			_, err := c.CreateTable(ctx, *db)
-			if err != nil {
-				db.Status.OsokStatus = util.UpdateOSOKStatusCondition(db.Status.OsokStatus,
-					ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), c.Log)
-				if _, ok := err.(errorutil.BadRequestOciError); !ok {
-					c.Log.ErrorLog(err, "Create NoSQL table failed")
-					return servicemanager.OSOKResponse{IsSuccessful: false}, err
-				}
-				db.Status.OsokStatus.Message = err.(common.ServiceError).GetCode()
-				c.Log.ErrorLog(err, "Create NoSQL table bad request")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-
-			c.Log.InfoLog(fmt.Sprintf("NoSQL table %s is Provisioning", db.Spec.Name))
-			db.Status.OsokStatus = util.UpdateOSOKStatusCondition(db.Status.OsokStatus,
-				ociv1beta1.Provisioning, v1.ConditionTrue, "", "NoSQL table Provisioning", c.Log)
-
-			// Poll by name to get the OCID once the table is created
-			tableOcid, err = c.GetTableOcid(ctx, *db)
-			if err != nil {
-				c.Log.ErrorLog(err, "Error while looking up NoSQL table after create")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-			if tableOcid == nil {
-				// Table not yet visible — requeue
-				return servicemanager.OSOKResponse{IsSuccessful: false, ShouldRequeue: true, RequeueDuration: 30 * time.Second}, nil
-			}
-
-			tableInstance, err = c.GetTable(ctx, *tableOcid, nil)
-			if err != nil {
-				c.Log.ErrorLog(err, "Error while getting NoSQL table after create")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		} else {
-			c.Log.InfoLog(fmt.Sprintf("Getting existing NoSQL table %s", *tableOcid))
-			tableInstance, err = c.GetTable(ctx, *tableOcid, nil)
-			if err != nil {
-				c.Log.ErrorLog(err, "Error while getting NoSQL table by OCID")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		}
-
-		db.Status.OsokStatus.Ocid = ociv1beta1.OCID(*tableInstance.Id)
-	} else {
-		// Bind to an existing table by ID
-		tableInstance, err = c.GetTable(ctx, db.Spec.TableId, nil)
-		if err != nil {
-			c.Log.ErrorLog(err, "Error while getting existing NoSQL table")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		db.Status.OsokStatus.Ocid = db.Spec.TableId
-		if err = c.UpdateTable(ctx, db); err != nil {
-			c.Log.ErrorLog(err, "Error while updating NoSQL table")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
+	tableInstance, response, err := c.resolveTableForReconcile(ctx, db)
+	if err != nil {
+		return servicemanager.OSOKResponse{IsSuccessful: false}, err
+	}
+	if response != nil {
+		return *response, nil
 	}
 
 	return reconcileLifecycleStatus(&db.Status.OsokStatus, tableInstance, c.Log), nil

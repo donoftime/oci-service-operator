@@ -196,7 +196,9 @@ func TestUnzipWallet_ValidZip(t *testing.T) {
 	// Create a temp zip file with test data
 	tmpFile, err := os.CreateTemp("", "wallet*.zip")
 	assert.NoError(t, err)
-	defer os.Remove(tmpFile.Name())
+	t.Cleanup(func() {
+		assert.NoError(t, os.Remove(tmpFile.Name()))
+	})
 
 	buf := new(bytes.Buffer)
 	w := zip.NewWriter(buf)
@@ -204,11 +206,11 @@ func TestUnzipWallet_ValidZip(t *testing.T) {
 	assert.NoError(t, err)
 	_, err = f.Write([]byte("test-content"))
 	assert.NoError(t, err)
-	w.Close()
+	assert.NoError(t, w.Close())
 
 	_, err = tmpFile.Write(buf.Bytes())
 	assert.NoError(t, err)
-	tmpFile.Close()
+	assert.NoError(t, tmpFile.Close())
 
 	data, err := UnzipWallet(tmpFile.Name())
 	assert.NoError(t, err)
@@ -244,7 +246,10 @@ metadata:
 `
 	ctx := context.Background()
 	assert.Panics(t, func() {
-		_ = installResource(ctx, []byte(validYAML), nil, nil)
+		panicErr := installResource(ctx, []byte(validYAML), nil, nil)
+		if panicErr != nil {
+			panic(panicErr)
+		}
 	})
 }
 
@@ -273,11 +278,13 @@ func TestInitOSOK_FakeConfig(t *testing.T) {
 func TestUnzipWallet_NotZip(t *testing.T) {
 	tmpFile, err := os.CreateTemp("", "notazip*.zip")
 	assert.NoError(t, err)
-	defer os.Remove(tmpFile.Name())
+	t.Cleanup(func() {
+		assert.NoError(t, os.Remove(tmpFile.Name()))
+	})
 
 	_, err = tmpFile.Write([]byte("not a zip file"))
 	assert.NoError(t, err)
-	tmpFile.Close()
+	assert.NoError(t, tmpFile.Close())
 
 	_, err = UnzipWallet(tmpFile.Name())
 	assert.Error(t, err)
@@ -294,8 +301,8 @@ func makeZipWithUnsupportedMethod(t *testing.T) string {
 
 	localOffset := 0
 
-	writeU16 := func(v uint16) { binary.Write(&buf, binary.LittleEndian, v) }
-	writeU32 := func(v uint32) { binary.Write(&buf, binary.LittleEndian, v) }
+	writeU16 := func(v uint16) { assert.NoError(t, binary.Write(&buf, binary.LittleEndian, v)) }
+	writeU32 := func(v uint32) { assert.NoError(t, binary.Write(&buf, binary.LittleEndian, v)) }
 
 	// Local file header
 	writeU32(0x04034b50) // signature
@@ -349,13 +356,15 @@ func makeZipWithUnsupportedMethod(t *testing.T) string {
 	assert.NoError(t, err)
 	_, err = tmpFile.Write(buf.Bytes())
 	assert.NoError(t, err)
-	tmpFile.Close()
+	assert.NoError(t, tmpFile.Close())
 	return tmpFile.Name()
 }
 
 func TestUnzipWallet_UnsupportedCompression(t *testing.T) {
 	zipPath := makeZipWithUnsupportedMethod(t)
-	defer os.Remove(zipPath)
+	t.Cleanup(func() {
+		assert.NoError(t, os.Remove(zipPath))
+	})
 
 	_, err := UnzipWallet(zipPath)
 	assert.Error(t, err)
@@ -370,8 +379,8 @@ func makeZipWithBadDeflateData(t *testing.T) string {
 	garbage := []byte{0xFF, 0xFE} // not a valid deflate stream
 
 	var buf bytes.Buffer
-	writeU16 := func(v uint16) { binary.Write(&buf, binary.LittleEndian, v) }
-	writeU32 := func(v uint32) { binary.Write(&buf, binary.LittleEndian, v) }
+	writeU16 := func(v uint16) { assert.NoError(t, binary.Write(&buf, binary.LittleEndian, v)) }
+	writeU32 := func(v uint32) { assert.NoError(t, binary.Write(&buf, binary.LittleEndian, v)) }
 
 	localOffset := 0
 
@@ -428,13 +437,15 @@ func makeZipWithBadDeflateData(t *testing.T) string {
 	assert.NoError(t, err)
 	_, err = tmp.Write(buf.Bytes())
 	assert.NoError(t, err)
-	tmp.Close()
+	assert.NoError(t, tmp.Close())
 	return tmp.Name()
 }
 
 func TestUnzipWallet_ReadAllError(t *testing.T) {
 	zipPath := makeZipWithBadDeflateData(t)
-	defer os.Remove(zipPath)
+	t.Cleanup(func() {
+		assert.NoError(t, os.Remove(zipPath))
+	})
 
 	_, err := UnzipWallet(zipPath)
 	assert.Error(t, err)

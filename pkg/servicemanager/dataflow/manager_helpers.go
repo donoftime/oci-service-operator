@@ -7,7 +7,6 @@ package dataflow
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	ocidataflow "github.com/oracle/oci-go-sdk/v65/dataflow"
@@ -17,8 +16,6 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/util"
 	v1 "k8s.io/api/core/v1"
 )
-
-const dataFlowRequeueDuration = 30 * time.Second
 
 func safeString(s *string) string {
 	if s == nil {
@@ -44,52 +41,9 @@ func isNotFoundServiceError(err error) bool {
 
 func dataFlowUpdateNeeded(app *ociv1beta1.DataFlowApplication, existing *ocidataflow.Application) (ocidataflow.UpdateApplicationDetails, bool) {
 	updateDetails := ocidataflow.UpdateApplicationDetails{}
-	updateNeeded := false
-
-	if app.Spec.DisplayName != "" && safeString(existing.DisplayName) != app.Spec.DisplayName {
-		updateDetails.DisplayName = common.String(app.Spec.DisplayName)
-		updateNeeded = true
-	}
-	if app.Spec.Description != "" && safeString(existing.Description) != app.Spec.Description {
-		updateDetails.Description = common.String(app.Spec.Description)
-		updateNeeded = true
-	}
-	if app.Spec.NumExecutors > 0 && (existing.NumExecutors == nil || *existing.NumExecutors != app.Spec.NumExecutors) {
-		updateDetails.NumExecutors = common.Int(app.Spec.NumExecutors)
-		updateNeeded = true
-	}
-	if app.Spec.Configuration != nil && !mapStringEquals(existing.Configuration, app.Spec.Configuration) {
-		updateDetails.Configuration = app.Spec.Configuration
-		updateNeeded = true
-	}
-	if len(app.Spec.Arguments) > 0 && !sliceEquals(existing.Arguments, app.Spec.Arguments) {
-		updateDetails.Arguments = app.Spec.Arguments
-		updateNeeded = true
-	}
-	if app.Spec.SparkVersion != "" && safeString(existing.SparkVersion) != app.Spec.SparkVersion {
-		updateDetails.SparkVersion = common.String(app.Spec.SparkVersion)
-		updateNeeded = true
-	}
-	if app.Spec.DriverShape != "" && safeString(existing.DriverShape) != app.Spec.DriverShape {
-		updateDetails.DriverShape = common.String(app.Spec.DriverShape)
-		updateNeeded = true
-	}
-	if app.Spec.ExecutorShape != "" && safeString(existing.ExecutorShape) != app.Spec.ExecutorShape {
-		updateDetails.ExecutorShape = common.String(app.Spec.ExecutorShape)
-		updateNeeded = true
-	}
-	if app.Spec.FileUri != "" && safeString(existing.FileUri) != app.Spec.FileUri {
-		updateDetails.FileUri = common.String(app.Spec.FileUri)
-		updateNeeded = true
-	}
-	if app.Spec.ClassName != "" && safeString(existing.ClassName) != app.Spec.ClassName {
-		updateDetails.ClassName = common.String(app.Spec.ClassName)
-		updateNeeded = true
-	}
-	if app.Spec.ArchiveUri != "" && safeString(existing.ArchiveUri) != app.Spec.ArchiveUri {
-		updateDetails.ArchiveUri = common.String(app.Spec.ArchiveUri)
-		updateNeeded = true
-	}
+	updateNeeded := applyDataFlowBasicUpdates(&updateDetails, app, existing)
+	updateNeeded = applyDataFlowExecutorUpdates(&updateDetails, app, existing) || updateNeeded
+	updateNeeded = applyDataFlowArtifactUpdates(&updateDetails, app, existing) || updateNeeded
 
 	return updateDetails, updateNeeded
 }
@@ -116,6 +70,95 @@ func sliceEquals(left, right []string) bool {
 		}
 	}
 	return true
+}
+
+func applyDataFlowBasicUpdates(updateDetails *ocidataflow.UpdateApplicationDetails,
+	app *ociv1beta1.DataFlowApplication, existing *ocidataflow.Application) bool {
+	updateNeeded := false
+	if app.Spec.DisplayName != "" && safeString(existing.DisplayName) != app.Spec.DisplayName {
+		updateDetails.DisplayName = common.String(app.Spec.DisplayName)
+		updateNeeded = true
+	}
+	if app.Spec.Description != "" && safeString(existing.Description) != app.Spec.Description {
+		updateDetails.Description = common.String(app.Spec.Description)
+		updateNeeded = true
+	}
+	if app.Spec.SparkVersion != "" && safeString(existing.SparkVersion) != app.Spec.SparkVersion {
+		updateDetails.SparkVersion = common.String(app.Spec.SparkVersion)
+		updateNeeded = true
+	}
+	return updateNeeded
+}
+
+func applyDataFlowExecutorUpdates(updateDetails *ocidataflow.UpdateApplicationDetails,
+	app *ociv1beta1.DataFlowApplication, existing *ocidataflow.Application) bool {
+	updateNeeded := applyDataFlowExecutorCountUpdate(updateDetails, app, existing)
+	updateNeeded = applyDataFlowConfigurationUpdate(updateDetails, app, existing) || updateNeeded
+	updateNeeded = applyDataFlowArgumentsUpdate(updateDetails, app, existing) || updateNeeded
+	updateNeeded = applyDataFlowShapeUpdates(updateDetails, app, existing) || updateNeeded
+	return updateNeeded
+}
+
+func applyDataFlowArtifactUpdates(updateDetails *ocidataflow.UpdateApplicationDetails,
+	app *ociv1beta1.DataFlowApplication, existing *ocidataflow.Application) bool {
+	updateNeeded := false
+	if app.Spec.FileUri != "" && safeString(existing.FileUri) != app.Spec.FileUri {
+		updateDetails.FileUri = common.String(app.Spec.FileUri)
+		updateNeeded = true
+	}
+	if app.Spec.ClassName != "" && safeString(existing.ClassName) != app.Spec.ClassName {
+		updateDetails.ClassName = common.String(app.Spec.ClassName)
+		updateNeeded = true
+	}
+	if app.Spec.ArchiveUri != "" && safeString(existing.ArchiveUri) != app.Spec.ArchiveUri {
+		updateDetails.ArchiveUri = common.String(app.Spec.ArchiveUri)
+		updateNeeded = true
+	}
+	return updateNeeded
+}
+
+func applyDataFlowExecutorCountUpdate(updateDetails *ocidataflow.UpdateApplicationDetails,
+	app *ociv1beta1.DataFlowApplication, existing *ocidataflow.Application) bool {
+	if app.Spec.NumExecutors <= 0 || (existing.NumExecutors != nil && *existing.NumExecutors == app.Spec.NumExecutors) {
+		return false
+	}
+
+	updateDetails.NumExecutors = common.Int(app.Spec.NumExecutors)
+	return true
+}
+
+func applyDataFlowConfigurationUpdate(updateDetails *ocidataflow.UpdateApplicationDetails,
+	app *ociv1beta1.DataFlowApplication, existing *ocidataflow.Application) bool {
+	if app.Spec.Configuration == nil || mapStringEquals(existing.Configuration, app.Spec.Configuration) {
+		return false
+	}
+
+	updateDetails.Configuration = app.Spec.Configuration
+	return true
+}
+
+func applyDataFlowArgumentsUpdate(updateDetails *ocidataflow.UpdateApplicationDetails,
+	app *ociv1beta1.DataFlowApplication, existing *ocidataflow.Application) bool {
+	if len(app.Spec.Arguments) == 0 || sliceEquals(existing.Arguments, app.Spec.Arguments) {
+		return false
+	}
+
+	updateDetails.Arguments = app.Spec.Arguments
+	return true
+}
+
+func applyDataFlowShapeUpdates(updateDetails *ocidataflow.UpdateApplicationDetails,
+	app *ociv1beta1.DataFlowApplication, existing *ocidataflow.Application) bool {
+	updateNeeded := false
+	if app.Spec.DriverShape != "" && safeString(existing.DriverShape) != app.Spec.DriverShape {
+		updateDetails.DriverShape = common.String(app.Spec.DriverShape)
+		updateNeeded = true
+	}
+	if app.Spec.ExecutorShape != "" && safeString(existing.ExecutorShape) != app.Spec.ExecutorShape {
+		updateDetails.ExecutorShape = common.String(app.Spec.ExecutorShape)
+		updateNeeded = true
+	}
+	return updateNeeded
 }
 
 func markDeletedStatus(app *ociv1beta1.DataFlowApplication, existing *ocidataflow.Application, log loggerutil.OSOKLogger) servicemanager.OSOKResponse {

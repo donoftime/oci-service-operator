@@ -8,11 +8,10 @@ package util
 import (
 	"context"
 	"encoding/json"
-	"github.com/oracle/oci-service-operator/pkg/loggerutil"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 
+	"github.com/oracle/oci-service-operator/pkg/loggerutil"
 	"github.com/pkg/errors"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -28,7 +27,7 @@ import (
 )
 
 func InitOSOK(config *rest.Config, log loggerutil.OSOKLogger) {
-	files, err := ioutil.ReadDir("/")
+	files, err := os.ReadDir("/")
 	if err != nil {
 		log.ErrorLog(err, "failed to get files in root directory")
 		os.Exit(1)
@@ -60,7 +59,7 @@ func InitOSOK(config *rest.Config, log loggerutil.OSOKLogger) {
 			continue
 		}
 
-		data, err := ioutil.ReadFile("/" + file.Name())
+		data, err := os.ReadFile(filepath.Join("/", file.Name()))
 		if err != nil {
 			log.ErrorLog(err, "failed reading data from file")
 			os.Exit(1)

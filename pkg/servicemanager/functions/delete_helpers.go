@@ -7,7 +7,6 @@ package functions
 
 import (
 	"github.com/oracle/oci-go-sdk/v65/common"
-	"github.com/oracle/oci-service-operator/pkg/servicemanager"
 )
 
 func isFunctionsNotFound(err error) bool {
@@ -16,8 +15,4 @@ func isFunctionsNotFound(err error) bool {
 	}
 	serviceErr, ok := common.IsServiceError(err)
 	return ok && serviceErr.GetHTTPStatusCode() == 404
-}
-
-func isIgnorableSecretDeleteError(err error) bool {
-	return servicemanager.IsSecretNotFoundError(err)
 }

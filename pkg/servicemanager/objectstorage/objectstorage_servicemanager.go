@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	ociobjectstorage "github.com/oracle/oci-go-sdk/v65/objectstorage"
@@ -20,7 +19,6 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/util"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -35,6 +33,11 @@ type ObjectStorageBucketServiceManager struct {
 	Scheme           *runtime.Scheme
 	Log              loggerutil.OSOKLogger
 	ociClient        ObjectStorageClientInterface
+}
+
+type bucketIdentity struct {
+	namespace  string
+	bucketName string
 }
 
 // NewObjectStorageBucketServiceManager creates a new ObjectStorageBucketServiceManager.
@@ -65,90 +68,95 @@ func (m *ObjectStorageBucketServiceManager) CreateOrUpdate(ctx context.Context, 
 		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
-	// Determine namespace and bucketName to use.
-	var ns, bucketName string
-
-	if strings.TrimSpace(string(resource.Spec.BucketId)) != "" {
-		// Bind to existing bucket: spec.id = "namespace/bucketName"
-		parts := strings.SplitN(string(resource.Spec.BucketId), "/", 2)
-		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-			err = fmt.Errorf("spec.id must be in format 'namespace/bucketName', got: %s", resource.Spec.BucketId)
-			m.Log.ErrorLog(err, "Invalid spec.id for ObjectStorageBucket")
-			resource.Status.OsokStatus = util.UpdateOSOKStatusCondition(resource.Status.OsokStatus,
-				ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), m.Log)
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-		ns, bucketName = parts[0], parts[1]
-
-		// Verify the bucket exists.
-		if err = m.getBucket(ctx, ns, bucketName); err != nil {
-			m.Log.ErrorLog(err, "Error getting existing ObjectStorageBucket")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		compositeId := ns + "/" + bucketName
-		resource.Status.OsokStatus.Ocid = ociv1beta1.OCID(compositeId)
-		resource.Status.OsokStatus = util.UpdateOSOKStatusCondition(resource.Status.OsokStatus,
-			ociv1beta1.Active, v1.ConditionTrue, "", "ObjectStorageBucket Bound", m.Log)
-		m.Log.InfoLog(fmt.Sprintf("ObjectStorageBucket %s bound", compositeId))
-
-	} else if strings.TrimSpace(string(resource.Status.OsokStatus.Ocid)) != "" {
-		// Bucket was previously created — verify it still exists and apply updates.
-		compositeId := string(resource.Status.OsokStatus.Ocid)
-		parts := strings.SplitN(compositeId, "/", 2)
-		if len(parts) != 2 {
-			err = fmt.Errorf("status.ocid is malformed: %s", compositeId)
-			m.Log.ErrorLog(err, "Malformed status.ocid")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-		ns, bucketName = parts[0], parts[1]
-
-		if err = m.getBucket(ctx, ns, bucketName); err != nil {
-			m.Log.ErrorLog(err, "Error verifying existing ObjectStorageBucket")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		// Apply updates (accessType, versioning) if spec has changed.
-		if err = m.updateBucket(ctx, ns, bucketName, resource); err != nil {
-			m.Log.ErrorLog(err, "Error updating ObjectStorageBucket")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		resource.Status.OsokStatus = util.UpdateOSOKStatusCondition(resource.Status.OsokStatus,
-			ociv1beta1.Active, v1.ConditionTrue, "", "ObjectStorageBucket Active", m.Log)
-		m.Log.InfoLog(fmt.Sprintf("ObjectStorageBucket %s is active", compositeId))
-
-	} else {
-		// Create a new bucket.
-		ns, err = m.resolveNamespace(ctx, resource)
-		if err != nil {
-			m.Log.ErrorLog(err, "Error resolving Object Storage namespace")
-			resource.Status.OsokStatus = util.UpdateOSOKStatusCondition(resource.Status.OsokStatus,
-				ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), m.Log)
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-		bucketName = resource.Spec.Name
-
-		if err = m.createBucket(ctx, ns, resource); err != nil {
-			m.Log.ErrorLog(err, "Create ObjectStorageBucket failed")
-			resource.Status.OsokStatus = util.UpdateOSOKStatusCondition(resource.Status.OsokStatus,
-				ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), m.Log)
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		compositeId := ns + "/" + bucketName
-		resource.Status.OsokStatus.Ocid = ociv1beta1.OCID(compositeId)
-		resource.Status.OsokStatus = util.UpdateOSOKStatusCondition(resource.Status.OsokStatus,
-			ociv1beta1.Active, v1.ConditionTrue, "", "ObjectStorageBucket Created", m.Log)
-		m.Log.InfoLog(fmt.Sprintf("ObjectStorageBucket %s created", compositeId))
+	target, err := m.reconcileBucket(ctx, resource)
+	if err != nil {
+		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
-	if resource.Status.OsokStatus.CreatedAt == nil {
-		now := metav1.NewTime(time.Now())
-		resource.Status.OsokStatus.CreatedAt = &now
+	servicemanager.SetCreatedAtIfUnset(&resource.Status.OsokStatus)
+	return m.ensureBucketSecret(ctx, resource, target)
+}
+
+func (m *ObjectStorageBucketServiceManager) reconcileBucket(ctx context.Context, resource *ociv1beta1.ObjectStorageBucket) (bucketIdentity, error) {
+	switch {
+	case strings.TrimSpace(string(resource.Spec.BucketId)) != "":
+		return m.bindBucketByID(ctx, resource)
+	case strings.TrimSpace(string(resource.Status.OsokStatus.Ocid)) != "":
+		return m.reconcileTrackedBucket(ctx, resource)
+	default:
+		return m.createBucketFromSpec(ctx, resource)
+	}
+}
+
+func (m *ObjectStorageBucketServiceManager) bindBucketByID(ctx context.Context, resource *ociv1beta1.ObjectStorageBucket) (bucketIdentity, error) {
+	target, err := parseBucketIdentity(string(resource.Spec.BucketId), "spec.id")
+	if err != nil {
+		m.Log.ErrorLog(err, "Invalid spec.id for ObjectStorageBucket")
+		resource.Status.OsokStatus = util.UpdateOSOKStatusCondition(resource.Status.OsokStatus,
+			ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), m.Log)
+		return bucketIdentity{}, err
+	}
+	if err := m.getBucket(ctx, target.namespace, target.bucketName); err != nil {
+		m.Log.ErrorLog(err, "Error getting existing ObjectStorageBucket")
+		return bucketIdentity{}, err
 	}
 
-	_, err = m.addToSecret(ctx, resource.Namespace, resource.Name, ns, bucketName)
+	compositeID := target.namespace + "/" + target.bucketName
+	resource.Status.OsokStatus.Ocid = ociv1beta1.OCID(compositeID)
+	resource.Status.OsokStatus = util.UpdateOSOKStatusCondition(resource.Status.OsokStatus,
+		ociv1beta1.Active, v1.ConditionTrue, "", "ObjectStorageBucket Bound", m.Log)
+	m.Log.InfoLog(fmt.Sprintf("ObjectStorageBucket %s bound", compositeID))
+	return target, nil
+}
+
+func (m *ObjectStorageBucketServiceManager) reconcileTrackedBucket(ctx context.Context, resource *ociv1beta1.ObjectStorageBucket) (bucketIdentity, error) {
+	target, err := parseBucketIdentity(string(resource.Status.OsokStatus.Ocid), "status.ocid")
+	if err != nil {
+		m.Log.ErrorLog(err, "Malformed status.ocid")
+		return bucketIdentity{}, err
+	}
+	if err := m.getBucket(ctx, target.namespace, target.bucketName); err != nil {
+		m.Log.ErrorLog(err, "Error verifying existing ObjectStorageBucket")
+		return bucketIdentity{}, err
+	}
+	if err := m.updateBucket(ctx, target.namespace, target.bucketName, resource); err != nil {
+		m.Log.ErrorLog(err, "Error updating ObjectStorageBucket")
+		return bucketIdentity{}, err
+	}
+
+	resource.Status.OsokStatus = util.UpdateOSOKStatusCondition(resource.Status.OsokStatus,
+		ociv1beta1.Active, v1.ConditionTrue, "", "ObjectStorageBucket Active", m.Log)
+	m.Log.InfoLog(fmt.Sprintf("ObjectStorageBucket %s/%s is active", target.namespace, target.bucketName))
+	return target, nil
+}
+
+func (m *ObjectStorageBucketServiceManager) createBucketFromSpec(ctx context.Context, resource *ociv1beta1.ObjectStorageBucket) (bucketIdentity, error) {
+	namespace, err := m.resolveNamespace(ctx, resource)
+	if err != nil {
+		m.Log.ErrorLog(err, "Error resolving Object Storage namespace")
+		resource.Status.OsokStatus = util.UpdateOSOKStatusCondition(resource.Status.OsokStatus,
+			ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), m.Log)
+		return bucketIdentity{}, err
+	}
+
+	if err := m.createBucket(ctx, namespace, resource); err != nil {
+		m.Log.ErrorLog(err, "Create ObjectStorageBucket failed")
+		resource.Status.OsokStatus = util.UpdateOSOKStatusCondition(resource.Status.OsokStatus,
+			ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), m.Log)
+		return bucketIdentity{}, err
+	}
+
+	target := bucketIdentity{namespace: namespace, bucketName: resource.Spec.Name}
+	compositeID := target.namespace + "/" + target.bucketName
+	resource.Status.OsokStatus.Ocid = ociv1beta1.OCID(compositeID)
+	resource.Status.OsokStatus = util.UpdateOSOKStatusCondition(resource.Status.OsokStatus,
+		ociv1beta1.Active, v1.ConditionTrue, "", "ObjectStorageBucket Created", m.Log)
+	m.Log.InfoLog(fmt.Sprintf("ObjectStorageBucket %s created", compositeID))
+	return target, nil
+}
+
+func (m *ObjectStorageBucketServiceManager) ensureBucketSecret(ctx context.Context, resource *ociv1beta1.ObjectStorageBucket, target bucketIdentity) (servicemanager.OSOKResponse, error) {
+	_, err := m.addToSecret(ctx, resource.Namespace, resource.Name, target.namespace, target.bucketName)
 	if err != nil {
 		if apierrors.IsAlreadyExists(err) {
 			return servicemanager.OSOKResponse{IsSuccessful: true}, nil
@@ -158,6 +166,14 @@ func (m *ObjectStorageBucketServiceManager) CreateOrUpdate(ctx context.Context, 
 	}
 
 	return servicemanager.OSOKResponse{IsSuccessful: true}, nil
+}
+
+func parseBucketIdentity(value, fieldName string) (bucketIdentity, error) {
+	parts := strings.SplitN(value, "/", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return bucketIdentity{}, fmt.Errorf("%s must be in format 'namespace/bucketName', got: %s", fieldName, value)
+	}
+	return bucketIdentity{namespace: parts[0], bucketName: parts[1]}, nil
 }
 
 // Delete handles deletion of the ObjectStorageBucket (called by the finalizer).

@@ -8,8 +8,6 @@ package queue
 import (
 	"context"
 	"fmt"
-	"strings"
-	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	ociqueue "github.com/oracle/oci-go-sdk/v65/queue"
@@ -17,13 +15,8 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/credhelper"
 	"github.com/oracle/oci-service-operator/pkg/loggerutil"
 	"github.com/oracle/oci-service-operator/pkg/servicemanager"
-	v1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
-
-	"github.com/oracle/oci-service-operator/pkg/util"
 )
 
 // Compile-time check that OciQueueServiceManager implements OSOKServiceManager.
@@ -65,102 +58,15 @@ func (c *OciQueueServiceManager) CreateOrUpdate(ctx context.Context, obj runtime
 		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
-	var queueInstance *ociqueue.Queue
-
-	if strings.TrimSpace(string(q.Spec.QueueId)) == "" {
-		// No explicit ID — look up by display name or create.
-		queueOcid, err := c.GetQueueOcid(ctx, *q)
-		if err != nil {
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		if queueOcid == nil {
-			// Queue does not exist yet — issue an async create and return Provisioning.
-			// The controller will re-reconcile; on the next pass GetQueueOcid will find
-			// the queue in CREATING state and we will reach the branch below.
-			_, err := c.CreateQueue(ctx, *q)
-			if err != nil {
-				q.Status.OsokStatus = util.UpdateOSOKStatusCondition(q.Status.OsokStatus,
-					ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), c.Log)
-				c.Log.ErrorLog(err, "Create OciQueue failed")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-			c.Log.InfoLog(fmt.Sprintf("OciQueue %s creation submitted, waiting for provisioning", q.Spec.DisplayName))
-			q.Status.OsokStatus = util.UpdateOSOKStatusCondition(q.Status.OsokStatus,
-				ociv1beta1.Provisioning, v1.ConditionTrue, "", "OciQueue Provisioning", c.Log)
-			return servicemanager.OSOKResponse{IsSuccessful: false, ShouldRequeue: true}, nil
-		}
-
-		// Queue exists (CREATING or ACTIVE) — fetch full details.
-		queueInstance, err = c.GetQueue(ctx, *queueOcid)
-		if err != nil {
-			c.Log.ErrorLog(err, "Error while getting OciQueue by OCID")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		if queueInstance.LifecycleState == ociqueue.QueueLifecycleStateCreating {
-			// Still provisioning — update status and re-reconcile.
-			c.Log.InfoLog(fmt.Sprintf("OciQueue %s is still CREATING", safeString(queueInstance.DisplayName)))
-			q.Status.OsokStatus = util.UpdateOSOKStatusCondition(q.Status.OsokStatus,
-				ociv1beta1.Provisioning, v1.ConditionTrue, "", "OciQueue Provisioning", c.Log)
-			q.Status.OsokStatus.Ocid = ociv1beta1.OCID(*queueInstance.Id)
-			return servicemanager.OSOKResponse{IsSuccessful: false, ShouldRequeue: true}, nil
-		}
-
-		q.Status.OsokStatus.Ocid = ociv1beta1.OCID(*queueInstance.Id)
-		c.Log.InfoLog(fmt.Sprintf("OciQueue %s is %s", safeString(queueInstance.DisplayName), queueInstance.LifecycleState))
-
-	} else {
-		// Bind to an existing queue by ID.
-		queueInstance, err = c.GetQueue(ctx, q.Spec.QueueId)
-		if err != nil {
-			c.Log.ErrorLog(err, "Error while getting existing OciQueue")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		q.Status.OsokStatus.Ocid = q.Spec.QueueId
-		if err = c.UpdateQueue(ctx, q); err != nil {
-			c.Log.ErrorLog(err, "Error while updating OciQueue")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		c.Log.InfoLog(fmt.Sprintf("OciQueue %s is bound/updated", safeString(queueInstance.DisplayName)))
+	queueInstance, response, err := c.resolveQueueForReconcile(ctx, q)
+	if err != nil {
+		return servicemanager.OSOKResponse{IsSuccessful: false}, err
+	}
+	if response != nil {
+		return *response, nil
 	}
 
-	q.Status.OsokStatus.Ocid = ociv1beta1.OCID(*queueInstance.Id)
-	if q.Status.OsokStatus.CreatedAt == nil {
-		now := metav1.NewTime(time.Now())
-		q.Status.OsokStatus.CreatedAt = &now
-	}
-
-	switch queueInstance.LifecycleState {
-	case ociqueue.QueueLifecycleStateFailed, ociqueue.QueueLifecycleStateDeleted:
-		q.Status.OsokStatus = util.UpdateOSOKStatusCondition(q.Status.OsokStatus,
-			ociv1beta1.Failed, v1.ConditionFalse, "",
-			fmt.Sprintf("OciQueue %s is %s", safeString(queueInstance.DisplayName), queueInstance.LifecycleState), c.Log)
-		c.Log.InfoLog(fmt.Sprintf("OciQueue %s is %s", safeString(queueInstance.DisplayName), queueInstance.LifecycleState))
-		return servicemanager.OSOKResponse{IsSuccessful: false}, nil
-	case ociqueue.QueueLifecycleStateActive:
-		q.Status.OsokStatus = util.UpdateOSOKStatusCondition(q.Status.OsokStatus,
-			ociv1beta1.Active, v1.ConditionTrue, "",
-			fmt.Sprintf("OciQueue %s is %s", safeString(queueInstance.DisplayName), queueInstance.LifecycleState), c.Log)
-		_, err = c.addToSecret(ctx, q.Namespace, q.Name, *queueInstance)
-		if err != nil {
-			if apierrors.IsAlreadyExists(err) {
-				return servicemanager.OSOKResponse{IsSuccessful: true}, nil
-			}
-			c.Log.InfoLog("Secret creation failed")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		return servicemanager.OSOKResponse{IsSuccessful: true}, nil
-	default:
-		q.Status.OsokStatus = util.UpdateOSOKStatusCondition(q.Status.OsokStatus,
-			ociv1beta1.Provisioning, v1.ConditionTrue, "",
-			fmt.Sprintf("OciQueue %s is %s", safeString(queueInstance.DisplayName), queueInstance.LifecycleState), c.Log)
-		c.Log.InfoLog(fmt.Sprintf("OciQueue %s is %s, requeueing", safeString(queueInstance.DisplayName), queueInstance.LifecycleState))
-		return servicemanager.OSOKResponse{IsSuccessful: false, ShouldRequeue: true}, nil
-	}
+	return c.finalizeQueueReconcile(ctx, q, queueInstance)
 }
 
 // Delete handles deletion of the Queue (called by the finalizer).

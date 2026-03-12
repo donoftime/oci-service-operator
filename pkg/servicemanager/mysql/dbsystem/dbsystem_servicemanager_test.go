@@ -722,8 +722,8 @@ func TestCreateOrUpdate_BindExisting_DescriptionAndConfigIdChange(t *testing.T) 
 	resp, err := mgr.CreateOrUpdate(context.Background(), dbSystem, ctrl.Request{})
 	assert.NoError(t, err)
 	assert.True(t, resp.IsSuccessful)
-	assert.Equal(t, common.String("new description"), capturedUpdate.UpdateDbSystemDetails.Description)
-	assert.Equal(t, common.String("ocid1.mysqlconfiguration.oc1..new"), capturedUpdate.UpdateDbSystemDetails.ConfigurationId)
+	assert.Equal(t, common.String("new description"), capturedUpdate.Description)
+	assert.Equal(t, common.String("ocid1.mysqlconfiguration.oc1..new"), capturedUpdate.ConfigurationId)
 }
 
 // ---------------------------------------------------------------------------

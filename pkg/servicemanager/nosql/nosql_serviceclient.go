@@ -8,7 +8,6 @@ package nosql
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	"github.com/oracle/oci-go-sdk/v65/nosql"
@@ -182,18 +181,4 @@ func (c *NoSQLDatabaseServiceManager) DeleteTable(ctx context.Context, tableId o
 
 	_, err = client.DeleteTable(ctx, req)
 	return err
-}
-
-// getRetryPolicy returns a retry policy that waits while a table is in CREATING state.
-func (c *NoSQLDatabaseServiceManager) getRetryPolicy(attempts uint) common.RetryPolicy {
-	shouldRetry := func(response common.OCIOperationResponse) bool {
-		if resp, ok := response.Response.(nosql.GetTableResponse); ok {
-			return resp.LifecycleState == nosql.TableLifecycleStateCreating
-		}
-		return true
-	}
-	nextDuration := func(response common.OCIOperationResponse) time.Duration {
-		return time.Duration(1) * time.Minute
-	}
-	return common.NewRetryPolicy(attempts, shouldRetry, nextDuration)
 }

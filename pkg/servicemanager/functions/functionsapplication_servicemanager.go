@@ -15,12 +15,8 @@ import (
 	ocifunctions "github.com/oracle/oci-go-sdk/v65/functions"
 	ociv1beta1 "github.com/oracle/oci-service-operator/api/v1beta1"
 	"github.com/oracle/oci-service-operator/pkg/credhelper"
-	"github.com/oracle/oci-service-operator/pkg/errorutil"
 	"github.com/oracle/oci-service-operator/pkg/loggerutil"
 	"github.com/oracle/oci-service-operator/pkg/servicemanager"
-	"github.com/oracle/oci-service-operator/pkg/util"
-	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -56,95 +52,17 @@ func (m *FunctionsApplicationServiceManager) CreateOrUpdate(ctx context.Context,
 		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
-	var appInstance *ocifunctions.Application
+	appInstance, err := m.resolveApplicationInstance(ctx, app)
+	if err != nil {
+		return servicemanager.OSOKResponse{IsSuccessful: false}, err
+	}
 
-	if strings.TrimSpace(string(app.Spec.FunctionsApplicationId)) == "" {
-		// No ID provided — check by display name or create
-		appOcid, err := m.GetApplicationOcid(ctx, *app)
-		if err != nil {
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		if appOcid == nil {
-			// Create a new application
-			resp, err := m.CreateApplication(ctx, *app)
-			if err != nil {
-				app.Status.OsokStatus = util.UpdateOSOKStatusCondition(app.Status.OsokStatus,
-					ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), m.Log)
-				if _, ok := err.(errorutil.BadRequestOciError); !ok {
-					m.Log.ErrorLog(err, "Create FunctionsApplication failed")
-					return servicemanager.OSOKResponse{IsSuccessful: false}, err
-				}
-				app.Status.OsokStatus.Message = err.(common.ServiceError).GetCode()
-				m.Log.ErrorLog(err, "Create FunctionsApplication bad request")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-
-			m.Log.InfoLog(fmt.Sprintf("FunctionsApplication %s is Provisioning", app.Spec.DisplayName))
-			app.Status.OsokStatus = util.UpdateOSOKStatusCondition(app.Status.OsokStatus,
-				ociv1beta1.Provisioning, v1.ConditionTrue, "", "FunctionsApplication Provisioning", m.Log)
-			app.Status.OsokStatus.Ocid = ociv1beta1.OCID(*resp.Id)
-
-			retryPolicy := m.getRetryPolicy(30)
-			appInstance, err = m.GetApplication(ctx, ociv1beta1.OCID(*resp.Id), &retryPolicy)
-			if err != nil {
-				m.Log.ErrorLog(err, "Error while getting FunctionsApplication after create")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		} else {
-			m.Log.InfoLog(fmt.Sprintf("Getting existing FunctionsApplication %s", *appOcid))
-			appInstance, err = m.GetApplication(ctx, *appOcid, nil)
-			if err != nil {
-				m.Log.ErrorLog(err, "Error while getting FunctionsApplication by OCID")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		}
-
+	if appInstance.Id != nil {
 		app.Status.OsokStatus.Ocid = ociv1beta1.OCID(*appInstance.Id)
-		m.Log.InfoLog(fmt.Sprintf("FunctionsApplication %s is %s", *appInstance.DisplayName, appInstance.LifecycleState))
-
-	} else {
-		// Bind to an existing application by ID
-		appInstance, err = m.GetApplication(ctx, app.Spec.FunctionsApplicationId, nil)
-		if err != nil {
-			m.Log.ErrorLog(err, "Error while getting existing FunctionsApplication")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		app.Status.OsokStatus.Ocid = app.Spec.FunctionsApplicationId
-		if err = m.UpdateApplication(ctx, app); err != nil {
-			m.Log.ErrorLog(err, "Error while updating FunctionsApplication")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		m.Log.InfoLog(fmt.Sprintf("FunctionsApplication %s is bound/updated", *appInstance.DisplayName))
 	}
+	servicemanager.SetCreatedAtIfUnset(&app.Status.OsokStatus)
 
-	app.Status.OsokStatus.Ocid = ociv1beta1.OCID(*appInstance.Id)
-	if app.Status.OsokStatus.CreatedAt == nil {
-		now := metav1.NewTime(time.Now())
-		app.Status.OsokStatus.CreatedAt = &now
-	}
-
-	switch appInstance.LifecycleState {
-	case ocifunctions.ApplicationLifecycleStateFailed, ocifunctions.ApplicationLifecycleStateDeleted:
-		app.Status.OsokStatus = util.UpdateOSOKStatusCondition(app.Status.OsokStatus,
-			ociv1beta1.Failed, v1.ConditionFalse, "",
-			fmt.Sprintf("FunctionsApplication %s is %s", *appInstance.DisplayName, appInstance.LifecycleState), m.Log)
-		m.Log.InfoLog(fmt.Sprintf("FunctionsApplication %s is %s", *appInstance.DisplayName, appInstance.LifecycleState))
-		return servicemanager.OSOKResponse{IsSuccessful: false}, nil
-	case ocifunctions.ApplicationLifecycleStateActive:
-		app.Status.OsokStatus = util.UpdateOSOKStatusCondition(app.Status.OsokStatus,
-			ociv1beta1.Active, v1.ConditionTrue, "",
-			fmt.Sprintf("FunctionsApplication %s is %s", *appInstance.DisplayName, appInstance.LifecycleState), m.Log)
-		return servicemanager.OSOKResponse{IsSuccessful: true}, nil
-	default:
-		app.Status.OsokStatus = util.UpdateOSOKStatusCondition(app.Status.OsokStatus,
-			ociv1beta1.Provisioning, v1.ConditionTrue, "",
-			fmt.Sprintf("FunctionsApplication %s is %s", *appInstance.DisplayName, appInstance.LifecycleState), m.Log)
-		m.Log.InfoLog(fmt.Sprintf("FunctionsApplication %s is %s, requeueing", *appInstance.DisplayName, appInstance.LifecycleState))
-		return servicemanager.OSOKResponse{IsSuccessful: false, ShouldRequeue: true}, nil
-	}
+	return reconcileFunctionsApplicationLifecycle(&app.Status.OsokStatus, appInstance, m.Log), nil
 }
 
 // Delete handles deletion of the FunctionsApplication (called by the finalizer).
@@ -213,4 +131,72 @@ func (m *FunctionsApplicationServiceManager) getRetryPolicy(attempts uint) commo
 		return time.Duration(1) * time.Minute
 	}
 	return common.NewRetryPolicy(attempts, shouldRetry, nextDuration)
+}
+
+func (m *FunctionsApplicationServiceManager) resolveApplicationInstance(ctx context.Context,
+	app *ociv1beta1.FunctionsApplication) (*ocifunctions.Application, error) {
+	if strings.TrimSpace(string(app.Spec.FunctionsApplicationId)) != "" {
+		return m.bindApplication(ctx, app)
+	}
+	return m.lookupOrCreateApplication(ctx, app)
+}
+
+func (m *FunctionsApplicationServiceManager) lookupOrCreateApplication(ctx context.Context,
+	app *ociv1beta1.FunctionsApplication) (*ocifunctions.Application, error) {
+	appOcid, err := m.GetApplicationOcid(ctx, *app)
+	if err != nil {
+		return nil, err
+	}
+	if appOcid == nil {
+		return m.createApplicationInstance(ctx, app)
+	}
+	return m.loadResolvedApplication(ctx, app, *appOcid)
+}
+
+func (m *FunctionsApplicationServiceManager) bindApplication(ctx context.Context,
+	app *ociv1beta1.FunctionsApplication) (*ocifunctions.Application, error) {
+	appInstance, err := m.GetApplication(ctx, app.Spec.FunctionsApplicationId, nil)
+	if err != nil {
+		m.Log.ErrorLog(err, "Error while getting existing FunctionsApplication")
+		return nil, err
+	}
+	app.Status.OsokStatus.Ocid = app.Spec.FunctionsApplicationId
+	if err := m.UpdateApplication(ctx, app); err != nil {
+		m.Log.ErrorLog(err, "Error while updating FunctionsApplication")
+		return nil, err
+	}
+	m.Log.InfoLog(fmt.Sprintf("FunctionsApplication %s is bound/updated", safeFunctionsString(appInstance.DisplayName)))
+	return appInstance, nil
+}
+
+func (m *FunctionsApplicationServiceManager) createApplicationInstance(ctx context.Context,
+	app *ociv1beta1.FunctionsApplication) (*ocifunctions.Application, error) {
+	resp, err := m.CreateApplication(ctx, *app)
+	if err != nil {
+		applyFunctionsCreateFailure(&app.Status.OsokStatus, err, m.Log, "FunctionsApplication")
+		return nil, err
+	}
+
+	m.Log.InfoLog(fmt.Sprintf("FunctionsApplication %s is Provisioning", app.Spec.DisplayName))
+	setFunctionsProvisioning(&app.Status.OsokStatus, "FunctionsApplication", app.Spec.DisplayName, ociv1beta1.OCID(*resp.Id), m.Log)
+	retryPolicy := m.getRetryPolicy(30)
+	appInstance, err := m.GetApplication(ctx, ociv1beta1.OCID(*resp.Id), &retryPolicy)
+	if err != nil {
+		m.Log.ErrorLog(err, "Error while getting FunctionsApplication after create")
+		return nil, err
+	}
+	return appInstance, nil
+}
+
+func (m *FunctionsApplicationServiceManager) loadResolvedApplication(ctx context.Context,
+	app *ociv1beta1.FunctionsApplication, appOcid ociv1beta1.OCID) (*ocifunctions.Application, error) {
+	m.Log.InfoLog(fmt.Sprintf("Getting existing FunctionsApplication %s", appOcid))
+	appInstance, err := m.GetApplication(ctx, appOcid, nil)
+	if err != nil {
+		m.Log.ErrorLog(err, "Error while getting FunctionsApplication by OCID")
+		return nil, err
+	}
+	app.Status.OsokStatus.Ocid = ociv1beta1.OCID(*appInstance.Id)
+	m.Log.InfoLog(fmt.Sprintf("FunctionsApplication %s is %s", safeFunctionsString(appInstance.DisplayName), appInstance.LifecycleState))
+	return appInstance, nil
 }

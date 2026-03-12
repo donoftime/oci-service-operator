@@ -17,6 +17,7 @@ import (
 // they're all SHA-related functions and objects - on the assumption
 // that the Go compiler either contains all relevant symbols or none
 var dummyTLSConfig tls.Config
+var _ = &dummyTLSConfig
 
 // boringCryptoSymbolToken matches the pattern BoringCrypto symbols
 // should match as described in
@@ -24,6 +25,10 @@ var dummyTLSConfig tls.Config
 // and
 // https://github.com/golang/go/blob/d003f0850a7d22a2047c1cd6830fca07944f18d1/src/crypto/internal/boring/goboringcrypto.h#L5-L9
 const BoringCryptoSymbolToken = "_Cfunc__goboringcrypto_"
+
+func isSupportedArch() bool {
+	return runtime.GOARCH == "amd64" || runtime.GOARCH == "arm64"
+}
 
 // countBoringCryptoSymbols counts the BoringCrypto symbols in the
 // provided ELF file; equivalent to:
@@ -60,6 +65,7 @@ type WriteFIPSMessage func(format string, v ...interface{})
 // compliance attestation.
 func Compliant() {
 	logger := log.New(os.Stdout, "go_ensurefips: ", log.Ldate|log.Ltime|log.Llongfile)
+	_ = &dummyTLSConfig
 
 	// Use /proc/self/exe in case somebody mucked around with os.Args.
 	// We do this instead of using dlopen(3) + dlinfo(3) so that we
@@ -91,7 +97,11 @@ func Compliant() {
 	if err != nil {
 		logger.Fatalf("could not open %q for FIPS compliance check: %+v", executable, err)
 	}
-	defer func() { _ = f.Close() }()
+	defer func() {
+		if closeErr := f.Close(); closeErr != nil {
+			logger.Printf("could not close %q after FIPS compliance check: %+v", executable, closeErr)
+		}
+	}()
 
 	err = CheckCompliance(executable, f, logger.Printf)
 	if err != nil {
@@ -113,10 +123,7 @@ func Compliant() {
 // returned.  On success, the write function is called to emit a
 // success message.
 func CheckCompliance(path string, reader io.ReaderAt, write WriteFIPSMessage) error {
-	switch runtime.GOARCH {
-	case "amd64":
-	case "arm64":
-	default:
+	if !isSupportedArch() {
 		return fmt.Errorf("unsupported architecture: %s", runtime.GOARCH)
 	}
 

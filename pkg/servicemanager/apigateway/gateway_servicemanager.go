@@ -9,19 +9,14 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/apigateway"
 	"github.com/oracle/oci-go-sdk/v65/common"
 	ociv1beta1 "github.com/oracle/oci-service-operator/api/v1beta1"
 	"github.com/oracle/oci-service-operator/pkg/credhelper"
-	"github.com/oracle/oci-service-operator/pkg/errorutil"
 	"github.com/oracle/oci-service-operator/pkg/loggerutil"
 	"github.com/oracle/oci-service-operator/pkg/servicemanager"
-	"github.com/oracle/oci-service-operator/pkg/util"
-	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -57,104 +52,27 @@ func (c *GatewayServiceManager) CreateOrUpdate(ctx context.Context, obj runtime.
 		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
-	var gwInstance *apigateway.Gateway
-
-	if strings.TrimSpace(string(gw.Spec.ApiGatewayId)) == "" {
-		// No ID provided — look up by display name or create
-		gwOcid, err := c.GetGatewayOcid(ctx, *gw)
-		if err != nil {
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		if gwOcid == nil {
-			// Create a new API Gateway
-			resp, err := c.CreateGateway(ctx, *gw)
-			if err != nil {
-				gw.Status.OsokStatus = util.UpdateOSOKStatusCondition(gw.Status.OsokStatus,
-					ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), c.Log)
-				if _, ok := err.(errorutil.BadRequestOciError); !ok {
-					c.Log.ErrorLog(err, "Create ApiGateway failed")
-					return servicemanager.OSOKResponse{IsSuccessful: false}, err
-				}
-				gw.Status.OsokStatus.Message = err.(common.ServiceError).GetCode()
-				c.Log.ErrorLog(err, "Create ApiGateway bad request")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-
-			c.Log.InfoLog(fmt.Sprintf("ApiGateway %s is Provisioning", gw.Spec.DisplayName))
-			gw.Status.OsokStatus = util.UpdateOSOKStatusCondition(gw.Status.OsokStatus,
-				ociv1beta1.Provisioning, v1.ConditionTrue, "", "ApiGateway Provisioning", c.Log)
-			gw.Status.OsokStatus.Ocid = ociv1beta1.OCID(*resp.Id)
-
-			retryPolicy := c.getGatewayRetryPolicy(30)
-			gwInstance, err = c.GetGateway(ctx, ociv1beta1.OCID(*resp.Id), &retryPolicy)
-			if err != nil {
-				c.Log.ErrorLog(err, "Error while getting ApiGateway after create")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		} else {
-			c.Log.InfoLog(fmt.Sprintf("Getting existing ApiGateway %s", *gwOcid))
-			gwInstance, err = c.GetGateway(ctx, *gwOcid, nil)
-			if err != nil {
-				c.Log.ErrorLog(err, "Error while getting ApiGateway by OCID")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-			// Set OCID before UpdateGateway so it can use it in the request.
-			gw.Status.OsokStatus.Ocid = *gwOcid
-			if err = c.UpdateGateway(ctx, gw); err != nil {
-				c.Log.ErrorLog(err, "Error while updating ApiGateway")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		}
-	} else {
-		// Bind to an existing gateway by ID
-		gwInstance, err = c.GetGateway(ctx, gw.Spec.ApiGatewayId, nil)
-		if err != nil {
-			c.Log.ErrorLog(err, "Error while getting existing ApiGateway")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-		// Set OCID before UpdateGateway so it can use it in the request.
-		gw.Status.OsokStatus.Ocid = gw.Spec.ApiGatewayId
-		if err = c.UpdateGateway(ctx, gw); err != nil {
-			c.Log.ErrorLog(err, "Error while updating ApiGateway")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
+	gwInstance, err := c.resolveGatewayInstance(ctx, gw)
+	if err != nil {
+		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
-	gw.Status.OsokStatus.Ocid = ociv1beta1.OCID(*gwInstance.Id)
-	if gw.Status.OsokStatus.CreatedAt == nil {
-		now := metav1.NewTime(time.Now())
-		gw.Status.OsokStatus.CreatedAt = &now
+	if gwInstance.Id != nil {
+		gw.Status.OsokStatus.Ocid = ociv1beta1.OCID(*gwInstance.Id)
+	}
+	servicemanager.SetCreatedAtIfUnset(&gw.Status.OsokStatus)
+
+	response := reconcileGatewayLifecycle(&gw.Status.OsokStatus, gwInstance, c.Log)
+	if !response.IsSuccessful {
+		return response, nil
 	}
 
-	switch gwInstance.LifecycleState {
-	case apigateway.GatewayLifecycleStateFailed, apigateway.GatewayLifecycleStateDeleted:
-		gw.Status.OsokStatus = util.UpdateOSOKStatusCondition(gw.Status.OsokStatus,
-			ociv1beta1.Failed, v1.ConditionFalse, "",
-			fmt.Sprintf("ApiGateway %s is %s", *gwInstance.DisplayName, gwInstance.LifecycleState), c.Log)
-		c.Log.InfoLog(fmt.Sprintf("ApiGateway %s is %s", *gwInstance.DisplayName, gwInstance.LifecycleState))
-		return servicemanager.OSOKResponse{IsSuccessful: false}, nil
-	case apigateway.GatewayLifecycleStateActive:
-		gw.Status.OsokStatus = util.UpdateOSOKStatusCondition(gw.Status.OsokStatus,
-			ociv1beta1.Active, v1.ConditionTrue, "",
-			fmt.Sprintf("ApiGateway %s is %s", *gwInstance.DisplayName, gwInstance.LifecycleState), c.Log)
-		c.Log.InfoLog(fmt.Sprintf("ApiGateway %s is Active", *gwInstance.DisplayName))
-
-		if _, err := c.addToSecret(ctx, gw.Namespace, gw.Name, *gwInstance); err != nil {
-			if !apierrors.IsAlreadyExists(err) {
-				c.Log.InfoLog("ApiGateway secret creation failed")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		}
-
-		return servicemanager.OSOKResponse{IsSuccessful: true}, nil
-	default:
-		gw.Status.OsokStatus = util.UpdateOSOKStatusCondition(gw.Status.OsokStatus,
-			ociv1beta1.Provisioning, v1.ConditionTrue, "",
-			fmt.Sprintf("ApiGateway %s is %s", *gwInstance.DisplayName, gwInstance.LifecycleState), c.Log)
-		c.Log.InfoLog(fmt.Sprintf("ApiGateway %s is %s, requeueing", *gwInstance.DisplayName, gwInstance.LifecycleState))
-		return servicemanager.OSOKResponse{IsSuccessful: false, ShouldRequeue: true}, nil
+	if _, err := c.addToSecret(ctx, gw.Namespace, gw.Name, *gwInstance); err != nil && !apierrors.IsAlreadyExists(err) {
+		c.Log.InfoLog("ApiGateway secret creation failed")
+		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
+
+	return response, nil
 }
 
 // Delete handles deletion of the API Gateway (called by the finalizer).
@@ -217,4 +135,72 @@ func isGatewayNotFound(err error) bool {
 	}
 	serviceErr, ok := common.IsServiceError(err)
 	return ok && serviceErr.GetHTTPStatusCode() == 404
+}
+
+func (c *GatewayServiceManager) resolveGatewayInstance(ctx context.Context,
+	gw *ociv1beta1.ApiGateway) (*apigateway.Gateway, error) {
+	if strings.TrimSpace(string(gw.Spec.ApiGatewayId)) != "" {
+		return c.bindGateway(ctx, gw)
+	}
+	return c.lookupOrCreateGateway(ctx, gw)
+}
+
+func (c *GatewayServiceManager) lookupOrCreateGateway(ctx context.Context,
+	gw *ociv1beta1.ApiGateway) (*apigateway.Gateway, error) {
+	gwOcid, err := c.GetGatewayOcid(ctx, *gw)
+	if err != nil {
+		return nil, err
+	}
+	if gwOcid == nil {
+		return c.createGatewayInstance(ctx, gw)
+	}
+	return c.updateResolvedGateway(ctx, gw, *gwOcid)
+}
+
+func (c *GatewayServiceManager) bindGateway(ctx context.Context, gw *ociv1beta1.ApiGateway) (*apigateway.Gateway, error) {
+	gwInstance, err := c.GetGateway(ctx, gw.Spec.ApiGatewayId, nil)
+	if err != nil {
+		c.Log.ErrorLog(err, "Error while getting existing ApiGateway")
+		return nil, err
+	}
+	gw.Status.OsokStatus.Ocid = gw.Spec.ApiGatewayId
+	if err := c.UpdateGateway(ctx, gw); err != nil {
+		c.Log.ErrorLog(err, "Error while updating ApiGateway")
+		return nil, err
+	}
+	return gwInstance, nil
+}
+
+func (c *GatewayServiceManager) createGatewayInstance(ctx context.Context, gw *ociv1beta1.ApiGateway) (*apigateway.Gateway, error) {
+	resp, err := c.CreateGateway(ctx, *gw)
+	if err != nil {
+		applyGatewayCreateFailure(&gw.Status.OsokStatus, err, c.Log, "ApiGateway")
+		return nil, err
+	}
+
+	c.Log.InfoLog(fmt.Sprintf("ApiGateway %s is Provisioning", gw.Spec.DisplayName))
+	setGatewayProvisioning(&gw.Status.OsokStatus, "ApiGateway", gw.Spec.DisplayName, ociv1beta1.OCID(*resp.Id), c.Log)
+	retryPolicy := c.getGatewayRetryPolicy(30)
+	gwInstance, err := c.GetGateway(ctx, ociv1beta1.OCID(*resp.Id), &retryPolicy)
+	if err != nil {
+		c.Log.ErrorLog(err, "Error while getting ApiGateway after create")
+		return nil, err
+	}
+	return gwInstance, nil
+}
+
+func (c *GatewayServiceManager) updateResolvedGateway(ctx context.Context,
+	gw *ociv1beta1.ApiGateway, gwOcid ociv1beta1.OCID) (*apigateway.Gateway, error) {
+	c.Log.InfoLog(fmt.Sprintf("Getting existing ApiGateway %s", gwOcid))
+	gwInstance, err := c.GetGateway(ctx, gwOcid, nil)
+	if err != nil {
+		c.Log.ErrorLog(err, "Error while getting ApiGateway by OCID")
+		return nil, err
+	}
+	gw.Status.OsokStatus.Ocid = gwOcid
+	if err := c.UpdateGateway(ctx, gw); err != nil {
+		c.Log.ErrorLog(err, "Error while updating ApiGateway")
+		return nil, err
+	}
+	return gwInstance, nil
 }

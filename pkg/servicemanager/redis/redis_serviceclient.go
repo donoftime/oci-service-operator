@@ -129,8 +129,6 @@ func (c *RedisClusterServiceManager) UpdateRedisCluster(ctx context.Context, clu
 	}
 
 	updateDetails := redis.UpdateRedisClusterDetails{}
-	updateNeeded := false
-
 	targetID, err := resolveClusterID(cluster.Status.OsokStatus.Ocid, cluster.Spec.RedisClusterId)
 	if err != nil {
 		return err
@@ -141,20 +139,9 @@ func (c *RedisClusterServiceManager) UpdateRedisCluster(ctx context.Context, clu
 		return err
 	}
 
-	if cluster.Spec.DisplayName != "" && *existing.DisplayName != cluster.Spec.DisplayName {
-		updateDetails.DisplayName = common.String(cluster.Spec.DisplayName)
-		updateNeeded = true
-	}
-
-	if cluster.Spec.NodeCount > 0 && *existing.NodeCount != cluster.Spec.NodeCount {
-		updateDetails.NodeCount = common.Int(cluster.Spec.NodeCount)
-		updateNeeded = true
-	}
-
-	if cluster.Spec.NodeMemoryInGBs > 0 && *existing.NodeMemoryInGBs != cluster.Spec.NodeMemoryInGBs {
-		updateDetails.NodeMemoryInGBs = common.Float32(cluster.Spec.NodeMemoryInGBs)
-		updateNeeded = true
-	}
+	updateNeeded := applyRedisDisplayNameUpdate(&updateDetails, cluster, existing)
+	updateNeeded = applyRedisNodeCountUpdate(&updateDetails, cluster, existing) || updateNeeded
+	updateNeeded = applyRedisNodeMemoryUpdate(&updateDetails, cluster, existing) || updateNeeded
 
 	if !updateNeeded {
 		return nil
@@ -167,6 +154,36 @@ func (c *RedisClusterServiceManager) UpdateRedisCluster(ctx context.Context, clu
 
 	_, err = client.UpdateRedisCluster(ctx, req)
 	return err
+}
+
+func applyRedisDisplayNameUpdate(updateDetails *redis.UpdateRedisClusterDetails,
+	cluster *ociv1beta1.RedisCluster, existing *redis.RedisCluster) bool {
+	if cluster.Spec.DisplayName == "" || *existing.DisplayName == cluster.Spec.DisplayName {
+		return false
+	}
+
+	updateDetails.DisplayName = common.String(cluster.Spec.DisplayName)
+	return true
+}
+
+func applyRedisNodeCountUpdate(updateDetails *redis.UpdateRedisClusterDetails,
+	cluster *ociv1beta1.RedisCluster, existing *redis.RedisCluster) bool {
+	if cluster.Spec.NodeCount <= 0 || *existing.NodeCount == cluster.Spec.NodeCount {
+		return false
+	}
+
+	updateDetails.NodeCount = common.Int(cluster.Spec.NodeCount)
+	return true
+}
+
+func applyRedisNodeMemoryUpdate(updateDetails *redis.UpdateRedisClusterDetails,
+	cluster *ociv1beta1.RedisCluster, existing *redis.RedisCluster) bool {
+	if cluster.Spec.NodeMemoryInGBs <= 0 || *existing.NodeMemoryInGBs == cluster.Spec.NodeMemoryInGBs {
+		return false
+	}
+
+	updateDetails.NodeMemoryInGBs = common.Float32(cluster.Spec.NodeMemoryInGBs)
+	return true
 }
 
 // DeleteRedisCluster deletes the Redis cluster for the given OCID.

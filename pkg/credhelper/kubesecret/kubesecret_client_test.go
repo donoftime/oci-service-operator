@@ -218,7 +218,8 @@ func TestGetSecret_Success(t *testing.T) {
 	data := map[string][]byte{"foo": []byte("bar")}
 	labels := map[string]string{}
 
-	_, _ = c.CreateSecret(ctx, "mysecret", "default", labels, data)
+	_, err := c.CreateSecret(ctx, "mysecret", "default", labels, data)
+	assert.NoError(t, err)
 
 	got, err := c.GetSecret(ctx, "mysecret", "default")
 	assert.NoError(t, err)
@@ -242,7 +243,8 @@ func TestUpdateSecret_Success(t *testing.T) {
 	ctx := context.Background()
 
 	// Create first so the object exists.
-	_, _ = c.CreateSecret(ctx, "mysecret", "default", nil, map[string][]byte{"a": []byte("1")})
+	_, err := c.CreateSecret(ctx, "mysecret", "default", nil, map[string][]byte{"a": []byte("1")})
+	assert.NoError(t, err)
 
 	updated := map[string][]byte{"a": []byte("2"), "b": []byte("3")}
 	ok, err := c.UpdateSecret(ctx, "mysecret", "default", nil, updated)
@@ -273,7 +275,8 @@ func TestDeleteSecret_Success(t *testing.T) {
 	c := newTestClient(newMockClient())
 	ctx := context.Background()
 
-	_, _ = c.CreateSecret(ctx, "mysecret", "default", nil, map[string][]byte{"x": []byte("y")})
+	_, err := c.CreateSecret(ctx, "mysecret", "default", nil, map[string][]byte{"x": []byte("y")})
+	assert.NoError(t, err)
 
 	ok, err := c.DeleteSecret(ctx, "mysecret", "default")
 	assert.NoError(t, err)

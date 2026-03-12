@@ -8,11 +8,10 @@ package metrics
 import (
 	"context"
 	"fmt"
+
 	"github.com/oracle/oci-service-operator/pkg/loggerutil"
 	"github.com/prometheus/client_golang/prometheus"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
-	"strconv"
-	"time"
 )
 
 const defaultMetricsNamespace = "oci"
@@ -141,10 +140,6 @@ func (m *Metrics) AddSecretCountMetrics(ctx context.Context, component string, m
 	ctx = AddFixedLogMapEntries(ctx, resourceName, namespace)
 	m.Logger.InfoLogWithFixedMessage(ctx, fmt.Sprintf("Recording the secret count metrics for %s", resourceName))
 	secretCounter.WithLabelValues(component, resourceName, namespace, "Success", msg).Inc()
-}
-
-func sendPresentEpcoh() string {
-	return strconv.FormatInt(time.Now().UnixNano()/1000000, 10)
 }
 
 func AddFixedLogMapEntries(ctx context.Context, name string, namespace string) context.Context {

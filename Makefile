@@ -85,6 +85,10 @@ fmt: ## Run go fmt against code.
 vet: ## Run go vet against code.
 	go vet ./...
 
+lint: golangci-lint ## Run lint and complexity checks.
+	@mkdir -p "$(LINT_GOCACHE)" "$(LINT_CACHE)"
+	GOCACHE="$(LINT_GOCACHE)" GOLANGCI_LINT_CACHE="$(LINT_CACHE)" $(GOLANGCI_LINT) run ./...
+
 ENVTEST_K8S_VERSION ?= 1.28.0
 
 test: manifests generate fmt vet ## Run tests.
@@ -139,6 +143,14 @@ controller-gen: ## Download controller-gen locally if necessary.
 KUSTOMIZE = $(shell pwd)/bin/kustomize
 kustomize: ## Download kustomize locally if necessary.
 	$(call go-get-tool,$(KUSTOMIZE),sigs.k8s.io/kustomize/kustomize/v5@v5.4.2)
+
+GOLANGCI_LINT_VERSION ?= v2.6.2
+GOLANGCI_LINT = $(shell pwd)/bin/golangci-lint
+GOLANGCI_LINT_PKG = github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+LINT_GOCACHE ?= /tmp/osok-gocache
+LINT_CACHE ?= /tmp/osok-golangci-lint-cache
+golangci-lint: ## Download golangci-lint locally if necessary.
+	$(call go-get-tool,$(GOLANGCI_LINT),$(GOLANGCI_LINT_PKG))
 
 # go-get-tool will 'go install' any package $2 and install it to $1.
 PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))

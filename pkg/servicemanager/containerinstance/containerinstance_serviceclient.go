@@ -47,88 +47,137 @@ func (c *ContainerInstanceServiceManager) CreateContainerInstance(ctx context.Co
 
 	c.Log.DebugLog("Creating ContainerInstance", "name", ci.Spec.DisplayName)
 
-	containers := make([]containerinstances.CreateContainerDetails, 0, len(ci.Spec.Containers))
-	for _, ctr := range ci.Spec.Containers {
-		cd := containerinstances.CreateContainerDetails{
-			ImageUrl: common.String(ctr.ImageUrl),
-		}
-		if ctr.DisplayName != nil {
-			cd.DisplayName = ctr.DisplayName
-		}
-		if len(ctr.Command) > 0 {
-			cd.Command = ctr.Command
-		}
-		if len(ctr.Arguments) > 0 {
-			cd.Arguments = ctr.Arguments
-		}
-		if ctr.WorkingDirectory != nil {
-			cd.WorkingDirectory = ctr.WorkingDirectory
-		}
-		if len(ctr.EnvironmentVariables) > 0 {
-			cd.EnvironmentVariables = ctr.EnvironmentVariables
-		}
-		if ctr.ResourceConfig != nil {
-			rc := &containerinstances.CreateContainerResourceConfigDetails{}
-			if ctr.ResourceConfig.VcpusLimit != nil {
-				rc.VcpusLimit = ctr.ResourceConfig.VcpusLimit
-			}
-			if ctr.ResourceConfig.MemoryLimitInGBs != nil {
-				rc.MemoryLimitInGBs = ctr.ResourceConfig.MemoryLimitInGBs
-			}
-			cd.ResourceConfig = rc
-		}
-		if len(ctr.VolumeMounts) > 0 {
-			mounts := make([]containerinstances.CreateVolumeMountDetails, 0, len(ctr.VolumeMounts))
-			for _, vm := range ctr.VolumeMounts {
-				vmd := containerinstances.CreateVolumeMountDetails{
-					MountPath:  common.String(vm.MountPath),
-					VolumeName: common.String(vm.VolumeName),
-				}
-				if vm.SubPath != nil {
-					vmd.SubPath = vm.SubPath
-				}
-				if vm.IsReadOnly != nil {
-					vmd.IsReadOnly = vm.IsReadOnly
-				}
-				mounts = append(mounts, vmd)
-			}
-			cd.VolumeMounts = mounts
-		}
-		containers = append(containers, cd)
-	}
+	return client.CreateContainerInstance(ctx, buildCreateContainerInstanceRequest(ci))
+}
 
-	vnics := make([]containerinstances.CreateContainerVnicDetails, 0, len(ci.Spec.Vnics))
-	for _, vnic := range ci.Spec.Vnics {
-		vd := containerinstances.CreateContainerVnicDetails{
-			SubnetId: common.String(string(vnic.SubnetId)),
-		}
-		if vnic.DisplayName != nil {
-			vd.DisplayName = vnic.DisplayName
-		}
-		if len(vnic.NsgIds) > 0 {
-			nsgIds := make([]string, len(vnic.NsgIds))
-			for i, id := range vnic.NsgIds {
-				nsgIds[i] = string(id)
-			}
-			vd.NsgIds = nsgIds
-		}
-		vnics = append(vnics, vd)
+func buildCreateContainerInstanceRequest(ci ociv1beta1.ContainerInstance) containerinstances.CreateContainerInstanceRequest {
+	return containerinstances.CreateContainerInstanceRequest{
+		CreateContainerInstanceDetails: buildCreateContainerInstanceDetails(ci),
 	}
+}
 
-	shapeCfg := &containerinstances.CreateContainerInstanceShapeConfigDetails{
-		Ocpus:       common.Float32(ci.Spec.ShapeConfig.Ocpus),
-		MemoryInGBs: common.Float32(ci.Spec.ShapeConfig.MemoryInGBs),
-	}
-
+func buildCreateContainerInstanceDetails(ci ociv1beta1.ContainerInstance) containerinstances.CreateContainerInstanceDetails {
 	details := containerinstances.CreateContainerInstanceDetails{
 		CompartmentId:      common.String(string(ci.Spec.CompartmentId)),
 		AvailabilityDomain: common.String(ci.Spec.AvailabilityDomain),
 		Shape:              common.String(ci.Spec.Shape),
-		ShapeConfig:        shapeCfg,
-		Containers:         containers,
-		Vnics:              vnics,
+		ShapeConfig:        buildShapeConfig(ci.Spec.ShapeConfig),
+		Containers:         buildContainers(ci.Spec.Containers),
+		Vnics:              buildContainerVnics(ci.Spec.Vnics),
 	}
 
+	applyOptionalCreateDetails(&details, ci)
+	return details
+}
+
+func buildShapeConfig(shapeConfig ociv1beta1.ContainerInstanceShapeConfig) *containerinstances.CreateContainerInstanceShapeConfigDetails {
+	return &containerinstances.CreateContainerInstanceShapeConfigDetails{
+		Ocpus:       common.Float32(shapeConfig.Ocpus),
+		MemoryInGBs: common.Float32(shapeConfig.MemoryInGBs),
+	}
+}
+
+func buildContainers(containers []ociv1beta1.ContainerDetails) []containerinstances.CreateContainerDetails {
+	result := make([]containerinstances.CreateContainerDetails, 0, len(containers))
+	for _, ctr := range containers {
+		result = append(result, buildContainer(ctr))
+	}
+	return result
+}
+
+func buildContainer(ctr ociv1beta1.ContainerDetails) containerinstances.CreateContainerDetails {
+	cd := containerinstances.CreateContainerDetails{
+		ImageUrl: common.String(ctr.ImageUrl),
+	}
+
+	if ctr.DisplayName != nil {
+		cd.DisplayName = ctr.DisplayName
+	}
+	if len(ctr.Command) > 0 {
+		cd.Command = ctr.Command
+	}
+	if len(ctr.Arguments) > 0 {
+		cd.Arguments = ctr.Arguments
+	}
+	if ctr.WorkingDirectory != nil {
+		cd.WorkingDirectory = ctr.WorkingDirectory
+	}
+	if len(ctr.EnvironmentVariables) > 0 {
+		cd.EnvironmentVariables = ctr.EnvironmentVariables
+	}
+	if ctr.ResourceConfig != nil {
+		cd.ResourceConfig = buildContainerResourceConfig(ctr.ResourceConfig)
+	}
+	if len(ctr.VolumeMounts) > 0 {
+		cd.VolumeMounts = buildVolumeMounts(ctr.VolumeMounts)
+	}
+
+	return cd
+}
+
+func buildContainerResourceConfig(resourceConfig *ociv1beta1.ContainerResourceConfig) *containerinstances.CreateContainerResourceConfigDetails {
+	rc := &containerinstances.CreateContainerResourceConfigDetails{}
+	if resourceConfig.VcpusLimit != nil {
+		rc.VcpusLimit = resourceConfig.VcpusLimit
+	}
+	if resourceConfig.MemoryLimitInGBs != nil {
+		rc.MemoryLimitInGBs = resourceConfig.MemoryLimitInGBs
+	}
+	return rc
+}
+
+func buildVolumeMounts(volumeMounts []ociv1beta1.ContainerVolumeMount) []containerinstances.CreateVolumeMountDetails {
+	result := make([]containerinstances.CreateVolumeMountDetails, 0, len(volumeMounts))
+	for _, vm := range volumeMounts {
+		result = append(result, buildVolumeMount(vm))
+	}
+	return result
+}
+
+func buildVolumeMount(volumeMount ociv1beta1.ContainerVolumeMount) containerinstances.CreateVolumeMountDetails {
+	vmd := containerinstances.CreateVolumeMountDetails{
+		MountPath:  common.String(volumeMount.MountPath),
+		VolumeName: common.String(volumeMount.VolumeName),
+	}
+	if volumeMount.SubPath != nil {
+		vmd.SubPath = volumeMount.SubPath
+	}
+	if volumeMount.IsReadOnly != nil {
+		vmd.IsReadOnly = volumeMount.IsReadOnly
+	}
+	return vmd
+}
+
+func buildContainerVnics(vnics []ociv1beta1.ContainerVnicDetails) []containerinstances.CreateContainerVnicDetails {
+	result := make([]containerinstances.CreateContainerVnicDetails, 0, len(vnics))
+	for _, vnic := range vnics {
+		result = append(result, buildContainerVnic(vnic))
+	}
+	return result
+}
+
+func buildContainerVnic(vnic ociv1beta1.ContainerVnicDetails) containerinstances.CreateContainerVnicDetails {
+	vd := containerinstances.CreateContainerVnicDetails{
+		SubnetId: common.String(string(vnic.SubnetId)),
+	}
+	if vnic.DisplayName != nil {
+		vd.DisplayName = vnic.DisplayName
+	}
+	if len(vnic.NsgIds) > 0 {
+		vd.NsgIds = convertOCIDsToStrings(vnic.NsgIds)
+	}
+	return vd
+}
+
+func convertOCIDsToStrings(ids []ociv1beta1.OCID) []string {
+	result := make([]string, len(ids))
+	for i, id := range ids {
+		result[i] = string(id)
+	}
+	return result
+}
+
+func applyOptionalCreateDetails(details *containerinstances.CreateContainerInstanceDetails, ci ociv1beta1.ContainerInstance) {
 	if ci.Spec.DisplayName != nil {
 		details.DisplayName = ci.Spec.DisplayName
 	}
@@ -148,22 +197,20 @@ func (c *ContainerInstanceServiceManager) CreateContainerInstance(ctx context.Co
 		details.DefinedTags = *util.ConvertToOciDefinedTags(&ci.Spec.DefinedTags)
 	}
 	if len(ci.Spec.ImagePullSecrets) > 0 {
-		secrets := make([]containerinstances.CreateImagePullSecretDetails, 0, len(ci.Spec.ImagePullSecrets))
-		for _, s := range ci.Spec.ImagePullSecrets {
-			secrets = append(secrets, containerinstances.CreateBasicImagePullSecretDetails{
-				RegistryEndpoint: common.String(s.RegistryEndpoint),
-				Username:         common.String(s.Username),
-				Password:         common.String(s.Password),
-			})
-		}
-		details.ImagePullSecrets = secrets
+		details.ImagePullSecrets = buildImagePullSecrets(ci.Spec.ImagePullSecrets)
 	}
+}
 
-	req := containerinstances.CreateContainerInstanceRequest{
-		CreateContainerInstanceDetails: details,
+func buildImagePullSecrets(secrets []ociv1beta1.ContainerImagePullSecret) []containerinstances.CreateImagePullSecretDetails {
+	result := make([]containerinstances.CreateImagePullSecretDetails, 0, len(secrets))
+	for _, secret := range secrets {
+		result = append(result, containerinstances.CreateBasicImagePullSecretDetails{
+			RegistryEndpoint: common.String(secret.RegistryEndpoint),
+			Username:         common.String(secret.Username),
+			Password:         common.String(secret.Password),
+		})
 	}
-
-	return client.CreateContainerInstance(ctx, req)
+	return result
 }
 
 // GetContainerInstance retrieves a container instance by OCID.
@@ -317,7 +364,7 @@ func (c *ContainerInstanceServiceManager) ListAllContainerInstances(
 		if result[j].TimeCreated == nil {
 			return false
 		}
-		return result[i].TimeCreated.Time.Before(result[j].TimeCreated.Time)
+		return result[i].TimeCreated.Before(result[j].TimeCreated.Time)
 	})
 
 	return result, nil

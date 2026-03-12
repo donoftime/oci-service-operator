@@ -855,7 +855,7 @@ func TestSubnet_CreateOrUpdate_NoId_NotFound_CreatesWithVcnId(t *testing.T) {
 	resp, err := mgr.CreateOrUpdate(context.Background(), s, ctrl.Request{})
 	assert.NoError(t, err)
 	assert.True(t, resp.IsSuccessful)
-	assert.Equal(t, vcnID, *capturedReq.CreateSubnetDetails.VcnId, "VcnId must be passed to OCI")
+	assert.Equal(t, vcnID, *capturedReq.VcnId, "VcnId must be passed to OCI")
 }
 
 // TestSubnet_CreateOrUpdate_NoId_NotFound_Provisioning verifies newly-created PROVISIONING subnet
@@ -1773,9 +1773,9 @@ func TestUpdateRouteTable_IncludesRouteRulesInRequest(t *testing.T) {
 	err := mgr.UpdateRouteTable(context.Background(), rt)
 	assert.NoError(t, err)
 	assert.Equal(t, "ocid1.routetable.oc1..test", *capturedReq.RtId)
-	assert.Len(t, capturedReq.UpdateRouteTableDetails.RouteRules, 1)
-	assert.Equal(t, "ocid1.internetgateway.oc1..igw", *capturedReq.UpdateRouteTableDetails.RouteRules[0].NetworkEntityId)
-	assert.Equal(t, "0.0.0.0/0", *capturedReq.UpdateRouteTableDetails.RouteRules[0].Destination)
+	assert.Len(t, capturedReq.RouteRules, 1)
+	assert.Equal(t, "ocid1.internetgateway.oc1..igw", *capturedReq.RouteRules[0].NetworkEntityId)
+	assert.Equal(t, "0.0.0.0/0", *capturedReq.RouteRules[0].Destination)
 }
 
 func TestUpdateRouteTable_EmptyRulesClearsRules(t *testing.T) {
@@ -1796,7 +1796,7 @@ func TestUpdateRouteTable_EmptyRulesClearsRules(t *testing.T) {
 	assert.NoError(t, err)
 	// Update is always sent even with no rules (clears existing rules to match spec).
 	assert.NotNil(t, capturedReq.UpdateRouteTableDetails)
-	assert.Empty(t, capturedReq.UpdateRouteTableDetails.RouteRules)
+	assert.Empty(t, capturedReq.RouteRules)
 }
 
 // ---------------------------------------------------------------------------
@@ -1826,10 +1826,10 @@ func TestUpdateSecurityList_IncludesRulesInRequest(t *testing.T) {
 	err := mgr.UpdateSecurityList(context.Background(), sl)
 	assert.NoError(t, err)
 	assert.Equal(t, "ocid1.securitylist.oc1..test", *capturedReq.SecurityListId)
-	assert.Len(t, capturedReq.UpdateSecurityListDetails.EgressSecurityRules, 1)
-	assert.Equal(t, "0.0.0.0/0", *capturedReq.UpdateSecurityListDetails.EgressSecurityRules[0].Destination)
-	assert.Len(t, capturedReq.UpdateSecurityListDetails.IngressSecurityRules, 1)
-	assert.Equal(t, "10.0.0.0/8", *capturedReq.UpdateSecurityListDetails.IngressSecurityRules[0].Source)
+	assert.Len(t, capturedReq.EgressSecurityRules, 1)
+	assert.Equal(t, "0.0.0.0/0", *capturedReq.EgressSecurityRules[0].Destination)
+	assert.Len(t, capturedReq.IngressSecurityRules, 1)
+	assert.Equal(t, "10.0.0.0/8", *capturedReq.IngressSecurityRules[0].Source)
 }
 
 func TestUpdateSecurityList_EmptyRulesClearsRules(t *testing.T) {
@@ -1851,8 +1851,8 @@ func TestUpdateSecurityList_EmptyRulesClearsRules(t *testing.T) {
 	assert.NoError(t, err)
 	// Update is always sent (clears rules to match empty spec).
 	assert.NotNil(t, capturedReq.UpdateSecurityListDetails)
-	assert.Empty(t, capturedReq.UpdateSecurityListDetails.EgressSecurityRules)
-	assert.Empty(t, capturedReq.UpdateSecurityListDetails.IngressSecurityRules)
+	assert.Empty(t, capturedReq.EgressSecurityRules)
+	assert.Empty(t, capturedReq.IngressSecurityRules)
 }
 
 // ---------------------------------------------------------------------------
@@ -2022,7 +2022,7 @@ func TestUpdateInternetGateway_SendsDisplayName(t *testing.T) {
 	err := mgr.UpdateInternetGateway(context.Background(), igw)
 	assert.NoError(t, err)
 	assert.Equal(t, igwID, *capturedReq.IgId)
-	assert.Equal(t, "new-name", *capturedReq.UpdateInternetGatewayDetails.DisplayName)
+	assert.Equal(t, "new-name", *capturedReq.DisplayName)
 }
 
 func TestUpdateInternetGateway_NoUpdateNeeded(t *testing.T) {
@@ -2079,7 +2079,7 @@ func TestUpdateNatGateway_SendsDisplayName(t *testing.T) {
 	err := mgr.UpdateNatGateway(context.Background(), nat)
 	assert.NoError(t, err)
 	assert.Equal(t, natID, *capturedReq.NatGatewayId)
-	assert.Equal(t, "new-name", *capturedReq.UpdateNatGatewayDetails.DisplayName)
+	assert.Equal(t, "new-name", *capturedReq.DisplayName)
 }
 
 func TestUpdateNatGateway_NoUpdateNeeded(t *testing.T) {
@@ -2136,7 +2136,7 @@ func TestUpdateServiceGateway_SendsDisplayName(t *testing.T) {
 	err := mgr.UpdateServiceGateway(context.Background(), sgw)
 	assert.NoError(t, err)
 	assert.Equal(t, sgwID, *capturedReq.ServiceGatewayId)
-	assert.Equal(t, "new-name", *capturedReq.UpdateServiceGatewayDetails.DisplayName)
+	assert.Equal(t, "new-name", *capturedReq.DisplayName)
 }
 
 func TestUpdateServiceGateway_NoUpdateNeeded(t *testing.T) {
@@ -2193,7 +2193,7 @@ func TestUpdateDrg_SendsDisplayName(t *testing.T) {
 	err := mgr.UpdateDrg(context.Background(), drg)
 	assert.NoError(t, err)
 	assert.Equal(t, drgID, *capturedReq.DrgId)
-	assert.Equal(t, "new-name", *capturedReq.UpdateDrgDetails.DisplayName)
+	assert.Equal(t, "new-name", *capturedReq.DisplayName)
 }
 
 func TestUpdateDrg_NoUpdateNeeded(t *testing.T) {
@@ -2250,7 +2250,7 @@ func TestUpdateNetworkSecurityGroup_SendsDisplayName(t *testing.T) {
 	err := mgr.UpdateNetworkSecurityGroup(context.Background(), nsg)
 	assert.NoError(t, err)
 	assert.Equal(t, nsgID, *capturedReq.NetworkSecurityGroupId)
-	assert.Equal(t, "new-name", *capturedReq.UpdateNetworkSecurityGroupDetails.DisplayName)
+	assert.Equal(t, "new-name", *capturedReq.DisplayName)
 }
 
 func TestUpdateNetworkSecurityGroup_NoUpdateNeeded(t *testing.T) {
@@ -2304,7 +2304,7 @@ func TestUpdateVcn_SendsDisplayName(t *testing.T) {
 	err := mgr.UpdateVcn(context.Background(), v)
 	assert.NoError(t, err)
 	assert.Equal(t, vcnID, *capturedReq.VcnId)
-	assert.Equal(t, "new-name", *capturedReq.UpdateVcnDetails.DisplayName)
+	assert.Equal(t, "new-name", *capturedReq.DisplayName)
 }
 
 func TestUpdateVcn_NoUpdateNeeded(t *testing.T) {
@@ -2355,7 +2355,7 @@ func TestUpdateSubnet_SendsDisplayName(t *testing.T) {
 	err := mgr.UpdateSubnet(context.Background(), s)
 	assert.NoError(t, err)
 	assert.Equal(t, subnetID, *capturedReq.SubnetId)
-	assert.Equal(t, "new-name", *capturedReq.UpdateSubnetDetails.DisplayName)
+	assert.Equal(t, "new-name", *capturedReq.DisplayName)
 }
 
 func TestUpdateSubnet_NoUpdateNeeded(t *testing.T) {
@@ -2792,8 +2792,8 @@ func TestCreateNatGateway_WithBlockTraffic(t *testing.T) {
 	result, err := mgr.CreateNatGateway(context.Background(), nat)
 	assert.NoError(t, err)
 	assert.Equal(t, natID, *result.Id)
-	assert.NotNil(t, capturedReq.CreateNatGatewayDetails.BlockTraffic)
-	assert.True(t, *capturedReq.CreateNatGatewayDetails.BlockTraffic)
+	assert.NotNil(t, capturedReq.BlockTraffic)
+	assert.True(t, *capturedReq.BlockTraffic)
 }
 
 // ---------------------------------------------------------------------------
@@ -2833,11 +2833,11 @@ func TestCreateSubnet_WithOptionalFields(t *testing.T) {
 	result, err := mgr.CreateSubnet(context.Background(), s)
 	assert.NoError(t, err)
 	assert.Equal(t, subnetID, *result.Id)
-	assert.Equal(t, "optsubnet", *capturedReq.CreateSubnetDetails.DnsLabel)
-	assert.NotNil(t, capturedReq.CreateSubnetDetails.ProhibitPublicIpOnVnic)
-	assert.True(t, *capturedReq.CreateSubnetDetails.ProhibitPublicIpOnVnic)
-	assert.Equal(t, rtID, *capturedReq.CreateSubnetDetails.RouteTableId)
-	assert.Equal(t, []string{slID}, capturedReq.CreateSubnetDetails.SecurityListIds)
+	assert.Equal(t, "optsubnet", *capturedReq.DnsLabel)
+	assert.NotNil(t, capturedReq.ProhibitPublicIpOnVnic)
+	assert.True(t, *capturedReq.ProhibitPublicIpOnVnic)
+	assert.Equal(t, rtID, *capturedReq.RouteTableId)
+	assert.Equal(t, []string{slID}, capturedReq.SecurityListIds)
 }
 
 // ---------------------------------------------------------------------------
@@ -2966,8 +2966,8 @@ func TestBuildIngressRules_TableDriven(t *testing.T) {
 
 			_, err := mgr.CreateSecurityList(context.Background(), sl)
 			assert.NoError(t, err)
-			assert.Len(t, capturedReq.CreateSecurityListDetails.IngressSecurityRules, 1)
-			tc.check(t, capturedReq.CreateSecurityListDetails.IngressSecurityRules[0])
+			assert.Len(t, capturedReq.IngressSecurityRules, 1)
+			tc.check(t, capturedReq.IngressSecurityRules[0])
 		})
 	}
 }
@@ -3102,8 +3102,8 @@ func TestBuildEgressRules_TableDriven(t *testing.T) {
 
 			_, err := mgr.CreateSecurityList(context.Background(), sl)
 			assert.NoError(t, err)
-			assert.Len(t, capturedReq.CreateSecurityListDetails.EgressSecurityRules, 1)
-			tc.check(t, capturedReq.CreateSecurityListDetails.EgressSecurityRules[0])
+			assert.Len(t, capturedReq.EgressSecurityRules, 1)
+			tc.check(t, capturedReq.EgressSecurityRules[0])
 		})
 	}
 }

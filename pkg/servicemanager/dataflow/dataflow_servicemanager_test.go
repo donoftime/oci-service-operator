@@ -248,8 +248,8 @@ func TestCreateOrUpdate_CreateNew(t *testing.T) {
 		},
 		createApplicationFn: func(_ context.Context, req ocidataflow.CreateApplicationRequest) (ocidataflow.CreateApplicationResponse, error) {
 			createCalled = true
-			assert.Equal(t, "test-app", *req.CreateApplicationDetails.DisplayName)
-			assert.Equal(t, ocidataflow.ApplicationLanguagePython, req.CreateApplicationDetails.Language)
+			assert.Equal(t, "test-app", *req.DisplayName)
+			assert.Equal(t, ocidataflow.ApplicationLanguagePython, req.Language)
 			return ocidataflow.CreateApplicationResponse{
 				Application: ocidataflow.Application{
 					Id:             common.String(appID),

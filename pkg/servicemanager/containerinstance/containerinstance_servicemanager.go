@@ -14,7 +14,6 @@ import (
 	"github.com/oracle/oci-go-sdk/v65/containerinstances"
 	ociv1beta1 "github.com/oracle/oci-service-operator/api/v1beta1"
 	"github.com/oracle/oci-service-operator/pkg/credhelper"
-	"github.com/oracle/oci-service-operator/pkg/errorutil"
 	"github.com/oracle/oci-service-operator/pkg/loggerutil"
 	"github.com/oracle/oci-service-operator/pkg/servicemanager"
 	v1 "k8s.io/api/core/v1"
@@ -55,76 +54,104 @@ func (c *ContainerInstanceServiceManager) CreateOrUpdate(ctx context.Context, ob
 		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
-	var ciInstance *containerinstances.ContainerInstance
-
-	if strings.TrimSpace(string(ci.Spec.ContainerInstanceId)) == "" {
-		// No ID provided — check by display name or create
-		ciOcid, err := c.GetContainerInstanceOcid(ctx, *ci)
-		if err != nil {
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		if ciOcid == nil {
-			// Create a new container instance
-			resp, err := c.CreateContainerInstance(ctx, *ci)
-			if err != nil {
-				if gcErr := c.GarbageCollect(ctx, *ci); gcErr != nil {
-					c.Log.ErrorLog(gcErr, "ContainerInstance GC failed (non-fatal)")
-				}
-				ci.Status.OsokStatus = util.UpdateOSOKStatusCondition(ci.Status.OsokStatus,
-					ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), c.Log)
-				if _, ok := err.(errorutil.BadRequestOciError); !ok {
-					c.Log.ErrorLog(err, "Create ContainerInstance failed")
-					return servicemanager.OSOKResponse{IsSuccessful: false}, err
-				}
-				ci.Status.OsokStatus.Message = err.(common.ServiceError).GetCode()
-				c.Log.ErrorLog(err, "Create ContainerInstance bad request")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-
-			displayName := ""
-			if ci.Spec.DisplayName != nil {
-				displayName = *ci.Spec.DisplayName
-			}
-			c.Log.InfoLog(fmt.Sprintf("ContainerInstance %s is Provisioning", displayName))
-			ci.Status.OsokStatus = util.UpdateOSOKStatusCondition(ci.Status.OsokStatus,
-				ociv1beta1.Provisioning, v1.ConditionTrue, "", "ContainerInstance Provisioning", c.Log)
-			ci.Status.OsokStatus.Ocid = ociv1beta1.OCID(*resp.Id)
-
-			retryPolicy := c.getRetryPolicy(30)
-			ciInstance, err = c.GetContainerInstance(ctx, ociv1beta1.OCID(*resp.Id), &retryPolicy)
-			if err != nil {
-				c.Log.ErrorLog(err, "Error while getting ContainerInstance after create")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		} else {
-			c.Log.InfoLog(fmt.Sprintf("Getting existing ContainerInstance %s", *ciOcid))
-			ciInstance, err = c.GetContainerInstance(ctx, *ciOcid, nil)
-			if err != nil {
-				c.Log.ErrorLog(err, "Error while getting ContainerInstance by OCID")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		}
-
-	} else {
-		// Bind to an existing container instance by ID
-		ciInstance, err = c.GetContainerInstance(ctx, ci.Spec.ContainerInstanceId, nil)
-		if err != nil {
-			c.Log.ErrorLog(err, "Error while getting existing ContainerInstance")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		if err = c.UpdateContainerInstance(ctx, ci); err != nil {
-			c.Log.ErrorLog(err, "Error while updating ContainerInstance")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
+	ciInstance, response, err := c.resolveContainerInstance(ctx, ci)
+	if err != nil || ciInstance == nil {
+		return response, err
 	}
 
+	return c.finalizeCreateOrUpdate(ctx, ci, ciInstance), nil
+}
+
+func (c *ContainerInstanceServiceManager) resolveContainerInstance(ctx context.Context, ci *ociv1beta1.ContainerInstance) (*containerinstances.ContainerInstance, servicemanager.OSOKResponse, error) {
+	if hasContainerInstanceID(ci) {
+		return c.bindContainerInstance(ctx, ci)
+	}
+	return c.lookupOrCreateContainerInstance(ctx, ci)
+}
+
+func hasContainerInstanceID(ci *ociv1beta1.ContainerInstance) bool {
+	return strings.TrimSpace(string(ci.Spec.ContainerInstanceId)) != ""
+}
+
+func (c *ContainerInstanceServiceManager) lookupOrCreateContainerInstance(ctx context.Context, ci *ociv1beta1.ContainerInstance) (*containerinstances.ContainerInstance, servicemanager.OSOKResponse, error) {
+	ciOcid, err := c.GetContainerInstanceOcid(ctx, *ci)
+	if err != nil {
+		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, err
+	}
+	if ciOcid == nil {
+		return c.createNewContainerInstance(ctx, ci)
+	}
+
+	c.Log.InfoLog(fmt.Sprintf("Getting existing ContainerInstance %s", *ciOcid))
+	ciInstance, err := c.GetContainerInstance(ctx, *ciOcid, nil)
+	if err != nil {
+		c.Log.ErrorLog(err, "Error while getting ContainerInstance by OCID")
+		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, err
+	}
+	return ciInstance, servicemanager.OSOKResponse{}, nil
+}
+
+func (c *ContainerInstanceServiceManager) createNewContainerInstance(ctx context.Context, ci *ociv1beta1.ContainerInstance) (*containerinstances.ContainerInstance, servicemanager.OSOKResponse, error) {
+	resp, err := c.CreateContainerInstance(ctx, *ci)
+	if err != nil {
+		response, handleErr := c.handleCreateError(ctx, ci, err)
+		return nil, response, handleErr
+	}
+
+	containerInstanceID := ociv1beta1.OCID(*resp.Id)
+	c.Log.InfoLog(fmt.Sprintf("ContainerInstance %s is Provisioning", safeString(ci.Spec.DisplayName)))
+	ci.Status.OsokStatus = util.UpdateOSOKStatusCondition(ci.Status.OsokStatus,
+		ociv1beta1.Provisioning, v1.ConditionTrue, "", "ContainerInstance Provisioning", c.Log)
+	ci.Status.OsokStatus.Ocid = containerInstanceID
+
+	retryPolicy := c.getRetryPolicy(30)
+	ciInstance, getErr := c.GetContainerInstance(ctx, containerInstanceID, &retryPolicy)
+	if getErr != nil {
+		c.Log.ErrorLog(getErr, "Error while getting ContainerInstance after create")
+		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, getErr
+	}
+	return ciInstance, servicemanager.OSOKResponse{}, nil
+}
+
+func (c *ContainerInstanceServiceManager) handleCreateError(ctx context.Context, ci *ociv1beta1.ContainerInstance, err error) (servicemanager.OSOKResponse, error) {
+	c.runGarbageCollect(ctx, *ci)
+	ci.Status.OsokStatus = util.UpdateOSOKStatusCondition(ci.Status.OsokStatus,
+		ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), c.Log)
+
+	if serviceErr, ok := common.IsServiceError(err); ok && serviceErr.GetHTTPStatusCode() == 400 {
+		ci.Status.OsokStatus.Message = serviceErr.GetCode()
+		c.Log.ErrorLog(err, "Create ContainerInstance bad request")
+		return servicemanager.OSOKResponse{IsSuccessful: false}, err
+	}
+
+	c.Log.ErrorLog(err, "Create ContainerInstance failed")
+	return servicemanager.OSOKResponse{IsSuccessful: false}, err
+}
+
+func (c *ContainerInstanceServiceManager) bindContainerInstance(ctx context.Context, ci *ociv1beta1.ContainerInstance) (*containerinstances.ContainerInstance, servicemanager.OSOKResponse, error) {
+	ciInstance, err := c.GetContainerInstance(ctx, ci.Spec.ContainerInstanceId, nil)
+	if err != nil {
+		c.Log.ErrorLog(err, "Error while getting existing ContainerInstance")
+		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, err
+	}
+
+	if err = c.UpdateContainerInstance(ctx, ci); err != nil {
+		c.Log.ErrorLog(err, "Error while updating ContainerInstance")
+		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, err
+	}
+	return ciInstance, servicemanager.OSOKResponse{}, nil
+}
+
+func (c *ContainerInstanceServiceManager) finalizeCreateOrUpdate(ctx context.Context, ci *ociv1beta1.ContainerInstance, ciInstance *containerinstances.ContainerInstance) servicemanager.OSOKResponse {
 	response := reconcileLifecycleStatus(&ci.Status.OsokStatus, ciInstance, c.Log)
-	if err := c.GarbageCollect(ctx, *ci); err != nil {
+	c.runGarbageCollect(ctx, *ci)
+	return response
+}
+
+func (c *ContainerInstanceServiceManager) runGarbageCollect(ctx context.Context, ci ociv1beta1.ContainerInstance) {
+	if err := c.GarbageCollect(ctx, ci); err != nil {
 		c.Log.ErrorLog(err, "ContainerInstance GC failed (non-fatal)")
 	}
-	return response, nil
 }
 
 // Delete handles deletion of the container instance (called by the finalizer).

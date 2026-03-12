@@ -6,7 +6,9 @@
 package errorutil
 
 import (
+	"errors"
 	"fmt"
+
 	"github.com/oracle/oci-go-sdk/v65/common"
 )
 
@@ -22,14 +24,46 @@ func (o ocierrors) Error() string {
 		o.ErrorCode, o.Description, o.HTTPStatusCode, o.OpcRequestID)
 }
 
+var fourXXHandlers = map[int]func(ocierrors) (bool, error){
+	400: specific400Error,
+	401: specific401Error,
+	402: specific402Error,
+	403: specific403Error,
+	404: specific404Error,
+	405: specific405Error,
+	409: specific409Error,
+	412: specific412Error,
+	429: specific429Error,
+}
+
+var fiveXXHandlers = map[int]func(ocierrors) (bool, error){
+	500: specific500Error,
+	501: specific501Error,
+	503: specific503Error,
+}
+
 func OciErrorTypeResponse(err error) (bool, error) {
-	return NewServiceFailureFromResponse(err.(common.ServiceError).GetCode(),
-		err.(common.ServiceError).GetHTTPStatusCode(), err.(common.ServiceError).GetOpcRequestID(),
-		err.(common.ServiceError).GetMessage())
+	serviceErr, ok := asServiceError(err)
+	if !ok {
+		return false, err
+	}
+	return NewServiceFailureFromResponse(
+		serviceErr.GetCode(),
+		serviceErr.GetHTTPStatusCode(),
+		serviceErr.GetOpcRequestID(),
+		serviceErr.GetMessage(),
+	)
+}
+
+func asServiceError(err error) (common.ServiceError, bool) {
+	var serviceErr common.ServiceError
+	if !errors.As(err, &serviceErr) {
+		return nil, false
+	}
+	return serviceErr, true
 }
 
 func NewServiceFailureFromResponse(code string, statusCode int, opcRequestId string, message string) (bool, error) {
-
 	se := ocierrors{
 		ErrorCode:      code,
 		HTTPStatusCode: statusCode,
@@ -37,77 +71,50 @@ func NewServiceFailureFromResponse(code string, statusCode int, opcRequestId str
 		Description:    message,
 	}
 
-	switch status := se.HTTPStatusCode; {
-	case status >= 400 && status <= 499:
+	switch {
+	case statusCode >= 400 && statusCode <= 499:
 		return check4xxFailures(se)
-	case status >= 500 && status <= 599:
+	case statusCode >= 500 && statusCode <= 599:
 		return check5xxFailures(se)
 	default:
 		return true, nil
 	}
-
 }
 
 // Return the specific 4xx error Object
 func check4xxFailures(se ocierrors) (bool, error) {
-
-	switch statusCode := se.HTTPStatusCode; {
-
-	case statusCode == 400:
-		return specific400Error(se)
-	case statusCode == 401:
-		return specific401Error(se)
-	case statusCode == 402:
-		return specific402Error(se)
-	case statusCode == 403:
-		return specific403Error(se)
-	case statusCode == 404:
-		return specific404Error(se)
-	case statusCode == 405:
-		return specific405Error(se)
-	case statusCode == 409:
-		return specific409Error(se)
-	case statusCode == 412:
-		return specific412Error(se)
-	case statusCode == 429:
-		return specific429Error(se)
-	default:
+	handler, ok := fourXXHandlers[se.HTTPStatusCode]
+	if !ok {
 		return false, se
 	}
+	return handler(se)
 }
 
 // Return the specific 5xx error Object
 func check5xxFailures(se ocierrors) (bool, error) {
-	switch statusCode := se.HTTPStatusCode; {
-	case statusCode == 500:
-		return specific500Error(se)
-	case statusCode == 501:
-		return specific501Error(se)
-	case statusCode == 503:
-		return specific503Error(se)
-	default:
+	handler, ok := fiveXXHandlers[se.HTTPStatusCode]
+	if !ok {
 		return false, se
 	}
+	return handler(se)
 }
 
 // Return specific 400 error. Their are different types of 400 error ex. Invalid-Parameter or Missing-Parameter etc.
 func specific400Error(se ocierrors) (bool, error) {
-
-	switch errorCode := se.ErrorCode; {
-
-	case errorCode == CannotParseRequest:
+	switch se.ErrorCode {
+	case CannotParseRequest:
 		return false, BadRequestResponse(se, "The request is incorrectly formatted")
-	case errorCode == InvalidParameter || errorCode == InvalidParameters:
+	case InvalidParameter, InvalidParameters:
 		return false, BadRequestResponse(se, "Parameter is invalid or incorrectly formatted")
-	case errorCode == MissingParameter || errorCode == MissingParameters:
+	case MissingParameter, MissingParameters:
 		return false, BadRequestResponse(se, "Required parameter is missing")
-	case errorCode == LimitExceeded:
+	case LimitExceeded:
 		return false, BadRequestResponse(se, "Fulfilling this request exceeds the Oracle-defined "+
 			"limit for this tenancy for this resource type")
-	case errorCode == QuotaExceeded:
+	case QuotaExceeded:
 		return false, BadRequestResponse(se, "Fulfilling this request exceeds the "+
 			"administrator-defined quota for this compartment for this resource")
-	case errorCode == RelatedResourceNotAuthorizedOrNotFound:
+	case RelatedResourceNotAuthorizedOrNotFound:
 		return false, BadRequestResponse(se, "A resource specified in the body of the request was "+
 			"not found, or you do not have authorization to access that resource")
 	default:
@@ -116,12 +123,10 @@ func specific400Error(se ocierrors) (bool, error) {
 }
 
 func specific401Error(se ocierrors) (bool, error) {
-
 	if se.ErrorCode == NotAuthenticated {
 		return false, NotAuthenticatedResponse(se, "The required authentication information was not "+
 			"provided or was incorrect")
 	}
-
 	return false, se
 }
 
@@ -133,7 +138,6 @@ func specific402Error(se ocierrors) (bool, error) {
 }
 
 func specific403Error(se ocierrors) (bool, error) {
-
 	if se.ErrorCode == NotAuthorized {
 		return false, UnauthorizedAndNotFoundResponse(se, "You do not have authorization to update one "+
 			"or more of the fields included in this request")
@@ -142,16 +146,16 @@ func specific403Error(se ocierrors) (bool, error) {
 }
 
 func specific404Error(se ocierrors) (bool, error) {
-
-	if se.ErrorCode == NotFound {
+	switch se.ErrorCode {
+	case NotFound:
 		return false, UnauthorizedAndNotFoundResponse(se, "There is no operation supported at the "+
 			"URI path and HTTP method you specified in the request")
-	} else if se.ErrorCode == NotAuthorizedOrNotFound {
+	case NotAuthorizedOrNotFound:
 		return false, UnauthorizedAndNotFoundResponse(se, "A resource specified via the URI (path or "+
 			"query parameters) of the request was not found, or you do not have authorization to access that resource")
+	default:
+		return false, se
 	}
-
-	return false, se
 }
 
 func specific405Error(se ocierrors) (bool, error) {
@@ -162,17 +166,15 @@ func specific405Error(se ocierrors) (bool, error) {
 }
 
 func specific409Error(se ocierrors) (bool, error) {
-
-	switch errorCode := se.ErrorCode; {
-	case errorCode == IncorrectState:
+	switch se.ErrorCode {
+	case IncorrectState:
 		return false, ConflictResponse(se, "The requested state for the resource conflicts with "+
 			"its current state")
-	case errorCode == InvalidatedRetryToken:
+	case InvalidatedRetryToken:
 		return false, ConflictResponse(se, "The provided retry token was used in an earlier request "+
 			"that resulted in a system update, but a subsequent operation invalidated "+
 			"the token")
-	case errorCode == NotAuthorizedOrResourceAlreadyExists:
-
+	case NotAuthorizedOrResourceAlreadyExists:
 		return false, ConflictResponse(se, "You do not have authorization to perform this request, or "+
 			"the resource you are attempting to create already exists")
 	default:
@@ -197,7 +199,6 @@ func specific429Error(se ocierrors) (bool, error) {
 }
 
 func specific500Error(se ocierrors) (bool, error) {
-
 	if se.ErrorCode == InternalServerError {
 		return false, InternalServerErrorResponse(se, "An internal server error occurred")
 	}
@@ -205,7 +206,6 @@ func specific500Error(se ocierrors) (bool, error) {
 }
 
 func specific501Error(se ocierrors) (bool, error) {
-
 	if se.ErrorCode == MethodNotImplemented {
 		return false, MethodNotImplementedResponse(se, "The HTTP request target does not recognize the HTTP method")
 	}
@@ -213,10 +213,8 @@ func specific501Error(se ocierrors) (bool, error) {
 }
 
 func specific503Error(se ocierrors) (bool, error) {
-
 	if se.ErrorCode == ServiceUnavailable {
 		return false, ServiceUnavailableResponse(se, "The service is currently unavailable")
 	}
-
 	return false, se
 }

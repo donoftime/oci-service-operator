@@ -60,17 +60,27 @@ func (c *DataFlowApplicationServiceManager) CreateDataFlowApplication(ctx contex
 		SparkVersion:  common.String(app.Spec.SparkVersion),
 	}
 
+	applyDataFlowCreateTextFields(&details, app)
+	applyDataFlowCreateCollectionFields(&details, app)
+	applyDataFlowCreateTagFields(&details, app)
+
+	req := ocidataflow.CreateApplicationRequest{
+		CreateApplicationDetails: details,
+	}
+
+	resp, err := client.CreateApplication(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return &resp.Application, nil
+}
+
+func applyDataFlowCreateTextFields(details *ocidataflow.CreateApplicationDetails, app ociv1beta1.DataFlowApplication) {
 	if app.Spec.FileUri != "" {
 		details.FileUri = common.String(app.Spec.FileUri)
 	}
 	if app.Spec.ClassName != "" {
 		details.ClassName = common.String(app.Spec.ClassName)
-	}
-	if len(app.Spec.Arguments) > 0 {
-		details.Arguments = app.Spec.Arguments
-	}
-	if app.Spec.Configuration != nil {
-		details.Configuration = app.Spec.Configuration
 	}
 	if app.Spec.Description != "" {
 		details.Description = common.String(app.Spec.Description)
@@ -84,19 +94,21 @@ func (c *DataFlowApplicationServiceManager) CreateDataFlowApplication(ctx contex
 	if app.Spec.ArchiveUri != "" {
 		details.ArchiveUri = common.String(app.Spec.ArchiveUri)
 	}
+}
+
+func applyDataFlowCreateCollectionFields(details *ocidataflow.CreateApplicationDetails, app ociv1beta1.DataFlowApplication) {
+	if len(app.Spec.Arguments) > 0 {
+		details.Arguments = app.Spec.Arguments
+	}
+	if app.Spec.Configuration != nil {
+		details.Configuration = app.Spec.Configuration
+	}
+}
+
+func applyDataFlowCreateTagFields(details *ocidataflow.CreateApplicationDetails, app ociv1beta1.DataFlowApplication) {
 	if app.Spec.FreeFormTags != nil {
 		details.FreeformTags = app.Spec.FreeFormTags
 	}
-
-	req := ocidataflow.CreateApplicationRequest{
-		CreateApplicationDetails: details,
-	}
-
-	resp, err := client.CreateApplication(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	return &resp.Application, nil
 }
 
 // GetDataFlowApplication retrieves a Data Flow Application by OCID.

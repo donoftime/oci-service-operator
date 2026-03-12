@@ -329,7 +329,7 @@ func TestCreateOrUpdate_NoTableId_CreateTable_OnDemand(t *testing.T) {
 			return listResponse(makeTableSummary(testTableOcid, nosql.TableLifecycleStateActive)), nil
 		},
 		createFn: func(_ context.Context, req nosql.CreateTableRequest) (nosql.CreateTableResponse, error) {
-			assert.Nil(t, req.CreateTableDetails.TableLimits, "on-demand table should have no limits")
+			assert.Nil(t, req.TableLimits, "on-demand table should have no limits")
 			return nosql.CreateTableResponse{}, nil
 		},
 		getFn: func(_ context.Context, _ nosql.GetTableRequest) (nosql.GetTableResponse, error) {
@@ -362,10 +362,10 @@ func TestCreateOrUpdate_NoTableId_CreateTable_Provisioned(t *testing.T) {
 			return listResponse(makeTableSummary(testTableOcid, nosql.TableLifecycleStateActive)), nil
 		},
 		createFn: func(_ context.Context, req nosql.CreateTableRequest) (nosql.CreateTableResponse, error) {
-			assert.NotNil(t, req.CreateTableDetails.TableLimits, "provisioned table should have limits")
-			assert.Equal(t, 10, *req.CreateTableDetails.TableLimits.MaxReadUnits)
-			assert.Equal(t, 10, *req.CreateTableDetails.TableLimits.MaxWriteUnits)
-			assert.Equal(t, 5, *req.CreateTableDetails.TableLimits.MaxStorageInGBs)
+			assert.NotNil(t, req.TableLimits, "provisioned table should have limits")
+			assert.Equal(t, 10, *req.TableLimits.MaxReadUnits)
+			assert.Equal(t, 10, *req.TableLimits.MaxWriteUnits)
+			assert.Equal(t, 5, *req.TableLimits.MaxStorageInGBs)
 			return nosql.CreateTableResponse{}, nil
 		},
 		getFn: func(_ context.Context, _ nosql.GetTableRequest) (nosql.GetTableResponse, error) {
@@ -682,8 +682,8 @@ func TestCreateOrUpdate_WithTableId_UpdateLimits(t *testing.T) {
 		},
 		updateFn: func(_ context.Context, req nosql.UpdateTableRequest) (nosql.UpdateTableResponse, error) {
 			updateCalled = true
-			assert.NotNil(t, req.UpdateTableDetails.TableLimits)
-			assert.Equal(t, 20, *req.UpdateTableDetails.TableLimits.MaxReadUnits)
+			assert.NotNil(t, req.TableLimits)
+			assert.Equal(t, 20, *req.TableLimits.MaxReadUnits)
 			return nosql.UpdateTableResponse{}, nil
 		},
 	}
@@ -799,7 +799,7 @@ func TestCreateOrUpdate_NoTableId_CreateTable_WithDefinedTags(t *testing.T) {
 	resp, err := mgr.CreateOrUpdate(context.Background(), db, ctrl.Request{})
 	assert.NoError(t, err)
 	assert.True(t, resp.IsSuccessful)
-	assert.NotNil(t, capturedReq.CreateTableDetails.DefinedTags)
+	assert.NotNil(t, capturedReq.DefinedTags)
 }
 
 // TestCreateOrUpdate_NoTableId_SecondListError verifies that a list error after create is propagated.

@@ -53,78 +53,55 @@ func (c *DataFlowApplicationServiceManager) CreateOrUpdate(ctx context.Context, 
 		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
-	// Path 1: bind to existing application by spec ID
+	return c.reconcileApplication(ctx, app)
+}
+
+func (c *DataFlowApplicationServiceManager) reconcileApplication(ctx context.Context,
+	app *ociv1beta1.DataFlowApplication) (servicemanager.OSOKResponse, error) {
 	if strings.TrimSpace(string(app.Spec.DataFlowApplicationId)) != "" {
-		appInstance, err := c.GetDataFlowApplication(ctx, app.Spec.DataFlowApplicationId)
-		if err != nil {
-			c.Log.ErrorLog(err, "Error while getting DataFlowApplication by spec ID")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-		if appInstance.LifecycleState == ocidataflow.ApplicationLifecycleStateDeleted {
-			return markDeletedStatus(app, appInstance, c.Log), nil
-		}
-
-		response := reconcileLifecycleStatus(app, appInstance, c.Log)
-		if !response.IsSuccessful {
-			return response, nil
-		}
-		if err := c.UpdateDataFlowApplication(ctx, app); err != nil {
-			c.Log.ErrorLog(err, "Error while updating DataFlowApplication by spec ID")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-		c.Log.InfoLog(fmt.Sprintf("DataFlowApplication %s is bound to existing application", safeString(appInstance.DisplayName)))
-		return response, nil
+		return c.reconcileBoundApplication(ctx, app, app.Spec.DataFlowApplicationId, "spec ID", "is bound to existing application")
 	}
-
-	// Path 2: update existing application by status OCID
 	if strings.TrimSpace(string(app.Status.OsokStatus.Ocid)) != "" {
-		appInstance, err := c.GetDataFlowApplication(ctx, app.Status.OsokStatus.Ocid)
-		if err != nil {
-			c.Log.ErrorLog(err, "Error while getting DataFlowApplication by status OCID")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
+		return c.reconcileBoundApplication(ctx, app, app.Status.OsokStatus.Ocid, "status OCID", "updated")
+	}
+	return c.reconcileManagedApplication(ctx, app)
+}
 
-		if appInstance.LifecycleState == ocidataflow.ApplicationLifecycleStateDeleted {
-			return markDeletedStatus(app, appInstance, c.Log), nil
-		}
-
-		response := reconcileLifecycleStatus(app, appInstance, c.Log)
-		if !response.IsSuccessful {
-			return response, nil
-		}
-		if err := c.UpdateDataFlowApplication(ctx, app); err != nil {
-			c.Log.ErrorLog(err, "Error while updating DataFlowApplication")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-		c.Log.InfoLog(fmt.Sprintf("DataFlowApplication %s updated", safeString(appInstance.DisplayName)))
-		return response, nil
+func (c *DataFlowApplicationServiceManager) reconcileBoundApplication(ctx context.Context, app *ociv1beta1.DataFlowApplication,
+	applicationID ociv1beta1.OCID, source string, successMessage string) (servicemanager.OSOKResponse, error) {
+	appInstance, err := c.GetDataFlowApplication(ctx, applicationID)
+	if err != nil {
+		c.Log.ErrorLog(err, fmt.Sprintf("Error while getting DataFlowApplication by %s", source))
+		return servicemanager.OSOKResponse{IsSuccessful: false}, err
+	}
+	if appInstance.LifecycleState == ocidataflow.ApplicationLifecycleStateDeleted {
+		return markDeletedStatus(app, appInstance, c.Log), nil
 	}
 
-	// Path 3: look up by name or create new
+	response := reconcileLifecycleStatus(app, appInstance, c.Log)
+	if !response.IsSuccessful {
+		return response, nil
+	}
+	if err := c.UpdateDataFlowApplication(ctx, app); err != nil {
+		c.Log.ErrorLog(err, fmt.Sprintf("Error while updating DataFlowApplication by %s", source))
+		return servicemanager.OSOKResponse{IsSuccessful: false}, err
+	}
+
+	c.Log.InfoLog(fmt.Sprintf("DataFlowApplication %s %s", safeString(appInstance.DisplayName), successMessage))
+	return response, nil
+}
+
+func (c *DataFlowApplicationServiceManager) reconcileManagedApplication(ctx context.Context,
+	app *ociv1beta1.DataFlowApplication) (servicemanager.OSOKResponse, error) {
 	existingOcid, err := c.GetDataFlowApplicationByName(ctx, *app)
 	if err != nil {
 		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
-
 	if existingOcid != nil {
-		// Application exists — use it
 		app.Status.OsokStatus.Ocid = *existingOcid
-		appInstance, err := c.GetDataFlowApplication(ctx, *existingOcid)
-		if err != nil {
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-		response := reconcileLifecycleStatus(app, appInstance, c.Log)
-		if response.IsSuccessful {
-			if err := c.UpdateDataFlowApplication(ctx, app); err != nil {
-				c.Log.ErrorLog(err, "Error while updating existing DataFlowApplication")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		}
-		c.Log.InfoLog(fmt.Sprintf("DataFlowApplication %s found existing", app.Spec.DisplayName))
-		return response, nil
+		return c.reconcileBoundApplication(ctx, app, *existingOcid, "existing OCID", "found existing")
 	}
 
-	// Create new application
 	appInstance, err := c.CreateDataFlowApplication(ctx, *app)
 	if err != nil {
 		app.Status.OsokStatus = util.UpdateOSOKStatusCondition(app.Status.OsokStatus,
@@ -134,7 +111,6 @@ func (c *DataFlowApplicationServiceManager) CreateOrUpdate(ctx context.Context, 
 	}
 
 	c.Log.InfoLog(fmt.Sprintf("DataFlowApplication %s created successfully", app.Spec.DisplayName))
-
 	return reconcileLifecycleStatus(app, appInstance, c.Log), nil
 }
 

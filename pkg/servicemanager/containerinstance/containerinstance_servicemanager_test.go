@@ -558,9 +558,9 @@ func TestCreateContainerInstance_WithVolumeMounts(t *testing.T) {
 
 	req := ociClient.createRequest
 	assert.NotNil(t, req)
-	assert.Len(t, req.CreateContainerInstanceDetails.Containers, 1)
-	assert.Len(t, req.CreateContainerInstanceDetails.Containers[0].VolumeMounts, 1)
-	vm := req.CreateContainerInstanceDetails.Containers[0].VolumeMounts[0]
+	assert.Len(t, req.Containers, 1)
+	assert.Len(t, req.Containers[0].VolumeMounts, 1)
+	vm := req.Containers[0].VolumeMounts[0]
 	assert.Equal(t, "/data", *vm.MountPath)
 	assert.Equal(t, "my-volume", *vm.VolumeName)
 	assert.Equal(t, "data", *vm.SubPath)
@@ -588,8 +588,8 @@ func TestCreateContainerInstance_WithImagePullSecrets(t *testing.T) {
 
 	req := ociClient.createRequest
 	assert.NotNil(t, req)
-	assert.Len(t, req.CreateContainerInstanceDetails.ImagePullSecrets, 1)
-	secret, ok := req.CreateContainerInstanceDetails.ImagePullSecrets[0].(ocicontainerinstances.CreateBasicImagePullSecretDetails)
+	assert.Len(t, req.ImagePullSecrets, 1)
+	secret, ok := req.ImagePullSecrets[0].(ocicontainerinstances.CreateBasicImagePullSecretDetails)
 	assert.True(t, ok, "secret should be CreateBasicImagePullSecretDetails")
 	assert.Equal(t, "registry.example.com", *secret.RegistryEndpoint)
 	assert.Equal(t, "myuser", *secret.Username)
@@ -699,7 +699,7 @@ func TestGarbageCollect_NilDisplayName(t *testing.T) {
 // TestGarbageCollect_BelowMax: 2 instances, maxInstances=3 → no deletions.
 func TestGarbageCollect_BelowMax(t *testing.T) {
 	gc := &gcFakeOciClient{}
-	gc.fakeOciClient.listFn = makeGCListFn([]ocicontainerinstances.ContainerInstanceSummary{
+	gc.listFn = makeGCListFn([]ocicontainerinstances.ContainerInstanceSummary{
 		makeSummaryWithTime("ocid1.ci.1", 1),
 		makeSummaryWithTime("ocid1.ci.2", 2),
 	})
@@ -717,7 +717,7 @@ func TestGarbageCollect_BelowMax(t *testing.T) {
 // TestGarbageCollect_AtMax: 3 instances, maxInstances=3 → no deletions.
 func TestGarbageCollect_AtMax(t *testing.T) {
 	gc := &gcFakeOciClient{}
-	gc.fakeOciClient.listFn = makeGCListFn([]ocicontainerinstances.ContainerInstanceSummary{
+	gc.listFn = makeGCListFn([]ocicontainerinstances.ContainerInstanceSummary{
 		makeSummaryWithTime("ocid1.ci.1", 1),
 		makeSummaryWithTime("ocid1.ci.2", 2),
 		makeSummaryWithTime("ocid1.ci.3", 3),
@@ -736,7 +736,7 @@ func TestGarbageCollect_AtMax(t *testing.T) {
 // TestGarbageCollect_AboveMax: 5 instances, maxInstances=3 → oldest 2 deleted.
 func TestGarbageCollect_AboveMax(t *testing.T) {
 	gc := &gcFakeOciClient{}
-	gc.fakeOciClient.listFn = makeGCListFn([]ocicontainerinstances.ContainerInstanceSummary{
+	gc.listFn = makeGCListFn([]ocicontainerinstances.ContainerInstanceSummary{
 		makeSummaryWithTime("ocid1.ci.1", 1),
 		makeSummaryWithTime("ocid1.ci.2", 2),
 		makeSummaryWithTime("ocid1.ci.3", 3),
@@ -757,7 +757,7 @@ func TestGarbageCollect_AboveMax(t *testing.T) {
 // TestGarbageCollect_NilPolicy_DefaultMax: nil GCPolicy → uses default of 3, 5 instances → 2 deleted.
 func TestGarbageCollect_NilPolicy_DefaultMax(t *testing.T) {
 	gc := &gcFakeOciClient{}
-	gc.fakeOciClient.listFn = makeGCListFn([]ocicontainerinstances.ContainerInstanceSummary{
+	gc.listFn = makeGCListFn([]ocicontainerinstances.ContainerInstanceSummary{
 		makeSummaryWithTime("ocid1.ci.1", 1),
 		makeSummaryWithTime("ocid1.ci.2", 2),
 		makeSummaryWithTime("ocid1.ci.3", 3),
@@ -779,7 +779,7 @@ func TestGarbageCollect_NilPolicy_DefaultMax(t *testing.T) {
 // remaining instances and returns first error.
 func TestGarbageCollect_DeleteError(t *testing.T) {
 	gc := &gcFakeOciClient{}
-	gc.fakeOciClient.listFn = makeGCListFn([]ocicontainerinstances.ContainerInstanceSummary{
+	gc.listFn = makeGCListFn([]ocicontainerinstances.ContainerInstanceSummary{
 		makeSummaryWithTime("ocid1.ci.1", 1),
 		makeSummaryWithTime("ocid1.ci.2", 2),
 		makeSummaryWithTime("ocid1.ci.3", 3),
@@ -815,9 +815,9 @@ func TestCreateContainerInstance_ContainerList(t *testing.T) {
 
 	req := ociClient.createRequest
 	assert.NotNil(t, req)
-	assert.Len(t, req.CreateContainerInstanceDetails.Containers, 2)
-	assert.Equal(t, "nginx:latest", *req.CreateContainerInstanceDetails.Containers[0].ImageUrl)
-	assert.Equal(t, "web", *req.CreateContainerInstanceDetails.Containers[0].DisplayName)
-	assert.Equal(t, "redis:7", *req.CreateContainerInstanceDetails.Containers[1].ImageUrl)
-	assert.Equal(t, "cache", *req.CreateContainerInstanceDetails.Containers[1].DisplayName)
+	assert.Len(t, req.Containers, 2)
+	assert.Equal(t, "nginx:latest", *req.Containers[0].ImageUrl)
+	assert.Equal(t, "web", *req.Containers[0].DisplayName)
+	assert.Equal(t, "redis:7", *req.Containers[1].ImageUrl)
+	assert.Equal(t, "cache", *req.Containers[1].DisplayName)
 }

@@ -304,7 +304,7 @@ func TestCreateOrUpdate_CreateNew(t *testing.T) {
 		},
 		createFn: func(_ context.Context, req ocipsql.CreateDbSystemRequest) (ocipsql.CreateDbSystemResponse, error) {
 			createCalled = true
-			assert.Equal(t, "test-db", *req.CreateDbSystemDetails.DisplayName)
+			assert.Equal(t, "test-db", *req.DisplayName)
 			return ocipsql.CreateDbSystemResponse{DbSystem: activeDbSystem}, nil
 		},
 		getFn: func(_ context.Context, _ ocipsql.GetDbSystemRequest) (ocipsql.GetDbSystemResponse, error) {
@@ -408,7 +408,7 @@ func TestCreateOrUpdate_Update(t *testing.T) {
 		},
 		updateFn: func(_ context.Context, req ocipsql.UpdateDbSystemRequest) (ocipsql.UpdateDbSystemResponse, error) {
 			updateCalled = true
-			assert.Equal(t, "new-name", *req.UpdateDbSystemDetails.DisplayName)
+			assert.Equal(t, "new-name", *req.DisplayName)
 			return ocipsql.UpdateDbSystemResponse{}, nil
 		},
 	}
@@ -769,10 +769,10 @@ func TestCreateOrUpdate_CreateNew_WithCredentials(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, resp.IsSuccessful)
 
-	assert.NotNil(t, capturedReq.CreateDbSystemDetails.Credentials)
-	pwdDetails, ok := capturedReq.CreateDbSystemDetails.Credentials.PasswordDetails.(ocipsql.PlainTextPasswordDetails)
+	assert.NotNil(t, capturedReq.Credentials)
+	pwdDetails, ok := capturedReq.Credentials.PasswordDetails.(ocipsql.PlainTextPasswordDetails)
 	assert.True(t, ok)
-	assert.Equal(t, common.String("pgadmin"), capturedReq.CreateDbSystemDetails.Credentials.Username)
+	assert.Equal(t, common.String("pgadmin"), capturedReq.Credentials.Username)
 	assert.Equal(t, common.String("p@ssw0rd"), pwdDetails.Password)
 }
 
@@ -866,7 +866,7 @@ func TestCreateOrUpdate_UpdateWithDescription(t *testing.T) {
 		},
 		updateFn: func(_ context.Context, req ocipsql.UpdateDbSystemRequest) (ocipsql.UpdateDbSystemResponse, error) {
 			updateCalled = true
-			assert.Equal(t, "new description", *req.UpdateDbSystemDetails.Description)
+			assert.Equal(t, "new description", *req.Description)
 			return ocipsql.UpdateDbSystemResponse{}, nil
 		},
 	}

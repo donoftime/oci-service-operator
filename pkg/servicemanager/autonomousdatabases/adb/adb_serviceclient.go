@@ -37,22 +37,23 @@ type DatabaseClientInterface interface {
 	DeleteAutonomousDatabase(ctx context.Context, request database.DeleteAutonomousDatabaseRequest) (database.DeleteAutonomousDatabaseResponse, error)
 }
 
-func getDbClient(provider common.ConfigurationProvider) database.DatabaseClient {
-	dbClient, _ := database.NewDatabaseClientWithConfigurationProvider(provider)
-	return dbClient
+func getDbClient(provider common.ConfigurationProvider) (database.DatabaseClient, error) {
+	return database.NewDatabaseClientWithConfigurationProvider(provider)
 }
 
 // getOCIClient returns the injected client if set, otherwise creates one from the provider.
-func (c *AdbServiceManager) getOCIClient() DatabaseClientInterface {
+func (c *AdbServiceManager) getOCIClient() (DatabaseClientInterface, error) {
 	if c.ociClient != nil {
-		return c.ociClient
+		return c.ociClient, nil
 	}
 	return getDbClient(c.Provider)
 }
 
 func (c *AdbServiceManager) CreateAdb(ctx context.Context, adb ociv1beta1.AutonomousDatabases, adminPwd string) (database.CreateAutonomousDatabaseResponse, error) {
-
-	dbClient := c.getOCIClient()
+	dbClient, err := c.getOCIClient()
+	if err != nil {
+		return database.CreateAutonomousDatabaseResponse{}, err
+	}
 
 	c.Log.DebugLog("Creating Autonomous Database ", "name", adb.Spec.DisplayName)
 
@@ -98,7 +99,10 @@ func (c *AdbServiceManager) CreateAdb(ctx context.Context, adb ociv1beta1.Autono
 }
 
 func (c *AdbServiceManager) GetAdbOcid(ctx context.Context, adb ociv1beta1.AutonomousDatabases) (*ociv1beta1.OCID, error) {
-	dbClient := c.getOCIClient()
+	dbClient, err := c.getOCIClient()
+	if err != nil {
+		return nil, err
+	}
 
 	// List ADBs based on compartmentId and displayName and lifecycle-state as Active
 	listAdbRequest := database.ListAutonomousDatabasesRequest{
@@ -131,20 +135,25 @@ func (c *AdbServiceManager) GetAdbOcid(ctx context.Context, adb ociv1beta1.Auton
 }
 
 func (c *AdbServiceManager) DeleteAdb(ctx context.Context, adbId ociv1beta1.OCID) error {
-	dbClient := c.getOCIClient()
+	dbClient, err := c.getOCIClient()
+	if err != nil {
+		return err
+	}
 
 	req := database.DeleteAutonomousDatabaseRequest{
 		AutonomousDatabaseId: common.String(string(adbId)),
 	}
 
-	_, err := dbClient.DeleteAutonomousDatabase(ctx, req)
+	_, err = dbClient.DeleteAutonomousDatabase(ctx, req)
 	return err
 }
 
 // Sync the Autonomous Database details
 func (c *AdbServiceManager) GetAdb(ctx context.Context, adbId ociv1beta1.OCID, retryPolicy *common.RetryPolicy) (*database.AutonomousDatabase, error) {
-
-	dbClient := c.getOCIClient()
+	dbClient, err := c.getOCIClient()
+	if err != nil {
+		return nil, err
+	}
 
 	getAutonomousDatabaseRequest := database.GetAutonomousDatabaseRequest{
 		AutonomousDatabaseId: common.String(string(adbId)),
@@ -163,75 +172,17 @@ func (c *AdbServiceManager) GetAdb(ctx context.Context, adbId ociv1beta1.OCID, r
 }
 
 func (c *AdbServiceManager) UpdateAdb(ctx context.Context, adb *ociv1beta1.AutonomousDatabases) error {
-
-	dbClient := c.getOCIClient()
+	dbClient, err := c.getOCIClient()
+	if err != nil {
+		return err
+	}
 
 	existingAdb, err := c.GetAdb(ctx, adb.Spec.AdbId, nil)
 	if err != nil {
 		return err
 	}
 
-	updateAutonomousDatabaseDetails := database.UpdateAutonomousDatabaseDetails{}
-
-	updateNeeded := false
-	if adb.Spec.DisplayName != "" && *existingAdb.DisplayName != adb.Spec.DisplayName {
-		updateAutonomousDatabaseDetails.DisplayName = common.String(adb.Spec.DisplayName)
-		updateNeeded = true
-	}
-
-	if adb.Spec.DbName != "" && adb.Spec.DbName != *existingAdb.DbName {
-		updateAutonomousDatabaseDetails.DbName = common.String(adb.Spec.DbName)
-		updateNeeded = true
-	}
-
-	if adb.Spec.DbWorkload != "" && string(existingAdb.DbWorkload) != adb.Spec.DbWorkload {
-		updateAutonomousDatabaseDetails.DbWorkload = database.UpdateAutonomousDatabaseDetailsDbWorkloadEnum(
-			adb.Spec.DbWorkload)
-		updateNeeded = true
-	}
-
-	if adb.Spec.DbVersion != "" && adb.Spec.DbVersion != *existingAdb.DbVersion {
-		updateAutonomousDatabaseDetails.DbVersion = common.String(adb.Spec.DbVersion)
-		updateNeeded = true
-	}
-
-	if adb.Spec.DataStorageSizeInTBs != 0 && adb.Spec.DataStorageSizeInTBs != *existingAdb.DataStorageSizeInTBs {
-		updateAutonomousDatabaseDetails.DataStorageSizeInTBs = common.Int(adb.Spec.DataStorageSizeInTBs)
-		updateNeeded = true
-	}
-
-	if adb.Spec.CpuCoreCount != 0 && adb.Spec.CpuCoreCount != *existingAdb.CpuCoreCount {
-		updateAutonomousDatabaseDetails.CpuCoreCount = common.Int(adb.Spec.CpuCoreCount)
-		updateNeeded = true
-	}
-
-	if shouldUpdateOptionalBool(adb.Spec.HasExplicitIsAutoScalingEnabled(), adb.Spec.IsAutoScalingEnabled, existingAdb.IsAutoScalingEnabled) {
-		updateAutonomousDatabaseDetails.IsAutoScalingEnabled = common.Bool(adb.Spec.IsAutoScalingEnabled)
-		updateNeeded = true
-	}
-
-	if shouldUpdateOptionalBool(adb.Spec.HasExplicitIsFreeTier(), adb.Spec.IsFreeTier, existingAdb.IsFreeTier) {
-		updateAutonomousDatabaseDetails.IsFreeTier = common.Bool(adb.Spec.IsFreeTier)
-		updateNeeded = true
-	}
-
-	if adb.Spec.LicenseModel != "" && string(existingAdb.LicenseModel) != adb.Spec.LicenseModel {
-		updateAutonomousDatabaseDetails.LicenseModel = database.UpdateAutonomousDatabaseDetailsLicenseModelEnum(adb.Spec.LicenseModel)
-		updateNeeded = true
-	}
-
-	if adb.Spec.FreeFormTags != nil && !reflect.DeepEqual(existingAdb.FreeformTags, adb.Spec.FreeFormTags) {
-		updateAutonomousDatabaseDetails.FreeformTags = adb.Spec.FreeFormTags
-		updateNeeded = true
-	}
-
-	if adb.Spec.DefinedTags != nil {
-		if defTag := *util.ConvertToOciDefinedTags(&adb.Spec.DefinedTags); !reflect.DeepEqual(existingAdb.DefinedTags, defTag) {
-			updateAutonomousDatabaseDetails.DefinedTags = defTag
-			updateNeeded = true
-		}
-	}
-
+	updateAutonomousDatabaseDetails, updateNeeded := buildUpdateAutonomousDatabaseDetails(adb, existingAdb)
 	if updateNeeded {
 		updateAutonomousDatabaseRequest := database.UpdateAutonomousDatabaseRequest{
 			AutonomousDatabaseId:            common.String(string(adb.Spec.AdbId)),
@@ -244,4 +195,126 @@ func (c *AdbServiceManager) UpdateAdb(ctx context.Context, adb *ociv1beta1.Auton
 	}
 
 	return nil
+}
+
+func buildUpdateAutonomousDatabaseDetails(adb *ociv1beta1.AutonomousDatabases,
+	existingAdb *database.AutonomousDatabase) (database.UpdateAutonomousDatabaseDetails, bool) {
+	updateAutonomousDatabaseDetails := database.UpdateAutonomousDatabaseDetails{}
+
+	updateNeeded := applyAdbIdentityUpdates(&updateAutonomousDatabaseDetails, adb, existingAdb)
+	updateNeeded = applyAdbCapacityUpdates(&updateAutonomousDatabaseDetails, adb, existingAdb) || updateNeeded
+	updateNeeded = applyAdbOptionalBoolUpdates(&updateAutonomousDatabaseDetails, adb, existingAdb) || updateNeeded
+	updateNeeded = applyAdbTagUpdates(&updateAutonomousDatabaseDetails, adb, existingAdb) || updateNeeded
+
+	return updateAutonomousDatabaseDetails, updateNeeded
+}
+
+func applyAdbIdentityUpdates(updateDetails *database.UpdateAutonomousDatabaseDetails,
+	adb *ociv1beta1.AutonomousDatabases, existingAdb *database.AutonomousDatabase) bool {
+	updateNeeded := applyAdbDisplayNameUpdate(updateDetails, adb, existingAdb)
+	updateNeeded = applyAdbDbNameUpdate(updateDetails, adb, existingAdb) || updateNeeded
+	updateNeeded = applyAdbDbWorkloadUpdate(updateDetails, adb, existingAdb) || updateNeeded
+	updateNeeded = applyAdbDbVersionUpdate(updateDetails, adb, existingAdb) || updateNeeded
+	updateNeeded = applyAdbLicenseModelUpdate(updateDetails, adb, existingAdb) || updateNeeded
+	return updateNeeded
+}
+
+func applyAdbCapacityUpdates(updateDetails *database.UpdateAutonomousDatabaseDetails,
+	adb *ociv1beta1.AutonomousDatabases, existingAdb *database.AutonomousDatabase) bool {
+	updateNeeded := false
+
+	if adb.Spec.DataStorageSizeInTBs != 0 && adb.Spec.DataStorageSizeInTBs != *existingAdb.DataStorageSizeInTBs {
+		updateDetails.DataStorageSizeInTBs = common.Int(adb.Spec.DataStorageSizeInTBs)
+		updateNeeded = true
+	}
+	if adb.Spec.CpuCoreCount != 0 && adb.Spec.CpuCoreCount != *existingAdb.CpuCoreCount {
+		updateDetails.CpuCoreCount = common.Int(adb.Spec.CpuCoreCount)
+		updateNeeded = true
+	}
+
+	return updateNeeded
+}
+
+func applyAdbOptionalBoolUpdates(updateDetails *database.UpdateAutonomousDatabaseDetails,
+	adb *ociv1beta1.AutonomousDatabases, existingAdb *database.AutonomousDatabase) bool {
+	updateNeeded := false
+
+	if shouldUpdateOptionalBool(adb.Spec.HasExplicitIsAutoScalingEnabled(), adb.Spec.IsAutoScalingEnabled, existingAdb.IsAutoScalingEnabled) {
+		updateDetails.IsAutoScalingEnabled = common.Bool(adb.Spec.IsAutoScalingEnabled)
+		updateNeeded = true
+	}
+	if shouldUpdateOptionalBool(adb.Spec.HasExplicitIsFreeTier(), adb.Spec.IsFreeTier, existingAdb.IsFreeTier) {
+		updateDetails.IsFreeTier = common.Bool(adb.Spec.IsFreeTier)
+		updateNeeded = true
+	}
+
+	return updateNeeded
+}
+
+func applyAdbTagUpdates(updateDetails *database.UpdateAutonomousDatabaseDetails,
+	adb *ociv1beta1.AutonomousDatabases, existingAdb *database.AutonomousDatabase) bool {
+	updateNeeded := false
+
+	if adb.Spec.FreeFormTags != nil && !reflect.DeepEqual(existingAdb.FreeformTags, adb.Spec.FreeFormTags) {
+		updateDetails.FreeformTags = adb.Spec.FreeFormTags
+		updateNeeded = true
+	}
+	if adb.Spec.DefinedTags != nil {
+		if defTag := *util.ConvertToOciDefinedTags(&adb.Spec.DefinedTags); !reflect.DeepEqual(existingAdb.DefinedTags, defTag) {
+			updateDetails.DefinedTags = defTag
+			updateNeeded = true
+		}
+	}
+
+	return updateNeeded
+}
+
+func applyAdbDisplayNameUpdate(updateDetails *database.UpdateAutonomousDatabaseDetails,
+	adb *ociv1beta1.AutonomousDatabases, existingAdb *database.AutonomousDatabase) bool {
+	if adb.Spec.DisplayName == "" || *existingAdb.DisplayName == adb.Spec.DisplayName {
+		return false
+	}
+
+	updateDetails.DisplayName = common.String(adb.Spec.DisplayName)
+	return true
+}
+
+func applyAdbDbNameUpdate(updateDetails *database.UpdateAutonomousDatabaseDetails,
+	adb *ociv1beta1.AutonomousDatabases, existingAdb *database.AutonomousDatabase) bool {
+	if adb.Spec.DbName == "" || adb.Spec.DbName == *existingAdb.DbName {
+		return false
+	}
+
+	updateDetails.DbName = common.String(adb.Spec.DbName)
+	return true
+}
+
+func applyAdbDbWorkloadUpdate(updateDetails *database.UpdateAutonomousDatabaseDetails,
+	adb *ociv1beta1.AutonomousDatabases, existingAdb *database.AutonomousDatabase) bool {
+	if adb.Spec.DbWorkload == "" || string(existingAdb.DbWorkload) == adb.Spec.DbWorkload {
+		return false
+	}
+
+	updateDetails.DbWorkload = database.UpdateAutonomousDatabaseDetailsDbWorkloadEnum(adb.Spec.DbWorkload)
+	return true
+}
+
+func applyAdbDbVersionUpdate(updateDetails *database.UpdateAutonomousDatabaseDetails,
+	adb *ociv1beta1.AutonomousDatabases, existingAdb *database.AutonomousDatabase) bool {
+	if adb.Spec.DbVersion == "" || adb.Spec.DbVersion == *existingAdb.DbVersion {
+		return false
+	}
+
+	updateDetails.DbVersion = common.String(adb.Spec.DbVersion)
+	return true
+}
+
+func applyAdbLicenseModelUpdate(updateDetails *database.UpdateAutonomousDatabaseDetails,
+	adb *ociv1beta1.AutonomousDatabases, existingAdb *database.AutonomousDatabase) bool {
+	if adb.Spec.LicenseModel == "" || string(existingAdb.LicenseModel) == adb.Spec.LicenseModel {
+		return false
+	}
+
+	updateDetails.LicenseModel = database.UpdateAutonomousDatabaseDetailsLicenseModelEnum(adb.Spec.LicenseModel)
+	return true
 }

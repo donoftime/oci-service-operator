@@ -128,10 +128,7 @@ https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-sub
 
 func (c *KubeSecretClient) isValidSecretName(ctx context.Context, secretName string) bool {
 	validationResults := validation.NameIsDNSSubdomain(secretName, false)
-	if validationResults != nil && len(validationResults) > 0 {
-		return false
-	}
-	return true
+	return len(validationResults) == 0
 }
 func (c *KubeSecretClient) getValidSecretName(ctx context.Context, secretName string) string {
 	secretName = strings.ToLower(secretName)

@@ -8,9 +8,11 @@ OCI cloud resources as Kubernetes custom resources.
 - **Language**: Go 1.21
 - **Framework**: kubebuilder / controller-runtime
 - **OCI SDK**: `github.com/oracle/oci-go-sdk/v65`
-- **Build**: `go build ./...`
-- **Tests**: `go test ./...`
+- **Build**: `make build`
+- **Tests**: `make test`
 - **Code generation**: `make generate` (deepcopy) + `make manifests` (CRD yaml)
+- **Lint / Complexity**: `make lint`
+- **Formal Verification**: `make formal` or `make formal-<controller-slug>`
 
 ## Project Layout
 
@@ -57,8 +59,8 @@ config/crd/            # Generated CRD manifests
 
 7. **Build and test**:
    ```bash
-   go build ./...
-   go test ./...
+   make build
+   make test
    ```
 
 ## Important Patterns
@@ -100,6 +102,15 @@ if spec.Description != "" { details.Description = common.String(spec.Description
 ### Secret Generation
 After resource is ACTIVE, write endpoint/connection info to a k8s Secret.
 See `gateway_secretgeneration.go` or `containerinstance` for the pattern.
+
+## Quality Control
+
+Use these repo-level checks before considering work complete:
+
+- `make lint` for static analysis plus complexity/maintainability checks
+- `make test` for generated code, formatting, vet, and unit tests
+- `make formal` to run TLA+ controller specs across `formal/controllers`
+- `make formal-<controller-slug>` to run a single controller's formal spec while iterating
 
 ## Polecat Work Notes
 

@@ -17,7 +17,6 @@ import (
 	"github.com/oracle/oci-go-sdk/v65/streaming"
 	ociv1beta1 "github.com/oracle/oci-service-operator/api/v1beta1"
 	"github.com/oracle/oci-service-operator/pkg/credhelper"
-	"github.com/oracle/oci-service-operator/pkg/errorutil"
 	"github.com/oracle/oci-service-operator/pkg/loggerutil"
 	"github.com/oracle/oci-service-operator/pkg/metrics"
 	"github.com/oracle/oci-service-operator/pkg/servicemanager"
@@ -25,7 +24,6 @@ import (
 	"github.com/pkg/errors"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -52,160 +50,34 @@ func NewStreamServiceManager(provider common.ConfigurationProvider, credClient c
 
 func (c *StreamServiceManager) CreateOrUpdate(ctx context.Context, obj runtime.Object, req ctrl.Request) (servicemanager.OSOKResponse, error) {
 	streamObject, err := c.convert(obj)
-
-	// if error happen while object conversion
 	if err != nil {
 		c.Log.ErrorLog(err, "Conversion of object failed")
 		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
-	var streamInstance *streaming.Stream
-	var streamID ociv1beta1.OCID
-	var retryPolicy *common.RetryPolicy
-
-	if strings.TrimSpace(string(streamObject.Spec.StreamId)) == "" {
-		if streamObject.Spec.Name == "" {
-			return servicemanager.OSOKResponse{IsSuccessful: false}, errors.New("Can't able to create the stream")
-		}
-
-		// check for whether same name stream exists or not in ACTIVE, UPDATING OR CREATING Phase
-		streamOcid, err := c.GetStreamOCID(ctx, *streamObject, "CREATE")
-		if err != nil {
-			c.Log.ErrorLog(err, "Error while getting Stream using Id")
-			c.Metrics.AddCRFaultMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
-				"Failed to get the Stream", req.Name, req.Namespace)
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		if streamOcid != nil {
-			streamID = *streamOcid
-			streamInstance, err = c.GetStream(ctx, streamID, nil)
-			if err != nil {
-				c.Log.ErrorLog(err, "Error while getting Stream")
-				c.Metrics.AddCRFaultMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
-					"Error while getting Stream", req.Name, req.Namespace)
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		} else {
-			//creating the fresh request for creating the Streams
-			resp, err := c.CreateStream(ctx, *streamObject)
-			if err != nil {
-				streamObject.Status.OsokStatus = util.UpdateOSOKStatusCondition(streamObject.Status.OsokStatus,
-					ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), c.Log)
-				c.Log.ErrorLog(err, "Invalid Parameter Error")
-				c.Metrics.AddCRFaultMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
-					"Invalid Parameter Error", req.Name, req.Namespace)
-				_, err := errorutil.OciErrorTypeResponse(err)
-				if _, ok := err.(errorutil.BadRequestOciError); !ok {
-					c.Log.ErrorLog(err, "Assertion error for BadRequestOciError")
-					return servicemanager.OSOKResponse{IsSuccessful: false}, err
-				} else {
-					streamObject.Status.OsokStatus.Message = err.(common.ServiceError).GetCode()
-					return servicemanager.OSOKResponse{IsSuccessful: false}, err
-				}
-			}
-
-			//create the stream then retry to become it active
-			c.Log.InfoLog(fmt.Sprintf("Stream %s is getting Provisioned", streamObject.Spec.Name))
-			streamObject.Status.OsokStatus = util.UpdateOSOKStatusCondition(streamObject.Status.OsokStatus,
-				ociv1beta1.Provisioning, v1.ConditionTrue, "", "Stream is getting Provisioned", c.Log)
-			streamID = ociv1beta1.OCID(*resp.Id)
-			retry := c.getStreamRetryPolicy(9)
-			retryPolicy = &retry
-		}
-	} else {
-		// stream already exists update the configuration or modify the changes
-		// Bind CRD with an existing Stream.
-		streamID = streamObject.Spec.StreamId
-		streamInstance, err = c.GetStream(ctx, streamID, nil)
-		if err != nil {
-			c.Log.ErrorLog(err, "Error while getting Stream")
-			c.Metrics.AddCRFaultMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
-				"Error while getting Stream", req.Name, req.Namespace)
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
+	kind := obj.GetObjectKind().GroupVersionKind().Kind
+	streamInstance, streamID, err := c.resolveStreamInstance(ctx, streamObject, kind, req)
+	if err != nil {
+		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
-	if streamInstance == nil {
-		streamInstance, err = c.GetStream(ctx, streamID, retryPolicy)
-		if err != nil {
-			streamObject.Status.OsokStatus = util.UpdateOSOKStatusCondition(streamObject.Status.OsokStatus,
-				ociv1beta1.Failed, v1.ConditionFalse, "Error while getting the stream", err.Error(), c.Log)
-			c.Log.ErrorLog(err, "Error while getting Stream")
-			c.Metrics.AddCRFaultMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
-				"Error while getting Stream", req.Name, req.Namespace)
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
+	c.setStreamStatusID(streamObject, streamID, streamInstance)
+	streamInstance, err = c.applyStreamUpdate(ctx, streamObject, streamInstance, kind, req)
+	if err != nil {
+		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
-	if streamInstance.Id != nil {
-		streamObject.Status.OsokStatus.Ocid = ociv1beta1.OCID(*streamInstance.Id)
-	} else {
-		streamObject.Status.OsokStatus.Ocid = streamID
-	}
-
-	if isValidUpdate(*streamObject, *streamInstance) {
-		if err = c.UpdateStream(ctx, streamObject); err != nil {
-			c.Log.ErrorLog(err, "Error while updating Stream")
-			c.Metrics.AddCRFaultMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
-				"Error while updating Stream", req.Name, req.Namespace)
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-		streamObject.Status.OsokStatus = util.UpdateOSOKStatusCondition(streamObject.Status.OsokStatus,
-			ociv1beta1.Updating, v1.ConditionTrue, "", "Stream Update success", c.Log)
-		c.Log.InfoLog(fmt.Sprintf("Stream %s is updated successfully", safeStreamString(streamInstance.Name)))
-
-		streamInstance, err = c.GetStream(ctx, streamObject.Status.OsokStatus.Ocid, nil)
-		if err != nil {
-			c.Log.ErrorLog(err, "Error while getting Stream after update")
-			c.Metrics.AddCRFaultMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
-				"Error while getting Stream after update", req.Name, req.Namespace)
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-		if streamInstance.Id != nil {
-			streamObject.Status.OsokStatus.Ocid = ociv1beta1.OCID(*streamInstance.Id)
-		}
-	}
-
-	if streamObject.Status.OsokStatus.CreatedAt == nil {
-		now := metav1.NewTime(time.Now())
-		streamObject.Status.OsokStatus.CreatedAt = &now
-	}
-
-	if streamInstance.LifecycleState == "FAILED" || streamInstance.LifecycleState == "DELETED" {
-		streamObject.Status.OsokStatus = util.UpdateOSOKStatusCondition(streamObject.Status.OsokStatus,
-			ociv1beta1.Failed, v1.ConditionFalse, "",
-			fmt.Sprintf("Stream %s is %s", safeStreamString(streamInstance.Name), streamInstance.LifecycleState), c.Log)
-		c.Metrics.AddCRFaultMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind, "Failed to Create the Stream",
-			req.Name, req.Namespace)
-		c.Log.InfoLog(fmt.Sprintf("Stream %s is %s", safeStreamString(streamInstance.Name), streamInstance.LifecycleState))
-		return servicemanager.OSOKResponse{IsSuccessful: false}, nil
-	}
-
-	if streamInstance.LifecycleState != "ACTIVE" {
-		streamObject.Status.OsokStatus = util.UpdateOSOKStatusCondition(streamObject.Status.OsokStatus,
-			ociv1beta1.Provisioning, v1.ConditionTrue, "",
-			fmt.Sprintf("Stream %s is %s", safeStreamString(streamInstance.Name), streamInstance.LifecycleState), c.Log)
-		c.Log.InfoLog(fmt.Sprintf("Stream %s is %s, requeueing", safeStreamString(streamInstance.Name), streamInstance.LifecycleState))
-		return servicemanager.OSOKResponse{IsSuccessful: false, ShouldRequeue: true}, nil
-	}
-
-	streamObject.Status.OsokStatus = util.UpdateOSOKStatusCondition(streamObject.Status.OsokStatus,
-		ociv1beta1.Active, v1.ConditionTrue, "",
-		fmt.Sprintf("Stream %s is Active", safeStreamString(streamInstance.Name)), c.Log)
-	c.Log.InfoLog(fmt.Sprintf("Stream %s is Active", safeStreamString(streamInstance.Name)))
-	c.Metrics.AddCRSuccessMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind, "Stream in Active state",
-		req.Name, req.Namespace)
-	_, err = c.addToSecret(ctx, streamObject.Namespace, streamObject.Name, *streamInstance)
+	c.setStreamStatusID(streamObject, streamID, streamInstance)
+	servicemanager.SetCreatedAtIfUnset(&streamObject.Status.OsokStatus)
+	response, err := c.reconcileStreamLifecycle(ctx, streamObject, streamInstance, kind, req)
 	if err != nil {
 		if apierrors.IsAlreadyExists(err) {
 			return servicemanager.OSOKResponse{IsSuccessful: true}, nil
 		}
-		c.Log.InfoLog(fmt.Sprintf("Secret creation got failed"))
+		c.Log.InfoLog("Secret creation got failed")
 		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
-
-	return servicemanager.OSOKResponse{IsSuccessful: true}, nil
+	return response, nil
 }
 
 func isValidUpdate(streamObject ociv1beta1.Stream, streamInstance streaming.Stream) bool {
@@ -310,6 +182,76 @@ func safeStreamString(value *string) string {
 		return ""
 	}
 	return *value
+}
+
+func (c *StreamServiceManager) resolveStreamInstance(ctx context.Context, streamObject *ociv1beta1.Stream,
+	kind string, req ctrl.Request) (*streaming.Stream, ociv1beta1.OCID, error) {
+	if strings.TrimSpace(string(streamObject.Spec.StreamId)) != "" {
+		streamID := streamObject.Spec.StreamId
+		streamInstance, err := c.loadStreamInstance(ctx, streamID, nil, kind, req)
+		return streamInstance, streamID, err
+	}
+	return c.lookupOrCreateStream(ctx, streamObject, kind, req)
+}
+
+func (c *StreamServiceManager) lookupOrCreateStream(ctx context.Context, streamObject *ociv1beta1.Stream,
+	kind string, req ctrl.Request) (*streaming.Stream, ociv1beta1.OCID, error) {
+	if streamObject.Spec.Name == "" {
+		return nil, "", errors.New("Can't able to create the stream")
+	}
+
+	streamOcid, err := c.GetStreamOCID(ctx, *streamObject, "CREATE")
+	if err != nil {
+		c.Log.ErrorLog(err, "Error while getting Stream using Id")
+		c.recordStreamFault(ctx, kind, "Failed to get the Stream", req)
+		return nil, "", err
+	}
+	if streamOcid != nil {
+		streamInstance, loadErr := c.loadStreamInstance(ctx, *streamOcid, nil, kind, req)
+		return streamInstance, *streamOcid, loadErr
+	}
+	return c.createStreamInstance(ctx, streamObject, kind, req)
+}
+
+func (c *StreamServiceManager) createStreamInstance(ctx context.Context, streamObject *ociv1beta1.Stream,
+	kind string, req ctrl.Request) (*streaming.Stream, ociv1beta1.OCID, error) {
+	resp, err := c.CreateStream(ctx, *streamObject)
+	if err != nil {
+		return nil, "", c.handleCreateStreamError(ctx, streamObject, err, kind, req)
+	}
+
+	c.Log.InfoLog(fmt.Sprintf("Stream %s is getting Provisioned", streamObject.Spec.Name))
+	streamObject.Status.OsokStatus = util.UpdateOSOKStatusCondition(streamObject.Status.OsokStatus,
+		ociv1beta1.Provisioning, v1.ConditionTrue, "", "Stream is getting Provisioned", c.Log)
+	streamID := ociv1beta1.OCID(*resp.Id)
+	retry := c.getStreamRetryPolicy(9)
+	streamInstance, err := c.loadStreamInstance(ctx, streamID, &retry, kind, req)
+	return streamInstance, streamID, err
+}
+
+func (c *StreamServiceManager) applyStreamUpdate(ctx context.Context, streamObject *ociv1beta1.Stream,
+	streamInstance *streaming.Stream, kind string, req ctrl.Request) (*streaming.Stream, error) {
+	if !isValidUpdate(*streamObject, *streamInstance) {
+		return streamInstance, nil
+	}
+
+	if err := c.UpdateStream(ctx, streamObject); err != nil {
+		c.Log.ErrorLog(err, "Error while updating Stream")
+		c.recordStreamFault(ctx, kind, "Error while updating Stream", req)
+		return nil, err
+	}
+
+	streamObject.Status.OsokStatus = util.UpdateOSOKStatusCondition(streamObject.Status.OsokStatus,
+		ociv1beta1.Updating, v1.ConditionTrue, "", "Stream Update success", c.Log)
+	c.Log.InfoLog(fmt.Sprintf("Stream %s is updated successfully", safeStreamString(streamInstance.Name)))
+
+	updatedInstance, err := c.loadStreamInstance(ctx, streamObject.Status.OsokStatus.Ocid, nil, kind, req)
+	if err != nil {
+		c.Log.ErrorLog(err, "Error while getting Stream after update")
+		c.recordStreamFault(ctx, kind, "Error while getting Stream after update", req)
+		return nil, err
+	}
+	return updatedInstance, nil
 }
 
 func (c *StreamServiceManager) GetCrdStatus(obj runtime.Object) (*ociv1beta1.OSOKStatus, error) {

@@ -46,63 +46,99 @@ type BaseReconciler struct {
 func (r *BaseReconciler) Reconcile(ctx context.Context, req ctrl.Request, obj client.Object) (result ctrl.Result, err error) {
 	// To setup the fixed logs for every log
 	ctx = metrics.AddFixedLogMapEntries(ctx, req.Name, req.Namespace)
+	if result, stop, err := r.fetchResource(ctx, req, obj); stop {
+		return result, err
+	}
+	if result, stop, err := r.handleDeletion(ctx, req, obj); stop {
+		return result, err
+	}
+	if result, stop, err := r.ensureFinalizers(ctx, req, obj); stop {
+		return result, err
+	}
+
+	r.Log.InfoLogWithFixedMessage(ctx, "Reconcile the resource")
+	return r.ReconcileResource(ctx, obj, req)
+}
+
+func (r *BaseReconciler) fetchResource(ctx context.Context, req ctrl.Request, obj client.Object) (ctrl.Result, bool, error) {
 	r.Log.DebugLogWithFixedMessage(ctx, "Fetching the resource from server")
 	if err := r.Get(ctx, req.NamespacedName, obj); err != nil {
 		if errors.IsNotFound(err) {
 			r.Log.ErrorLogWithFixedMessage(ctx, err, "The resource could be in deleting state. Ignoring")
-			return ctrl.Result{}, client.IgnoreNotFound(err)
+			return ctrl.Result{}, true, client.IgnoreNotFound(err)
 		}
 		r.Log.ErrorLogWithFixedMessage(ctx, err, "Error while get the Resource from server.")
-		return ctrl.Result{}, err
+		return ctrl.Result{}, true, err
 	}
 
 	r.Log.InfoLogWithFixedMessage(ctx, "Got the status of resource")
+	return ctrl.Result{}, false, nil
+}
 
-	if obj.GetDeletionTimestamp() != nil {
-		if controllerutil.ContainsFinalizer(obj, OSOKFinalizerName) {
-			r.Log.InfoLogWithFixedMessage(ctx, "The Deletion time is non zero. Deleting the resource")
-
-			delSuc, err := r.DeleteResource(ctx, obj, req)
-			if err != nil {
-				r.Log.ErrorLogWithFixedMessage(ctx, err, "Requeuing object due to error during delete of CR")
-				r.Metrics.AddCRDeleteFaultMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
-					"Requeuing object due to error during delete of CR", req.Name, req.Namespace)
-				r.Recorder.Event(obj, v1.EventTypeWarning, "Failed",
-					fmt.Sprintf("Failed to remove the finalizer: %s", err.Error()))
-				return util.RequeueWithError(ctx, err, defaultRequeueTime, r.Log)
-			}
-			if delSuc {
-				if err := r.removeFinalizer(ctx, obj, strings.Join(r.AdditionalFinalizers, " "), OSOKFinalizerName); err != nil {
-					r.Log.ErrorLogWithFixedMessage(ctx, err, "Failed to remove the finalizer")
-					r.Recorder.Event(obj, v1.EventTypeWarning, "Failed",
-						fmt.Sprintf("Failed to remove the finalizer: %s", err.Error()))
-					return util.RequeueWithError(ctx, err, defaultRequeueTime, r.Log)
-				}
-				r.Log.InfoLogWithFixedMessage(ctx, "Deletion of the CR successful")
-				r.Metrics.AddCRDeleteSuccessMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
-					"Deletion of the CR successful", req.Name, req.Namespace)
-				r.Recorder.Event(obj, v1.EventTypeNormal, "Success", "Removed finalizer")
-				return util.DoNotRequeue()
-			} else {
-				r.Log.ErrorLogWithFixedMessage(ctx, err, "Re-queuing object as delete was unsuccessful")
-				r.Metrics.AddCRDeleteFaultMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
-					"Re-queuing object as delete was unsuccessful", req.Name, req.Namespace)
-				r.Recorder.Event(obj, v1.EventTypeWarning, "Failed", "Failed Delete the resource")
-				return util.RequeueWithoutError(ctx, defaultRequeueTime, r.Log)
-			}
-		}
+func (r *BaseReconciler) handleDeletion(ctx context.Context, req ctrl.Request, obj client.Object) (ctrl.Result, bool, error) {
+	if obj.GetDeletionTimestamp() == nil || !controllerutil.ContainsFinalizer(obj, OSOKFinalizerName) {
+		return ctrl.Result{}, false, nil
 	}
 
+	r.Log.InfoLogWithFixedMessage(ctx, "The Deletion time is non zero. Deleting the resource")
+	deleteSucceeded, err := r.DeleteResource(ctx, obj, req)
+	if err != nil {
+		return r.deleteFailureResult(ctx, req, obj, err)
+	}
+	if !deleteSucceeded {
+		return r.deleteRetryResult(ctx, req, obj)
+	}
+
+	return r.deleteSuccessResult(ctx, req, obj)
+}
+
+func (r *BaseReconciler) ensureFinalizers(ctx context.Context, req ctrl.Request, obj client.Object) (ctrl.Result, bool, error) {
 	if err := r.addFinalizer(ctx, obj, strings.Join(r.AdditionalFinalizers, " "), OSOKFinalizerName); err != nil {
 		r.Log.ErrorLogWithFixedMessage(ctx, err, "Error adding finalizer to Custom Resource.")
 		r.Metrics.AddReconcileFaultMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
 			"Error adding finalizer to Custom Resource.", req.Name, req.Namespace)
 		r.Recorder.Event(obj, v1.EventTypeWarning, "Failed", "Failed to add finalizer")
-		return util.RequeueWithError(ctx, err, defaultRequeueTime, r.Log)
+		result, requeueErr := util.RequeueWithError(ctx, err, defaultRequeueTime, r.Log)
+		return result, true, requeueErr
 	}
 
-	r.Log.InfoLogWithFixedMessage(ctx, "Reconcile the resource")
-	return r.ReconcileResource(ctx, obj, req)
+	return ctrl.Result{}, false, nil
+}
+
+func (r *BaseReconciler) deleteFailureResult(ctx context.Context, req ctrl.Request, obj client.Object, err error) (ctrl.Result, bool, error) {
+	r.Log.ErrorLogWithFixedMessage(ctx, err, "Requeuing object due to error during delete of CR")
+	r.Metrics.AddCRDeleteFaultMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
+		"Requeuing object due to error during delete of CR", req.Name, req.Namespace)
+	r.Recorder.Event(obj, v1.EventTypeWarning, "Failed",
+		fmt.Sprintf("Failed to remove the finalizer: %s", err.Error()))
+	result, requeueErr := util.RequeueWithError(ctx, err, defaultRequeueTime, r.Log)
+	return result, true, requeueErr
+}
+
+func (r *BaseReconciler) deleteRetryResult(ctx context.Context, req ctrl.Request, obj client.Object) (ctrl.Result, bool, error) {
+	r.Log.InfoLogWithFixedMessage(ctx, "Re-queuing object as delete was unsuccessful")
+	r.Metrics.AddCRDeleteFaultMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
+		"Re-queuing object as delete was unsuccessful", req.Name, req.Namespace)
+	r.Recorder.Event(obj, v1.EventTypeWarning, "Failed", "Failed Delete the resource")
+	result, err := util.RequeueWithoutError(ctx, defaultRequeueTime, r.Log)
+	return result, true, err
+}
+
+func (r *BaseReconciler) deleteSuccessResult(ctx context.Context, req ctrl.Request, obj client.Object) (ctrl.Result, bool, error) {
+	if err := r.removeFinalizer(ctx, obj, strings.Join(r.AdditionalFinalizers, " "), OSOKFinalizerName); err != nil {
+		r.Log.ErrorLogWithFixedMessage(ctx, err, "Failed to remove the finalizer")
+		r.Recorder.Event(obj, v1.EventTypeWarning, "Failed",
+			fmt.Sprintf("Failed to remove the finalizer: %s", err.Error()))
+		result, requeueErr := util.RequeueWithError(ctx, err, defaultRequeueTime, r.Log)
+		return result, true, requeueErr
+	}
+
+	r.Log.InfoLogWithFixedMessage(ctx, "Deletion of the CR successful")
+	r.Metrics.AddCRDeleteSuccessMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
+		"Deletion of the CR successful", req.Name, req.Namespace)
+	r.Recorder.Event(obj, v1.EventTypeNormal, "Success", "Removed finalizer")
+	result, err := util.DoNotRequeue()
+	return result, true, err
 }
 
 func (r *BaseReconciler) GetStatus(obj client.Object) (*v1beta1.OSOKStatus, error) {

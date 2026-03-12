@@ -7,6 +7,7 @@ package redis
 
 import (
 	"context"
+	goerrors "errors"
 	"fmt"
 	"strings"
 
@@ -56,67 +57,14 @@ func (c *RedisClusterServiceManager) CreateOrUpdate(ctx context.Context, obj run
 		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
-	var clusterInstance *redis.RedisCluster
-
-	if strings.TrimSpace(string(cluster.Spec.RedisClusterId)) == "" {
-		// No ID provided — check by display name or create
-		clusterOcid, err := c.GetRedisClusterOcid(ctx, *cluster)
-		if err != nil {
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		if clusterOcid == nil {
-			// Create a new Redis cluster
-			resp, err := c.CreateRedisCluster(ctx, *cluster)
-			if err != nil {
-				cluster.Status.OsokStatus = util.UpdateOSOKStatusCondition(cluster.Status.OsokStatus,
-					ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), c.Log)
-				if _, ok := err.(errorutil.BadRequestOciError); !ok {
-					c.Log.ErrorLog(err, "Create RedisCluster failed")
-					return servicemanager.OSOKResponse{IsSuccessful: false}, err
-				}
-				cluster.Status.OsokStatus.Message = err.(common.ServiceError).GetCode()
-				c.Log.ErrorLog(err, "Create RedisCluster bad request")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-
-			c.Log.InfoLog(fmt.Sprintf("RedisCluster %s is Provisioning", cluster.Spec.DisplayName))
-			cluster.Status.OsokStatus = util.UpdateOSOKStatusCondition(cluster.Status.OsokStatus,
-				ociv1beta1.Provisioning, v1.ConditionTrue, "", "RedisCluster Provisioning", c.Log)
-			cluster.Status.OsokStatus.Ocid = ociv1beta1.OCID(*resp.Id)
-
-			retryPolicy := c.getRetryPolicy(30)
-			clusterInstance, err = c.GetRedisCluster(ctx, ociv1beta1.OCID(*resp.Id), &retryPolicy)
-			if err != nil {
-				c.Log.ErrorLog(err, "Error while getting RedisCluster after create")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		} else {
-			c.Log.InfoLog(fmt.Sprintf("Getting existing RedisCluster %s", *clusterOcid))
-			clusterInstance, err = c.GetRedisCluster(ctx, *clusterOcid, nil)
-			if err != nil {
-				c.Log.ErrorLog(err, "Error while getting RedisCluster by OCID")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		}
-
-	} else {
-		// Bind to an existing cluster by ID
-		clusterInstance, err = c.GetRedisCluster(ctx, cluster.Spec.RedisClusterId, nil)
-		if err != nil {
-			c.Log.ErrorLog(err, "Error while getting existing RedisCluster")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		if err = c.UpdateRedisCluster(ctx, cluster); err != nil {
-			c.Log.ErrorLog(err, "Error while updating RedisCluster")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
+	clusterInstance, response, done, err := c.resolveClusterForReconcile(ctx, cluster)
+	if err != nil || done {
+		return response, err
 	}
 
-	response := reconcileLifecycleStatus(&cluster.Status.OsokStatus, clusterInstance, c.Log)
-	if !response.IsSuccessful {
-		return response, nil
+	reconcileResponse := reconcileLifecycleStatus(&cluster.Status.OsokStatus, clusterInstance, c.Log)
+	if !reconcileResponse.IsSuccessful {
+		return reconcileResponse, nil
 	}
 
 	_, err = c.addToSecret(ctx, cluster.Namespace, cluster.Name, *clusterInstance)
@@ -128,7 +76,93 @@ func (c *RedisClusterServiceManager) CreateOrUpdate(ctx context.Context, obj run
 		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
-	return response, nil
+	return reconcileResponse, nil
+}
+
+func (c *RedisClusterServiceManager) resolveClusterForReconcile(ctx context.Context,
+	cluster *ociv1beta1.RedisCluster) (*redis.RedisCluster, servicemanager.OSOKResponse, bool, error) {
+	if strings.TrimSpace(string(cluster.Spec.RedisClusterId)) == "" {
+		return c.resolveManagedCluster(ctx, cluster)
+	}
+
+	return c.resolveBoundCluster(ctx, cluster)
+}
+
+func (c *RedisClusterServiceManager) resolveManagedCluster(ctx context.Context,
+	cluster *ociv1beta1.RedisCluster) (*redis.RedisCluster, servicemanager.OSOKResponse, bool, error) {
+	clusterOcid, err := c.GetRedisClusterOcid(ctx, *cluster)
+	if err != nil {
+		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
+	}
+	if clusterOcid == nil {
+		return c.createManagedCluster(ctx, cluster)
+	}
+
+	c.Log.InfoLog(fmt.Sprintf("Getting existing RedisCluster %s", *clusterOcid))
+	clusterInstance, err := c.GetRedisCluster(ctx, *clusterOcid, nil)
+	if err != nil {
+		c.Log.ErrorLog(err, "Error while getting RedisCluster by OCID")
+		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
+	}
+
+	return clusterInstance, servicemanager.OSOKResponse{}, false, nil
+}
+
+func (c *RedisClusterServiceManager) createManagedCluster(ctx context.Context,
+	cluster *ociv1beta1.RedisCluster) (*redis.RedisCluster, servicemanager.OSOKResponse, bool, error) {
+	resp, err := c.CreateRedisCluster(ctx, *cluster)
+	if err != nil {
+		return c.handleCreateRedisClusterError(cluster, err)
+	}
+
+	c.markRedisClusterProvisioning(cluster, *resp.Id)
+	retryPolicy := c.getRetryPolicy(30)
+	clusterInstance, err := c.GetRedisCluster(ctx, ociv1beta1.OCID(*resp.Id), &retryPolicy)
+	if err != nil {
+		c.Log.ErrorLog(err, "Error while getting RedisCluster after create")
+		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
+	}
+
+	return clusterInstance, servicemanager.OSOKResponse{}, false, nil
+}
+
+func (c *RedisClusterServiceManager) resolveBoundCluster(ctx context.Context,
+	cluster *ociv1beta1.RedisCluster) (*redis.RedisCluster, servicemanager.OSOKResponse, bool, error) {
+	clusterInstance, err := c.GetRedisCluster(ctx, cluster.Spec.RedisClusterId, nil)
+	if err != nil {
+		c.Log.ErrorLog(err, "Error while getting existing RedisCluster")
+		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
+	}
+
+	if err = c.UpdateRedisCluster(ctx, cluster); err != nil {
+		c.Log.ErrorLog(err, "Error while updating RedisCluster")
+		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
+	}
+
+	return clusterInstance, servicemanager.OSOKResponse{}, false, nil
+}
+
+func (c *RedisClusterServiceManager) handleCreateRedisClusterError(cluster *ociv1beta1.RedisCluster,
+	err error) (*redis.RedisCluster, servicemanager.OSOKResponse, bool, error) {
+	cluster.Status.OsokStatus = util.UpdateOSOKStatusCondition(cluster.Status.OsokStatus,
+		ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), c.Log)
+	var badRequestErr errorutil.BadRequestOciError
+	if !goerrors.As(err, &badRequestErr) {
+		c.Log.ErrorLog(err, "Create RedisCluster failed")
+		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
+	}
+	if serviceErr, ok := common.IsServiceError(err); ok {
+		cluster.Status.OsokStatus.Message = serviceErr.GetCode()
+	}
+	c.Log.ErrorLog(err, "Create RedisCluster bad request")
+	return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
+}
+
+func (c *RedisClusterServiceManager) markRedisClusterProvisioning(cluster *ociv1beta1.RedisCluster, clusterID string) {
+	c.Log.InfoLog(fmt.Sprintf("RedisCluster %s is Provisioning", cluster.Spec.DisplayName))
+	cluster.Status.OsokStatus = util.UpdateOSOKStatusCondition(cluster.Status.OsokStatus,
+		ociv1beta1.Provisioning, v1.ConditionTrue, "", "RedisCluster Provisioning", c.Log)
+	cluster.Status.OsokStatus.Ocid = ociv1beta1.OCID(clusterID)
 }
 
 // Delete handles deletion of the Redis cluster (called by the finalizer).

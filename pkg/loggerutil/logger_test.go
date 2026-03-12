@@ -268,7 +268,7 @@ func Test_finalMessageBuilder_AllPresent(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func Test_fixedMessageBuilder_NilContext(t *testing.T) {
-	result := fixedMessageBuilder(nil)
+	result := fixedMessageBuilder(context.TODO())
 	assert.Equal(t, "", result)
 }
 

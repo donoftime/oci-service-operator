@@ -59,9 +59,32 @@ func (c *PostgresDbSystemServiceManager) CreatePostgresDbSystem(ctx context.Cont
 		StorageDetails: storageDetails,
 	}
 
+	applyPostgresTextFields(&details, dbSystem)
+	applyPostgresCapacityFields(&details, dbSystem)
+	applyPostgresTagFields(&details, dbSystem)
+
+	if dbSystem.Spec.AdminUsername.Secret.SecretName != "" && dbSystem.Spec.AdminPassword.Secret.SecretName != "" {
+		credentials, err := c.loadDbSystemCredentials(ctx, dbSystem)
+		if err != nil {
+			return psql.CreateDbSystemResponse{}, err
+		}
+		details.Credentials = credentials
+	}
+
+	req := psql.CreateDbSystemRequest{
+		CreateDbSystemDetails: details,
+	}
+
+	return client.CreateDbSystem(ctx, req)
+}
+
+func applyPostgresTextFields(details *psql.CreateDbSystemDetails, dbSystem ociv1beta1.PostgresDbSystem) {
 	if dbSystem.Spec.Description != "" {
 		details.Description = common.String(dbSystem.Spec.Description)
 	}
+}
+
+func applyPostgresCapacityFields(details *psql.CreateDbSystemDetails, dbSystem ociv1beta1.PostgresDbSystem) {
 	if dbSystem.Spec.InstanceCount > 0 {
 		details.InstanceCount = common.Int(dbSystem.Spec.InstanceCount)
 	}
@@ -71,48 +94,46 @@ func (c *PostgresDbSystemServiceManager) CreatePostgresDbSystem(ctx context.Cont
 	if dbSystem.Spec.InstanceMemoryInGBs > 0 {
 		details.InstanceMemorySizeInGBs = common.Int(dbSystem.Spec.InstanceMemoryInGBs)
 	}
+}
+
+func applyPostgresTagFields(details *psql.CreateDbSystemDetails, dbSystem ociv1beta1.PostgresDbSystem) {
 	if dbSystem.Spec.FreeFormTags != nil {
 		details.FreeformTags = dbSystem.Spec.FreeFormTags
 	}
 	if dbSystem.Spec.DefinedTags != nil {
 		details.DefinedTags = *util.ConvertToOciDefinedTags(&dbSystem.Spec.DefinedTags)
 	}
+}
 
-	if dbSystem.Spec.AdminUsername.Secret.SecretName != "" && dbSystem.Spec.AdminPassword.Secret.SecretName != "" {
-		c.Log.DebugLog("Getting Admin Username from Secret")
-		unameMap, err := c.CredentialClient.GetSecret(ctx, dbSystem.Spec.AdminUsername.Secret.SecretName, dbSystem.Namespace)
-		if err != nil {
-			return psql.CreateDbSystemResponse{}, err
-		}
-		uname, ok := unameMap["username"]
-		if !ok {
-			return psql.CreateDbSystemResponse{}, errors.New("username key in admin secret is not found")
-		}
-
-		c.Log.DebugLog("Getting Admin Password from Secret")
-		pwdMap, err := c.CredentialClient.GetSecret(ctx, dbSystem.Spec.AdminPassword.Secret.SecretName, dbSystem.Namespace)
-		if err != nil {
-			return psql.CreateDbSystemResponse{}, err
-		}
-		pwd, ok := pwdMap["password"]
-		if !ok {
-			return psql.CreateDbSystemResponse{}, errors.New("password key in admin secret is not found")
-		}
-
-		credentials := psql.Credentials{
-			Username: common.String(string(uname)),
-			PasswordDetails: psql.PlainTextPasswordDetails{
-				Password: common.String(string(pwd)),
-			},
-		}
-		details.Credentials = &credentials
+func (c *PostgresDbSystemServiceManager) loadDbSystemCredentials(ctx context.Context,
+	dbSystem ociv1beta1.PostgresDbSystem) (*psql.Credentials, error) {
+	c.Log.DebugLog("Getting Admin Username from Secret")
+	unameMap, err := c.CredentialClient.GetSecret(ctx, dbSystem.Spec.AdminUsername.Secret.SecretName, dbSystem.Namespace)
+	if err != nil {
+		return nil, err
+	}
+	uname, ok := unameMap["username"]
+	if !ok {
+		return nil, errors.New("username key in admin secret is not found")
 	}
 
-	req := psql.CreateDbSystemRequest{
-		CreateDbSystemDetails: details,
+	c.Log.DebugLog("Getting Admin Password from Secret")
+	pwdMap, err := c.CredentialClient.GetSecret(ctx, dbSystem.Spec.AdminPassword.Secret.SecretName, dbSystem.Namespace)
+	if err != nil {
+		return nil, err
+	}
+	pwd, ok := pwdMap["password"]
+	if !ok {
+		return nil, errors.New("password key in admin secret is not found")
 	}
 
-	return client.CreateDbSystem(ctx, req)
+	credentials := psql.Credentials{
+		Username: common.String(string(uname)),
+		PasswordDetails: psql.PlainTextPasswordDetails{
+			Password: common.String(string(pwd)),
+		},
+	}
+	return &credentials, nil
 }
 
 // GetPostgresDbSystem retrieves a PostgreSQL DB system by OCID.

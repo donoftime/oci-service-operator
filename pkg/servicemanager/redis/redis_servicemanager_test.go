@@ -616,14 +616,14 @@ func TestGetRetryPolicy(t *testing.T) {
 
 	t.Run("should_retry_creating_state", func(t *testing.T) {
 		resp := ociredis.GetRedisClusterResponse{}
-		resp.RedisCluster.LifecycleState = ociredis.RedisClusterLifecycleStateCreating
+		resp.LifecycleState = ociredis.RedisClusterLifecycleStateCreating
 		opResp := common.OCIOperationResponse{Response: resp}
 		assert.True(t, policy.ShouldRetryOperation(opResp), "should retry when CREATING")
 	})
 
 	t.Run("should_not_retry_active_state", func(t *testing.T) {
 		resp := ociredis.GetRedisClusterResponse{}
-		resp.RedisCluster.LifecycleState = ociredis.RedisClusterLifecycleStateActive
+		resp.LifecycleState = ociredis.RedisClusterLifecycleStateActive
 		opResp := common.OCIOperationResponse{Response: resp}
 		assert.False(t, policy.ShouldRetryOperation(opResp), "should not retry when ACTIVE")
 	})

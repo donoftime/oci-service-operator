@@ -681,8 +681,8 @@ func TestDeploymentServiceManager_CreateOrUpdate_WithRoutes(t *testing.T) {
 		},
 		createDeploymentFn: func(_ context.Context, req apigateway.CreateDeploymentRequest) (apigateway.CreateDeploymentResponse, error) {
 			// Verify routes were converted
-			assert.NotNil(t, req.CreateDeploymentDetails.Specification)
-			assert.Len(t, req.CreateDeploymentDetails.Specification.Routes, 3)
+			assert.NotNil(t, req.Specification)
+			assert.Len(t, req.Specification.Routes, 3)
 			return apigateway.CreateDeploymentResponse{Deployment: apigateway.Deployment{Id: common.String(depID)}}, nil
 		},
 		getDeploymentFn: func(_ context.Context, _ apigateway.GetDeploymentRequest) (apigateway.GetDeploymentResponse, error) {

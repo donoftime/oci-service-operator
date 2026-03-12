@@ -34,7 +34,6 @@ func (b baseFinalizer) AddFinalizers(obj client.Object, finalizers ...string) {
 			controllerutil.AddFinalizer(obj, finalizer)
 		}
 	}
-	return
 }
 
 func (b baseFinalizer) RemoveFinalizer(obj client.Object, finalizers ...string) {
@@ -43,7 +42,6 @@ func (b baseFinalizer) RemoveFinalizer(obj client.Object, finalizers ...string) 
 			controllerutil.RemoveFinalizer(obj, finalizer)
 		}
 	}
-	return
 }
 
 func HasFinalizer(obj client.Object, finalizer string) bool {

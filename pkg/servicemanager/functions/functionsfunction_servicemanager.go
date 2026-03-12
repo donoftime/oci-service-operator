@@ -15,12 +15,8 @@ import (
 	ocifunctions "github.com/oracle/oci-go-sdk/v65/functions"
 	ociv1beta1 "github.com/oracle/oci-service-operator/api/v1beta1"
 	"github.com/oracle/oci-service-operator/pkg/credhelper"
-	"github.com/oracle/oci-service-operator/pkg/errorutil"
 	"github.com/oracle/oci-service-operator/pkg/loggerutil"
 	"github.com/oracle/oci-service-operator/pkg/servicemanager"
-	"github.com/oracle/oci-service-operator/pkg/util"
-	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -56,102 +52,28 @@ func (m *FunctionsFunctionServiceManager) CreateOrUpdate(ctx context.Context, ob
 		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
-	var fnInstance *ocifunctions.Function
+	fnInstance, err := m.resolveFunctionInstance(ctx, fn)
+	if err != nil {
+		return servicemanager.OSOKResponse{IsSuccessful: false}, err
+	}
 
-	if strings.TrimSpace(string(fn.Spec.FunctionsFunctionId)) == "" {
-		// No ID provided — check by display name or create
-		fnOcid, err := m.GetFunctionOcid(ctx, *fn)
-		if err != nil {
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		if fnOcid == nil {
-			// Create a new function
-			resp, err := m.CreateFunction(ctx, *fn)
-			if err != nil {
-				fn.Status.OsokStatus = util.UpdateOSOKStatusCondition(fn.Status.OsokStatus,
-					ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), m.Log)
-				if _, ok := err.(errorutil.BadRequestOciError); !ok {
-					m.Log.ErrorLog(err, "Create FunctionsFunction failed")
-					return servicemanager.OSOKResponse{IsSuccessful: false}, err
-				}
-				fn.Status.OsokStatus.Message = err.(common.ServiceError).GetCode()
-				m.Log.ErrorLog(err, "Create FunctionsFunction bad request")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-
-			m.Log.InfoLog(fmt.Sprintf("FunctionsFunction %s is Provisioning", fn.Spec.DisplayName))
-			fn.Status.OsokStatus = util.UpdateOSOKStatusCondition(fn.Status.OsokStatus,
-				ociv1beta1.Provisioning, v1.ConditionTrue, "", "FunctionsFunction Provisioning", m.Log)
-			fn.Status.OsokStatus.Ocid = ociv1beta1.OCID(*resp.Id)
-
-			retryPolicy := m.getRetryPolicy(30)
-			fnInstance, err = m.GetFunction(ctx, ociv1beta1.OCID(*resp.Id), &retryPolicy)
-			if err != nil {
-				m.Log.ErrorLog(err, "Error while getting FunctionsFunction after create")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		} else {
-			m.Log.InfoLog(fmt.Sprintf("Getting existing FunctionsFunction %s", *fnOcid))
-			fnInstance, err = m.GetFunction(ctx, *fnOcid, nil)
-			if err != nil {
-				m.Log.ErrorLog(err, "Error while getting FunctionsFunction by OCID")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		}
-
+	if fnInstance.Id != nil {
 		fn.Status.OsokStatus.Ocid = ociv1beta1.OCID(*fnInstance.Id)
-		m.Log.InfoLog(fmt.Sprintf("FunctionsFunction %s is %s", *fnInstance.DisplayName, fnInstance.LifecycleState))
+	}
+	servicemanager.SetCreatedAtIfUnset(&fn.Status.OsokStatus)
 
-	} else {
-		// Bind to an existing function by ID
-		fnInstance, err = m.GetFunction(ctx, fn.Spec.FunctionsFunctionId, nil)
-		if err != nil {
-			m.Log.ErrorLog(err, "Error while getting existing FunctionsFunction")
+	response := reconcileFunctionsFunctionLifecycle(&fn.Status.OsokStatus, fnInstance, m.Log)
+	if !response.IsSuccessful {
+		return response, nil
+	}
+	if fnInstance.InvokeEndpoint != nil {
+		if _, err = m.addToSecret(ctx, fn.Namespace, fn.Name, *fnInstance); err != nil {
+			m.Log.InfoLog("Secret creation for FunctionsFunction endpoint failed")
 			return servicemanager.OSOKResponse{IsSuccessful: false}, err
 		}
-
-		fn.Status.OsokStatus.Ocid = fn.Spec.FunctionsFunctionId
-		if err = m.UpdateFunction(ctx, fn); err != nil {
-			m.Log.ErrorLog(err, "Error while updating FunctionsFunction")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		m.Log.InfoLog(fmt.Sprintf("FunctionsFunction %s is bound/updated", *fnInstance.DisplayName))
 	}
 
-	fn.Status.OsokStatus.Ocid = ociv1beta1.OCID(*fnInstance.Id)
-	if fn.Status.OsokStatus.CreatedAt == nil {
-		now := metav1.NewTime(time.Now())
-		fn.Status.OsokStatus.CreatedAt = &now
-	}
-
-	switch fnInstance.LifecycleState {
-	case ocifunctions.FunctionLifecycleStateFailed, ocifunctions.FunctionLifecycleStateDeleted:
-		fn.Status.OsokStatus = util.UpdateOSOKStatusCondition(fn.Status.OsokStatus,
-			ociv1beta1.Failed, v1.ConditionFalse, "",
-			fmt.Sprintf("FunctionsFunction %s is %s", *fnInstance.DisplayName, fnInstance.LifecycleState), m.Log)
-		m.Log.InfoLog(fmt.Sprintf("FunctionsFunction %s is %s", *fnInstance.DisplayName, fnInstance.LifecycleState))
-		return servicemanager.OSOKResponse{IsSuccessful: false}, nil
-	case ocifunctions.FunctionLifecycleStateActive:
-		fn.Status.OsokStatus = util.UpdateOSOKStatusCondition(fn.Status.OsokStatus,
-			ociv1beta1.Active, v1.ConditionTrue, "",
-			fmt.Sprintf("FunctionsFunction %s is %s", *fnInstance.DisplayName, fnInstance.LifecycleState), m.Log)
-		if fnInstance.InvokeEndpoint != nil {
-			if _, err = m.addToSecret(ctx, fn.Namespace, fn.Name, *fnInstance); err != nil {
-				m.Log.InfoLog("Secret creation for FunctionsFunction endpoint failed")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		}
-
-		return servicemanager.OSOKResponse{IsSuccessful: true}, nil
-	default:
-		fn.Status.OsokStatus = util.UpdateOSOKStatusCondition(fn.Status.OsokStatus,
-			ociv1beta1.Provisioning, v1.ConditionTrue, "",
-			fmt.Sprintf("FunctionsFunction %s is %s", *fnInstance.DisplayName, fnInstance.LifecycleState), m.Log)
-		m.Log.InfoLog(fmt.Sprintf("FunctionsFunction %s is %s, requeueing", *fnInstance.DisplayName, fnInstance.LifecycleState))
-		return servicemanager.OSOKResponse{IsSuccessful: false, ShouldRequeue: true}, nil
-	}
+	return response, nil
 }
 
 // Delete handles deletion of the FunctionsFunction (called by the finalizer).
@@ -249,4 +171,72 @@ func (m *FunctionsFunctionServiceManager) getRetryPolicy(attempts uint) common.R
 		return time.Duration(1) * time.Minute
 	}
 	return common.NewRetryPolicy(attempts, shouldRetry, nextDuration)
+}
+
+func (m *FunctionsFunctionServiceManager) resolveFunctionInstance(ctx context.Context,
+	fn *ociv1beta1.FunctionsFunction) (*ocifunctions.Function, error) {
+	if strings.TrimSpace(string(fn.Spec.FunctionsFunctionId)) != "" {
+		return m.bindFunction(ctx, fn)
+	}
+	return m.lookupOrCreateFunction(ctx, fn)
+}
+
+func (m *FunctionsFunctionServiceManager) lookupOrCreateFunction(ctx context.Context,
+	fn *ociv1beta1.FunctionsFunction) (*ocifunctions.Function, error) {
+	fnOcid, err := m.GetFunctionOcid(ctx, *fn)
+	if err != nil {
+		return nil, err
+	}
+	if fnOcid == nil {
+		return m.createFunctionInstance(ctx, fn)
+	}
+	return m.loadResolvedFunction(ctx, fn, *fnOcid)
+}
+
+func (m *FunctionsFunctionServiceManager) bindFunction(ctx context.Context,
+	fn *ociv1beta1.FunctionsFunction) (*ocifunctions.Function, error) {
+	fnInstance, err := m.GetFunction(ctx, fn.Spec.FunctionsFunctionId, nil)
+	if err != nil {
+		m.Log.ErrorLog(err, "Error while getting existing FunctionsFunction")
+		return nil, err
+	}
+	fn.Status.OsokStatus.Ocid = fn.Spec.FunctionsFunctionId
+	if err := m.UpdateFunction(ctx, fn); err != nil {
+		m.Log.ErrorLog(err, "Error while updating FunctionsFunction")
+		return nil, err
+	}
+	m.Log.InfoLog(fmt.Sprintf("FunctionsFunction %s is bound/updated", safeFunctionsString(fnInstance.DisplayName)))
+	return fnInstance, nil
+}
+
+func (m *FunctionsFunctionServiceManager) createFunctionInstance(ctx context.Context,
+	fn *ociv1beta1.FunctionsFunction) (*ocifunctions.Function, error) {
+	resp, err := m.CreateFunction(ctx, *fn)
+	if err != nil {
+		applyFunctionsCreateFailure(&fn.Status.OsokStatus, err, m.Log, "FunctionsFunction")
+		return nil, err
+	}
+
+	m.Log.InfoLog(fmt.Sprintf("FunctionsFunction %s is Provisioning", fn.Spec.DisplayName))
+	setFunctionsProvisioning(&fn.Status.OsokStatus, "FunctionsFunction", fn.Spec.DisplayName, ociv1beta1.OCID(*resp.Id), m.Log)
+	retryPolicy := m.getRetryPolicy(30)
+	fnInstance, err := m.GetFunction(ctx, ociv1beta1.OCID(*resp.Id), &retryPolicy)
+	if err != nil {
+		m.Log.ErrorLog(err, "Error while getting FunctionsFunction after create")
+		return nil, err
+	}
+	return fnInstance, nil
+}
+
+func (m *FunctionsFunctionServiceManager) loadResolvedFunction(ctx context.Context,
+	fn *ociv1beta1.FunctionsFunction, fnOcid ociv1beta1.OCID) (*ocifunctions.Function, error) {
+	m.Log.InfoLog(fmt.Sprintf("Getting existing FunctionsFunction %s", fnOcid))
+	fnInstance, err := m.GetFunction(ctx, fnOcid, nil)
+	if err != nil {
+		m.Log.ErrorLog(err, "Error while getting FunctionsFunction by OCID")
+		return nil, err
+	}
+	fn.Status.OsokStatus.Ocid = ociv1beta1.OCID(*fnInstance.Id)
+	m.Log.InfoLog(fmt.Sprintf("FunctionsFunction %s is %s", safeFunctionsString(fnInstance.DisplayName), fnInstance.LifecycleState))
+	return fnInstance, nil
 }

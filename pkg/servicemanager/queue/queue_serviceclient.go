@@ -147,24 +147,10 @@ func (c *OciQueueServiceManager) UpdateQueue(ctx context.Context, q *ociv1beta1.
 	}
 
 	updateDetails := ociqueue.UpdateQueueDetails{}
-	updateNeeded := false
-
-	if q.Spec.DisplayName != "" && (existing.DisplayName == nil || *existing.DisplayName != q.Spec.DisplayName) {
-		updateDetails.DisplayName = common.String(q.Spec.DisplayName)
-		updateNeeded = true
-	}
-	if q.Spec.VisibilityInSeconds > 0 && (existing.VisibilityInSeconds == nil || *existing.VisibilityInSeconds != q.Spec.VisibilityInSeconds) {
-		updateDetails.VisibilityInSeconds = common.Int(q.Spec.VisibilityInSeconds)
-		updateNeeded = true
-	}
-	if q.Spec.TimeoutInSeconds > 0 && (existing.TimeoutInSeconds == nil || *existing.TimeoutInSeconds != q.Spec.TimeoutInSeconds) {
-		updateDetails.TimeoutInSeconds = common.Int(q.Spec.TimeoutInSeconds)
-		updateNeeded = true
-	}
-	if q.Spec.DeadLetterQueueDeliveryCount > 0 && (existing.DeadLetterQueueDeliveryCount == nil || *existing.DeadLetterQueueDeliveryCount != q.Spec.DeadLetterQueueDeliveryCount) {
-		updateDetails.DeadLetterQueueDeliveryCount = common.Int(q.Spec.DeadLetterQueueDeliveryCount)
-		updateNeeded = true
-	}
+	updateNeeded := applyQueueDisplayNameUpdate(&updateDetails, q, existing)
+	updateNeeded = applyQueueVisibilityUpdate(&updateDetails, q, existing) || updateNeeded
+	updateNeeded = applyQueueTimeoutUpdate(&updateDetails, q, existing) || updateNeeded
+	updateNeeded = applyQueueDeadLetterCountUpdate(&updateDetails, q, existing) || updateNeeded
 
 	if !updateNeeded {
 		return nil
@@ -177,6 +163,43 @@ func (c *OciQueueServiceManager) UpdateQueue(ctx context.Context, q *ociv1beta1.
 
 	_, err = client.UpdateQueue(ctx, req)
 	return err
+}
+
+func applyQueueDisplayNameUpdate(updateDetails *ociqueue.UpdateQueueDetails, q *ociv1beta1.OciQueue, existing *ociqueue.Queue) bool {
+	if q.Spec.DisplayName == "" || (existing.DisplayName != nil && *existing.DisplayName == q.Spec.DisplayName) {
+		return false
+	}
+
+	updateDetails.DisplayName = common.String(q.Spec.DisplayName)
+	return true
+}
+
+func applyQueueVisibilityUpdate(updateDetails *ociqueue.UpdateQueueDetails, q *ociv1beta1.OciQueue, existing *ociqueue.Queue) bool {
+	if q.Spec.VisibilityInSeconds <= 0 || (existing.VisibilityInSeconds != nil && *existing.VisibilityInSeconds == q.Spec.VisibilityInSeconds) {
+		return false
+	}
+
+	updateDetails.VisibilityInSeconds = common.Int(q.Spec.VisibilityInSeconds)
+	return true
+}
+
+func applyQueueTimeoutUpdate(updateDetails *ociqueue.UpdateQueueDetails, q *ociv1beta1.OciQueue, existing *ociqueue.Queue) bool {
+	if q.Spec.TimeoutInSeconds <= 0 || (existing.TimeoutInSeconds != nil && *existing.TimeoutInSeconds == q.Spec.TimeoutInSeconds) {
+		return false
+	}
+
+	updateDetails.TimeoutInSeconds = common.Int(q.Spec.TimeoutInSeconds)
+	return true
+}
+
+func applyQueueDeadLetterCountUpdate(updateDetails *ociqueue.UpdateQueueDetails, q *ociv1beta1.OciQueue, existing *ociqueue.Queue) bool {
+	if q.Spec.DeadLetterQueueDeliveryCount <= 0 ||
+		(existing.DeadLetterQueueDeliveryCount != nil && *existing.DeadLetterQueueDeliveryCount == q.Spec.DeadLetterQueueDeliveryCount) {
+		return false
+	}
+
+	updateDetails.DeadLetterQueueDeliveryCount = common.Int(q.Spec.DeadLetterQueueDeliveryCount)
+	return true
 }
 
 // DeleteQueue deletes the Queue for the given OCID.

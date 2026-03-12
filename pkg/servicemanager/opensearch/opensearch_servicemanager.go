@@ -8,10 +8,8 @@ package opensearch
 import (
 	"context"
 	"fmt"
-	"math"
 	"reflect"
 	"strings"
-	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	"github.com/oracle/oci-go-sdk/v65/opensearch"
@@ -22,7 +20,6 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/servicemanager"
 	"github.com/oracle/oci-service-operator/pkg/util"
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -54,115 +51,13 @@ func (c *OpenSearchClusterServiceManager) CreateOrUpdate(ctx context.Context, ob
 		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
-	var clusterInstance *opensearch.OpensearchCluster
-
-	if strings.TrimSpace(string(clusterObj.Spec.OpenSearchClusterId)) == "" {
-		// No explicit ID: check if cluster exists by name, or create it
-		clusterOcid, err := c.GetOpenSearchClusterOCID(ctx, *clusterObj)
-		if err != nil {
-			c.Log.ErrorLog(err, "Error while looking up OpenSearch cluster")
-			if c.Metrics != nil {
-				c.Metrics.AddCRFaultMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
-					"Failed to get OpenSearch cluster", req.Name, req.Namespace)
-			}
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		if clusterOcid != nil {
-			// Cluster already exists — fetch and possibly update
-			clusterInstance, err = c.GetOpenSearchCluster(ctx, *clusterOcid, nil)
-			if err != nil {
-				c.Log.ErrorLog(err, "Error fetching existing OpenSearch cluster")
-				if c.Metrics != nil {
-					c.Metrics.AddCRFaultMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
-						"Error fetching OpenSearch cluster", req.Name, req.Namespace)
-				}
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-			clusterObj.Status.OsokStatus.Ocid = *clusterOcid
-			if isValidUpdate(*clusterObj, *clusterInstance) {
-				if err = c.UpdateOpenSearchCluster(ctx, clusterObj); err != nil {
-					c.Log.ErrorLog(err, "Error while updating OpenSearch cluster")
-					if c.Metrics != nil {
-						c.Metrics.AddCRFaultMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
-							"Error while updating OpenSearch cluster", req.Name, req.Namespace)
-					}
-					return servicemanager.OSOKResponse{IsSuccessful: false}, err
-				}
-				clusterObj.Status.OsokStatus = util.UpdateOSOKStatusCondition(clusterObj.Status.OsokStatus,
-					ociv1beta1.Updating, v1.ConditionTrue, "", "OpenSearch cluster update success", c.Log)
-				c.Log.InfoLog(fmt.Sprintf("OpenSearch cluster %s updated successfully", *clusterInstance.DisplayName))
-			}
-		} else {
-			// Create new cluster
-			_, err := c.CreateOpenSearchCluster(ctx, *clusterObj)
-			if err != nil {
-				clusterObj.Status.OsokStatus = util.UpdateOSOKStatusCondition(clusterObj.Status.OsokStatus,
-					ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), c.Log)
-				c.Log.ErrorLog(err, "Error creating OpenSearch cluster")
-				if c.Metrics != nil {
-					c.Metrics.AddCRFaultMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
-						"Error creating OpenSearch cluster", req.Name, req.Namespace)
-				}
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-			// Create returns a work request ID, not a cluster OCID.
-			// Set Provisioning state and requeue; next reconcile will find it by name.
-			c.Log.InfoLog(fmt.Sprintf("OpenSearch cluster %s create initiated, provisioning", clusterObj.Spec.DisplayName))
-			clusterObj.Status.OsokStatus = util.UpdateOSOKStatusCondition(clusterObj.Status.OsokStatus,
-				ociv1beta1.Provisioning, v1.ConditionTrue, "", "OpenSearch cluster is Provisioning", c.Log)
-			return servicemanager.OSOKResponse{IsSuccessful: false, ShouldRequeue: true, RequeueDuration: openSearchRequeueDuration}, nil
-		}
-	} else {
-		// Bind to existing cluster by explicit OCID
-		clusterInstance, err = c.GetOpenSearchCluster(ctx, clusterObj.Spec.OpenSearchClusterId, nil)
-		if err != nil {
-			c.Log.ErrorLog(err, "Error fetching OpenSearch cluster by ID")
-			if c.Metrics != nil {
-				c.Metrics.AddCRFaultMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
-					"Error fetching OpenSearch cluster", req.Name, req.Namespace)
-			}
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		clusterObj.Status.OsokStatus.Ocid = clusterObj.Spec.OpenSearchClusterId
-		if isValidUpdate(*clusterObj, *clusterInstance) {
-			if err = c.UpdateOpenSearchCluster(ctx, clusterObj); err != nil {
-				c.Log.ErrorLog(err, "Error while updating OpenSearch cluster")
-				if c.Metrics != nil {
-					c.Metrics.AddCRFaultMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
-						"Error while updating OpenSearch cluster", req.Name, req.Namespace)
-				}
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-			clusterObj.Status.OsokStatus = util.UpdateOSOKStatusCondition(clusterObj.Status.OsokStatus,
-				ociv1beta1.Updating, v1.ConditionTrue, "", "OpenSearch cluster update success", c.Log)
-		} else {
-			clusterObj.Status.OsokStatus = util.UpdateOSOKStatusCondition(clusterObj.Status.OsokStatus,
-				ociv1beta1.Active, v1.ConditionTrue, "", "OpenSearch cluster bound", c.Log)
-			now := metav1.NewTime(time.Now())
-			clusterObj.Status.OsokStatus.CreatedAt = &now
-		}
+	kind := obj.GetObjectKind().GroupVersionKind().Kind
+	clusterInstance, response, done, err := c.prepareClusterForReconcile(ctx, clusterObj, kind, req)
+	if err != nil || done {
+		return response, err
 	}
 
-	if clusterInstance == nil {
-		return servicemanager.OSOKResponse{IsSuccessful: false, ShouldRequeue: true, RequeueDuration: openSearchRequeueDuration}, nil
-	}
-
-	response := reconcileLifecycleStatus(&clusterObj.Status.OsokStatus, clusterInstance, c.Log)
-	if response.IsSuccessful {
-		if c.Metrics != nil {
-			c.Metrics.AddCRSuccessMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
-				"OpenSearch cluster is Active", req.Name, req.Namespace)
-		}
-	} else if !response.ShouldRequeue {
-		if c.Metrics != nil {
-			c.Metrics.AddCRFaultMetrics(ctx, obj.GetObjectKind().GroupVersionKind().Kind,
-				"OpenSearch cluster creation failed", req.Name, req.Namespace)
-		}
-	}
-
-	return response, nil
+	return c.finishClusterReconcile(ctx, kind, req, clusterObj, clusterInstance), nil
 }
 
 func isValidUpdate(clusterObj ociv1beta1.OpenSearchCluster, clusterInstance opensearch.OpensearchCluster) bool {
@@ -179,6 +74,128 @@ func isValidUpdate(clusterObj ociv1beta1.OpenSearchCluster, clusterInstance open
 	return displayNameUpdated ||
 		clusterObj.Spec.FreeFormTags != nil && !reflect.DeepEqual(clusterObj.Spec.FreeFormTags, clusterInstance.FreeformTags) ||
 		definedTagUpdated
+}
+
+func (c *OpenSearchClusterServiceManager) prepareClusterForReconcile(ctx context.Context, clusterObj *ociv1beta1.OpenSearchCluster,
+	kind string, req ctrl.Request) (*opensearch.OpensearchCluster, servicemanager.OSOKResponse, bool, error) {
+	if hasExplicitClusterID(clusterObj) {
+		return c.fetchClusterForReconcile(ctx, clusterObj, clusterObj.Spec.OpenSearchClusterId, kind, req)
+	}
+
+	return c.prepareDiscoveredCluster(ctx, clusterObj, kind, req)
+}
+
+func (c *OpenSearchClusterServiceManager) prepareDiscoveredCluster(ctx context.Context, clusterObj *ociv1beta1.OpenSearchCluster,
+	kind string, req ctrl.Request) (*opensearch.OpensearchCluster, servicemanager.OSOKResponse, bool, error) {
+	clusterOcid, err := c.GetOpenSearchClusterOCID(ctx, *clusterObj)
+	if err != nil {
+		c.Log.ErrorLog(err, "Error while looking up OpenSearch cluster")
+		c.recordFaultMetric(ctx, kind, req, "Failed to get OpenSearch cluster")
+		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
+	}
+
+	if clusterOcid == nil {
+		return c.createCluster(ctx, clusterObj, kind, req)
+	}
+
+	return c.fetchClusterForReconcile(ctx, clusterObj, *clusterOcid, kind, req)
+}
+
+func (c *OpenSearchClusterServiceManager) createCluster(ctx context.Context, clusterObj *ociv1beta1.OpenSearchCluster,
+	kind string, req ctrl.Request) (*opensearch.OpensearchCluster, servicemanager.OSOKResponse, bool, error) {
+	if _, err := c.CreateOpenSearchCluster(ctx, *clusterObj); err != nil {
+		clusterObj.Status.OsokStatus = util.UpdateOSOKStatusCondition(clusterObj.Status.OsokStatus,
+			ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), c.Log)
+		c.Log.ErrorLog(err, "Error creating OpenSearch cluster")
+		c.recordFaultMetric(ctx, kind, req, "Error creating OpenSearch cluster")
+		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
+	}
+
+	c.Log.InfoLog(fmt.Sprintf("OpenSearch cluster %s create initiated, provisioning", clusterObj.Spec.DisplayName))
+	clusterObj.Status.OsokStatus = util.UpdateOSOKStatusCondition(clusterObj.Status.OsokStatus,
+		ociv1beta1.Provisioning, v1.ConditionTrue, "", "OpenSearch cluster is Provisioning", c.Log)
+
+	return nil, servicemanager.OSOKResponse{
+		IsSuccessful:    false,
+		ShouldRequeue:   true,
+		RequeueDuration: openSearchRequeueDuration,
+	}, true, nil
+}
+
+func (c *OpenSearchClusterServiceManager) fetchClusterForReconcile(ctx context.Context, clusterObj *ociv1beta1.OpenSearchCluster,
+	clusterID ociv1beta1.OCID, kind string, req ctrl.Request) (*opensearch.OpensearchCluster, servicemanager.OSOKResponse, bool, error) {
+	clusterInstance, err := c.GetOpenSearchCluster(ctx, clusterID, nil)
+	if err != nil {
+		c.Log.ErrorLog(err, "Error fetching OpenSearch cluster")
+		c.recordFaultMetric(ctx, kind, req, "Error fetching OpenSearch cluster")
+		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
+	}
+
+	clusterObj.Status.OsokStatus.Ocid = clusterID
+	if err := c.updateClusterIfNeeded(ctx, clusterObj, clusterInstance, kind, req); err != nil {
+		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
+	}
+
+	return clusterInstance, servicemanager.OSOKResponse{}, false, nil
+}
+
+func (c *OpenSearchClusterServiceManager) updateClusterIfNeeded(ctx context.Context, clusterObj *ociv1beta1.OpenSearchCluster,
+	clusterInstance *opensearch.OpensearchCluster, kind string, req ctrl.Request) error {
+	if !isValidUpdate(*clusterObj, *clusterInstance) {
+		return nil
+	}
+
+	if err := c.UpdateOpenSearchCluster(ctx, clusterObj); err != nil {
+		c.Log.ErrorLog(err, "Error while updating OpenSearch cluster")
+		c.recordFaultMetric(ctx, kind, req, "Error while updating OpenSearch cluster")
+		return err
+	}
+
+	clusterObj.Status.OsokStatus = util.UpdateOSOKStatusCondition(clusterObj.Status.OsokStatus,
+		ociv1beta1.Updating, v1.ConditionTrue, "", "OpenSearch cluster update success", c.Log)
+	c.Log.InfoLog(fmt.Sprintf("OpenSearch cluster %s updated successfully", safeString(clusterInstance.DisplayName)))
+
+	return nil
+}
+
+func (c *OpenSearchClusterServiceManager) finishClusterReconcile(ctx context.Context, kind string, req ctrl.Request,
+	clusterObj *ociv1beta1.OpenSearchCluster, clusterInstance *opensearch.OpensearchCluster) servicemanager.OSOKResponse {
+	if clusterInstance == nil {
+		return servicemanager.OSOKResponse{
+			IsSuccessful:    false,
+			ShouldRequeue:   true,
+			RequeueDuration: openSearchRequeueDuration,
+		}
+	}
+
+	response := reconcileLifecycleStatus(&clusterObj.Status.OsokStatus, clusterInstance, c.Log)
+	if response.IsSuccessful {
+		c.recordSuccessMetric(ctx, kind, req, "OpenSearch cluster is Active")
+	} else if !response.ShouldRequeue {
+		c.recordFaultMetric(ctx, kind, req, "OpenSearch cluster creation failed")
+	}
+
+	return response
+}
+
+func (c *OpenSearchClusterServiceManager) recordSuccessMetric(ctx context.Context, kind string, req ctrl.Request, message string) {
+	if c.Metrics == nil {
+		return
+	}
+
+	c.Metrics.AddCRSuccessMetrics(ctx, kind, message, req.Name, req.Namespace)
+}
+
+func (c *OpenSearchClusterServiceManager) recordFaultMetric(ctx context.Context, kind string, req ctrl.Request, message string) {
+	if c.Metrics == nil {
+		return
+	}
+
+	c.Metrics.AddCRFaultMetrics(ctx, kind, message, req.Name, req.Namespace)
+}
+
+func hasExplicitClusterID(clusterObj *ociv1beta1.OpenSearchCluster) bool {
+	return strings.TrimSpace(string(clusterObj.Spec.OpenSearchClusterId)) != ""
 }
 
 func (c *OpenSearchClusterServiceManager) Delete(ctx context.Context, obj runtime.Object) (bool, error) {
@@ -230,17 +247,4 @@ func (c *OpenSearchClusterServiceManager) convert(obj runtime.Object) (*ociv1bet
 		return nil, fmt.Errorf("failed to convert type assertion for OpenSearchCluster")
 	}
 	return cluster, nil
-}
-
-func (c *OpenSearchClusterServiceManager) getClusterRetryPolicy(attempts uint) common.RetryPolicy {
-	shouldRetry := func(response common.OCIOperationResponse) bool {
-		if resp, ok := response.Response.(opensearch.GetOpensearchClusterResponse); ok {
-			return resp.LifecycleState == opensearch.OpensearchClusterLifecycleStateCreating
-		}
-		return true
-	}
-	nextDuration := func(response common.OCIOperationResponse) time.Duration {
-		return time.Duration(math.Pow(float64(2), float64(response.AttemptNumber-1))) * time.Second
-	}
-	return common.NewRetryPolicy(attempts, shouldRetry, nextDuration)
 }

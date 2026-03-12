@@ -37,22 +37,23 @@ type MySQLDbSystemClientInterface interface {
 	DeleteDbSystem(ctx context.Context, request mysql.DeleteDbSystemRequest) (mysql.DeleteDbSystemResponse, error)
 }
 
-func getDbSystemClient(provider common.ConfigurationProvider) mysql.DbSystemClient {
-	dbSystemClient, _ := mysql.NewDbSystemClientWithConfigurationProvider(provider)
-	return dbSystemClient
+func getDbSystemClient(provider common.ConfigurationProvider) (mysql.DbSystemClient, error) {
+	return mysql.NewDbSystemClientWithConfigurationProvider(provider)
 }
 
 // getOCIClient returns the injected client if set, otherwise creates one from the provider.
-func (c *DbSystemServiceManager) getOCIClient() MySQLDbSystemClientInterface {
+func (c *DbSystemServiceManager) getOCIClient() (MySQLDbSystemClientInterface, error) {
 	if c.ociClient != nil {
-		return c.ociClient
+		return c.ociClient, nil
 	}
 	return getDbSystemClient(c.Provider)
 }
 
 func (c *DbSystemServiceManager) CreateDbSystem(ctx context.Context, dbSystem ociv1beta1.MySqlDbSystem, adminUname string, adminPwd string) (mysql.CreateDbSystemResponse, error) {
-
-	dbSystemClient := c.getOCIClient()
+	dbSystemClient, err := c.getOCIClient()
+	if err != nil {
+		return mysql.CreateDbSystemResponse{}, err
+	}
 
 	c.Log.DebugLog("Creating MySqlDbSystem", "name", dbSystem.Spec.DisplayName)
 
@@ -108,7 +109,10 @@ func (c *DbSystemServiceManager) CreateDbSystem(ctx context.Context, dbSystem oc
 }
 
 func (c *DbSystemServiceManager) GetMySqlDbSystemOcid(ctx context.Context, dbSystem ociv1beta1.MySqlDbSystem) (*ociv1beta1.OCID, error) {
-	dbSystemClient := c.getOCIClient()
+	dbSystemClient, err := c.getOCIClient()
+	if err != nil {
+		return nil, err
+	}
 
 	listDbSystemRequest := mysql.ListDbSystemsRequest{
 		CompartmentId: common.String(string(dbSystem.Spec.CompartmentId)),
@@ -163,20 +167,25 @@ func (c *DbSystemServiceManager) GetMySqlDbSystemOcid(ctx context.Context, dbSys
 }
 
 func (c *DbSystemServiceManager) DeleteMySqlDbSystem(ctx context.Context, dbSystemId ociv1beta1.OCID) error {
-	dbClient := c.getOCIClient()
+	dbClient, err := c.getOCIClient()
+	if err != nil {
+		return err
+	}
 
 	req := mysql.DeleteDbSystemRequest{
 		DbSystemId: common.String(string(dbSystemId)),
 	}
 
-	_, err := dbClient.DeleteDbSystem(ctx, req)
+	_, err = dbClient.DeleteDbSystem(ctx, req)
 	return err
 }
 
 // GetMySqlDbSystem Sync the MySqlDbSystem details
 func (c *DbSystemServiceManager) GetMySqlDbSystem(ctx context.Context, dbSystemId ociv1beta1.OCID, retryPolicy *common.RetryPolicy) (*mysql.DbSystem, error) {
-
-	dbClient := c.getOCIClient()
+	dbClient, err := c.getOCIClient()
+	if err != nil {
+		return nil, err
+	}
 
 	getDbSystemRequest := mysql.GetDbSystemRequest{
 		DbSystemId: common.String(string(dbSystemId)),
@@ -195,8 +204,10 @@ func (c *DbSystemServiceManager) GetMySqlDbSystem(ctx context.Context, dbSystemI
 }
 
 func (c *DbSystemServiceManager) UpdateMySqlDbSystem(ctx context.Context, dbSystem *ociv1beta1.MySqlDbSystem) error {
-
-	dbClient := c.getOCIClient()
+	dbClient, err := c.getOCIClient()
+	if err != nil {
+		return err
+	}
 
 	existingDbSystem, err := c.GetMySqlDbSystem(ctx, dbSystem.Spec.MySqlDbSystemId, nil)
 	if err != nil {
@@ -204,34 +215,11 @@ func (c *DbSystemServiceManager) UpdateMySqlDbSystem(ctx context.Context, dbSyst
 	}
 
 	updateMySqlDbSystemDetails := mysql.UpdateDbSystemDetails{}
-
-	updateNeeded := false
-	if dbSystem.Spec.DisplayName != "" && *existingDbSystem.DisplayName != dbSystem.Spec.DisplayName {
-		updateMySqlDbSystemDetails.DisplayName = common.String(dbSystem.Spec.DisplayName)
-		updateNeeded = true
-	}
-
-	if dbSystem.Spec.Description != "" && dbSystem.Spec.Description != *existingDbSystem.Description {
-		updateMySqlDbSystemDetails.Description = common.String(dbSystem.Spec.Description)
-		updateNeeded = true
-	}
-
-	if dbSystem.Spec.ConfigurationId.Id != "" && string(dbSystem.Spec.ConfigurationId.Id) != *existingDbSystem.ConfigurationId {
-		updateMySqlDbSystemDetails.ConfigurationId = common.String(string(dbSystem.Spec.ConfigurationId.Id))
-		updateNeeded = true
-	}
-
-	if dbSystem.Spec.FreeFormTags != nil && !reflect.DeepEqual(existingDbSystem.FreeformTags, dbSystem.Spec.FreeFormTags) {
-		updateMySqlDbSystemDetails.FreeformTags = dbSystem.Spec.FreeFormTags
-		updateNeeded = true
-	}
-
-	if dbSystem.Spec.DefinedTags != nil {
-		if defTag := *util.ConvertToOciDefinedTags(&dbSystem.Spec.DefinedTags); !reflect.DeepEqual(existingDbSystem.DefinedTags, defTag) {
-			updateMySqlDbSystemDetails.DefinedTags = defTag
-			updateNeeded = true
-		}
-	}
+	updateNeeded := applyMySQLDisplayNameUpdate(&updateMySqlDbSystemDetails, dbSystem, existingDbSystem)
+	updateNeeded = applyMySQLDescriptionUpdate(&updateMySqlDbSystemDetails, dbSystem, existingDbSystem) || updateNeeded
+	updateNeeded = applyMySQLConfigurationUpdate(&updateMySqlDbSystemDetails, dbSystem, existingDbSystem) || updateNeeded
+	updateNeeded = applyMySQLFreeformTagUpdate(&updateMySqlDbSystemDetails, dbSystem, existingDbSystem) || updateNeeded
+	updateNeeded = applyMySQLDefinedTagUpdate(&updateMySqlDbSystemDetails, dbSystem, existingDbSystem) || updateNeeded
 
 	if updateNeeded {
 		updateMySqlDbSystemRequest := mysql.UpdateDbSystemRequest{
@@ -245,4 +233,59 @@ func (c *DbSystemServiceManager) UpdateMySqlDbSystem(ctx context.Context, dbSyst
 	}
 
 	return nil
+}
+
+func applyMySQLDisplayNameUpdate(updateDetails *mysql.UpdateDbSystemDetails,
+	dbSystem *ociv1beta1.MySqlDbSystem, existingDbSystem *mysql.DbSystem) bool {
+	if dbSystem.Spec.DisplayName == "" || *existingDbSystem.DisplayName == dbSystem.Spec.DisplayName {
+		return false
+	}
+
+	updateDetails.DisplayName = common.String(dbSystem.Spec.DisplayName)
+	return true
+}
+
+func applyMySQLDescriptionUpdate(updateDetails *mysql.UpdateDbSystemDetails,
+	dbSystem *ociv1beta1.MySqlDbSystem, existingDbSystem *mysql.DbSystem) bool {
+	if dbSystem.Spec.Description == "" || dbSystem.Spec.Description == *existingDbSystem.Description {
+		return false
+	}
+
+	updateDetails.Description = common.String(dbSystem.Spec.Description)
+	return true
+}
+
+func applyMySQLConfigurationUpdate(updateDetails *mysql.UpdateDbSystemDetails,
+	dbSystem *ociv1beta1.MySqlDbSystem, existingDbSystem *mysql.DbSystem) bool {
+	if dbSystem.Spec.ConfigurationId.Id == "" || string(dbSystem.Spec.ConfigurationId.Id) == *existingDbSystem.ConfigurationId {
+		return false
+	}
+
+	updateDetails.ConfigurationId = common.String(string(dbSystem.Spec.ConfigurationId.Id))
+	return true
+}
+
+func applyMySQLFreeformTagUpdate(updateDetails *mysql.UpdateDbSystemDetails,
+	dbSystem *ociv1beta1.MySqlDbSystem, existingDbSystem *mysql.DbSystem) bool {
+	if dbSystem.Spec.FreeFormTags == nil || reflect.DeepEqual(existingDbSystem.FreeformTags, dbSystem.Spec.FreeFormTags) {
+		return false
+	}
+
+	updateDetails.FreeformTags = dbSystem.Spec.FreeFormTags
+	return true
+}
+
+func applyMySQLDefinedTagUpdate(updateDetails *mysql.UpdateDbSystemDetails,
+	dbSystem *ociv1beta1.MySqlDbSystem, existingDbSystem *mysql.DbSystem) bool {
+	if dbSystem.Spec.DefinedTags == nil {
+		return false
+	}
+
+	defTag := *util.ConvertToOciDefinedTags(&dbSystem.Spec.DefinedTags)
+	if reflect.DeepEqual(existingDbSystem.DefinedTags, defTag) {
+		return false
+	}
+
+	updateDetails.DefinedTags = defTag
+	return true
 }

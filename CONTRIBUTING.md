@@ -46,6 +46,15 @@ can be accepted.
    your changes. Ensure that you reference the issue you created as well.
 1. We will assign the pull request to 2-3 people for review before it is merged.
 
+## Validation
+
+Before opening a pull request, run the local quality checks that apply to your
+change:
+
+- `make lint` for static analysis and complexity thresholds
+- `make test` for generated code, formatting, vet, and unit tests
+- `make formal` when your change affects a controller contract or formal spec
+
 ## Code of conduct
 
 Follow the [Golden Rule](https://en.wikipedia.org/wiki/Golden_Rule). If you'd

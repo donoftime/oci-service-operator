@@ -8,13 +8,14 @@ package streams
 import (
 	"context"
 	"fmt"
+	"reflect"
+	"strings"
+
 	"github.com/oracle/oci-go-sdk/v65/common"
 	"github.com/oracle/oci-go-sdk/v65/streaming"
 	ociv1beta1 "github.com/oracle/oci-service-operator/api/v1beta1"
 	"github.com/oracle/oci-service-operator/pkg/util"
 	"github.com/pkg/errors"
-	"reflect"
-	"strings"
 )
 
 // StreamAdminClientInterface defines the OCI operations used by StreamServiceManager.
@@ -26,22 +27,23 @@ type StreamAdminClientInterface interface {
 	DeleteStream(ctx context.Context, request streaming.DeleteStreamRequest) (streaming.DeleteStreamResponse, error)
 }
 
-func getStreamClient(provider common.ConfigurationProvider) streaming.StreamAdminClient {
-	streamClient, _ := streaming.NewStreamAdminClientWithConfigurationProvider(provider)
-	return streamClient
+func getStreamClient(provider common.ConfigurationProvider) (streaming.StreamAdminClient, error) {
+	return streaming.NewStreamAdminClientWithConfigurationProvider(provider)
 }
 
 // getOCIClient returns the injected client if set, otherwise creates one from the provider.
-func (c *StreamServiceManager) getOCIClient() StreamAdminClientInterface {
+func (c *StreamServiceManager) getOCIClient() (StreamAdminClientInterface, error) {
 	if c.ociClient != nil {
-		return c.ociClient
+		return c.ociClient, nil
 	}
 	return getStreamClient(c.Provider)
 }
 
 func (c *StreamServiceManager) CreateStream(ctx context.Context, stream ociv1beta1.Stream) (streaming.CreateStreamResponse, error) {
-
-	streamClient := c.getOCIClient()
+	streamClient, err := c.getOCIClient()
+	if err != nil {
+		return streaming.CreateStreamResponse{}, err
+	}
 	c.Log.DebugLog("Creating Stream ", "name", stream.Spec.Name)
 
 	createStreamDetails := streaming.CreateStreamDetails{
@@ -69,8 +71,10 @@ func (c *StreamServiceManager) CreateStream(ctx context.Context, stream ociv1bet
 }
 
 func (c *StreamServiceManager) GetStreamOcid(ctx context.Context, stream ociv1beta1.Stream) (*ociv1beta1.OCID, error) {
-
-	streamClient := c.getOCIClient()
+	streamClient, err := c.getOCIClient()
+	if err != nil {
+		return nil, err
+	}
 	listStreamsRequest := streaming.ListStreamsRequest{
 		Name: common.String(stream.Spec.Name),
 	}
@@ -82,9 +86,7 @@ func (c *StreamServiceManager) GetStreamOcid(ctx context.Context, stream ociv1be
 	if string(stream.Spec.CompartmentId) != "" {
 		listStreamsRequest.CompartmentId = common.String(string(stream.Spec.CompartmentId))
 	}
-
 	listStreamsResponse, err := streamClient.ListStreams(ctx, listStreamsRequest)
-
 	if err != nil {
 		c.Log.ErrorLog(err, "Error while listing Stream")
 		return nil, err
@@ -94,7 +96,10 @@ func (c *StreamServiceManager) GetStreamOcid(ctx context.Context, stream ociv1be
 }
 
 func (c *StreamServiceManager) DeleteStream(ctx context.Context, stream ociv1beta1.Stream) (streaming.DeleteStreamResponse, error) {
-	streamClient := c.getOCIClient()
+	streamClient, err := c.getOCIClient()
+	if err != nil {
+		return streaming.DeleteStreamResponse{}, err
+	}
 	c.Log.InfoLog("Deleting Stream ", "name", stream.Spec.Name)
 
 	deleteStreamRequest := streaming.DeleteStreamRequest{
@@ -105,8 +110,10 @@ func (c *StreamServiceManager) DeleteStream(ctx context.Context, stream ociv1bet
 }
 
 func (c *StreamServiceManager) GetStream(ctx context.Context, streamId ociv1beta1.OCID, retryPolicy *common.RetryPolicy) (*streaming.Stream, error) {
-
-	streamClient := c.getOCIClient()
+	streamClient, err := c.getOCIClient()
+	if err != nil {
+		return nil, err
+	}
 
 	getStreamRequest := streaming.GetStreamRequest{
 		StreamId: common.String(string(streamId)),
@@ -125,62 +132,31 @@ func (c *StreamServiceManager) GetStream(ctx context.Context, streamId ociv1beta
 }
 
 func (c *StreamServiceManager) UpdateStream(ctx context.Context, stream *ociv1beta1.Stream) error {
-
-	streamClient := c.getOCIClient()
-	streamID := stream.Spec.StreamId
-	if strings.TrimSpace(string(streamID)) == "" {
-		streamID = stream.Status.OsokStatus.Ocid
+	streamClient, err := c.getOCIClient()
+	if err != nil {
+		return err
 	}
-	if strings.TrimSpace(string(streamID)) == "" {
-		return errors.New("stream id is required for update")
+	streamID, err := resolveStreamUpdateID(stream)
+	if err != nil {
+		return err
 	}
-
 	existingStream, err := c.GetStream(ctx, streamID, nil)
 	if err != nil {
 		return err
 	}
-
-	if stream.Spec.Partitions <= 0 || stream.Spec.Partitions != *existingStream.Partitions {
-		return errors.New("Partitions can't be updated")
+	if err := validateImmutableStreamUpdate(stream, existingStream); err != nil {
+		return err
 	}
-
-	if stream.Spec.RetentionInHours <= 23 || stream.Spec.RetentionInHours != *existingStream.RetentionInHours {
-		return errors.New("RetentionsHours can't be updated")
+	updateStreamDetails, updateNeeded := buildStreamUpdateDetails(stream, existingStream)
+	if !updateNeeded {
+		return nil
 	}
-
-	updateStreamDetails := streaming.UpdateStreamDetails{}
-	updateNeeded := false
-
-	if stream.Spec.StreamPoolId != "" && string(stream.Spec.StreamPoolId) != *existingStream.StreamPoolId {
-		updateStreamDetails.StreamPoolId = common.String(strings.TrimSpace(string(stream.Spec.StreamPoolId)))
-		updateNeeded = true
+	updateRequest := streaming.UpdateStreamRequest{
+		StreamId:            common.String(string(streamID)),
+		UpdateStreamDetails: updateStreamDetails,
 	}
-
-	if stream.Spec.FreeFormTags != nil && !reflect.DeepEqual(existingStream.FreeformTags, stream.Spec.FreeFormTags) {
-		updateStreamDetails.FreeformTags = stream.Spec.FreeFormTags
-		updateNeeded = true
-	}
-
-	if stream.Spec.DefinedTags != nil {
-		if defTag := *util.ConvertToOciDefinedTags(&stream.Spec.DefinedTags); !reflect.DeepEqual(existingStream.DefinedTags, defTag) {
-			updateStreamDetails.DefinedTags = defTag
-			updateNeeded = true
-		}
-	}
-
-	if updateNeeded {
-		updateAutonomousDatabaseRequest := streaming.UpdateStreamRequest{
-			StreamId:            common.String(string(streamID)),
-			UpdateStreamDetails: updateStreamDetails,
-		}
-
-		if _, err := streamClient.UpdateStream(ctx, updateAutonomousDatabaseRequest); err != nil {
-			return err
-		}
-	}
-
-	return nil
-
+	_, err = streamClient.UpdateStream(ctx, updateRequest)
+	return err
 }
 
 func (c *StreamServiceManager) GetStreamOCID(ctx context.Context, stream ociv1beta1.Stream, status string) (*ociv1beta1.OCID, error) {
@@ -206,8 +182,10 @@ func (c *StreamServiceManager) GetStreamOCID(ctx context.Context, stream ociv1be
 }
 
 func (c *StreamServiceManager) GetListOfStreams(ctx context.Context, stream ociv1beta1.Stream) (streaming.ListStreamsResponse, error) {
-
-	streamClient := c.getOCIClient()
+	streamClient, err := c.getOCIClient()
+	if err != nil {
+		return streaming.ListStreamsResponse{}, err
+	}
 	listStreamsRequest := streaming.ListStreamsRequest{
 		Name:  common.String(stream.Spec.Name),
 		Limit: common.Int(1),
@@ -220,7 +198,6 @@ func (c *StreamServiceManager) GetListOfStreams(ctx context.Context, stream ociv
 	if string(stream.Spec.CompartmentId) != "" {
 		listStreamsRequest.CompartmentId = common.String(string(stream.Spec.CompartmentId))
 	}
-
 	listStreamsResponse, err := streamClient.ListStreams(ctx, listStreamsRequest)
 
 	if err != nil {
@@ -244,6 +221,58 @@ func (c *StreamServiceManager) GetFailedOrDeleteStream(listStreamsResponse strea
 	}
 	c.Log.DebugLog(fmt.Sprintf("Stream %s does not exist.", stream.Spec.Name))
 	return nil, nil
+}
+
+func resolveStreamUpdateID(stream *ociv1beta1.Stream) (ociv1beta1.OCID, error) {
+	streamID := stream.Spec.StreamId
+	if strings.TrimSpace(string(streamID)) == "" {
+		streamID = stream.Status.OsokStatus.Ocid
+	}
+	if strings.TrimSpace(string(streamID)) == "" {
+		return "", errors.New("stream id is required for update")
+	}
+	return streamID, nil
+}
+
+func validateImmutableStreamUpdate(stream *ociv1beta1.Stream, existingStream *streaming.Stream) error {
+	if stream.Spec.Partitions <= 0 || stream.Spec.Partitions != *existingStream.Partitions {
+		return errors.New("Partitions can't be updated")
+	}
+	if stream.Spec.RetentionInHours <= 23 || stream.Spec.RetentionInHours != *existingStream.RetentionInHours {
+		return errors.New("RetentionsHours can't be updated")
+	}
+	return nil
+}
+
+func buildStreamUpdateDetails(stream *ociv1beta1.Stream, existingStream *streaming.Stream) (streaming.UpdateStreamDetails, bool) {
+	updateStreamDetails := streaming.UpdateStreamDetails{}
+	updateNeeded := false
+
+	if stream.Spec.StreamPoolId != "" && string(stream.Spec.StreamPoolId) != *existingStream.StreamPoolId {
+		updateStreamDetails.StreamPoolId = common.String(strings.TrimSpace(string(stream.Spec.StreamPoolId)))
+		updateNeeded = true
+	}
+	if stream.Spec.FreeFormTags != nil && !reflect.DeepEqual(existingStream.FreeformTags, stream.Spec.FreeFormTags) {
+		updateStreamDetails.FreeformTags = stream.Spec.FreeFormTags
+		updateNeeded = true
+	}
+	if definedTags, ok := changedStreamDefinedTags(stream, existingStream); ok {
+		updateStreamDetails.DefinedTags = definedTags
+		updateNeeded = true
+	}
+
+	return updateStreamDetails, updateNeeded
+}
+
+func changedStreamDefinedTags(stream *ociv1beta1.Stream, existingStream *streaming.Stream) (map[string]map[string]interface{}, bool) {
+	if stream.Spec.DefinedTags == nil {
+		return nil, false
+	}
+	defTag := *util.ConvertToOciDefinedTags(&stream.Spec.DefinedTags)
+	if reflect.DeepEqual(existingStream.DefinedTags, defTag) {
+		return nil, false
+	}
+	return defTag, true
 }
 
 func (c *StreamServiceManager) GetCreateOrUpdateStream(listStreamsResponse streaming.ListStreamsResponse, stream ociv1beta1.Stream) (*ociv1beta1.OCID, error) {

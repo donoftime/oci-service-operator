@@ -9,18 +9,13 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/apigateway"
 	"github.com/oracle/oci-go-sdk/v65/common"
 	ociv1beta1 "github.com/oracle/oci-service-operator/api/v1beta1"
 	"github.com/oracle/oci-service-operator/pkg/credhelper"
-	"github.com/oracle/oci-service-operator/pkg/errorutil"
 	"github.com/oracle/oci-service-operator/pkg/loggerutil"
 	"github.com/oracle/oci-service-operator/pkg/servicemanager"
-	"github.com/oracle/oci-service-operator/pkg/util"
-	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -56,94 +51,17 @@ func (c *DeploymentServiceManager) CreateOrUpdate(ctx context.Context, obj runti
 		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
-	var depInstance *apigateway.Deployment
-
-	if strings.TrimSpace(string(dep.Spec.DeploymentId)) == "" {
-		// No ID provided — look up by display name or create
-		depOcid, err := c.GetDeploymentOcid(ctx, *dep)
-		if err != nil {
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		if depOcid == nil {
-			// Create a new deployment
-			resp, err := c.CreateDeployment(ctx, *dep)
-			if err != nil {
-				dep.Status.OsokStatus = util.UpdateOSOKStatusCondition(dep.Status.OsokStatus,
-					ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), c.Log)
-				if _, ok := err.(errorutil.BadRequestOciError); !ok {
-					c.Log.ErrorLog(err, "Create ApiGatewayDeployment failed")
-					return servicemanager.OSOKResponse{IsSuccessful: false}, err
-				}
-				dep.Status.OsokStatus.Message = err.(common.ServiceError).GetCode()
-				c.Log.ErrorLog(err, "Create ApiGatewayDeployment bad request")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-
-			c.Log.InfoLog(fmt.Sprintf("ApiGatewayDeployment %s is Provisioning", dep.Spec.DisplayName))
-			dep.Status.OsokStatus = util.UpdateOSOKStatusCondition(dep.Status.OsokStatus,
-				ociv1beta1.Provisioning, v1.ConditionTrue, "", "ApiGatewayDeployment Provisioning", c.Log)
-			dep.Status.OsokStatus.Ocid = ociv1beta1.OCID(*resp.Id)
-
-			retryPolicy := c.getDeploymentRetryPolicy(30)
-			depInstance, err = c.GetDeployment(ctx, ociv1beta1.OCID(*resp.Id), &retryPolicy)
-			if err != nil {
-				c.Log.ErrorLog(err, "Error while getting ApiGatewayDeployment after create")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		} else {
-			c.Log.InfoLog(fmt.Sprintf("Getting existing ApiGatewayDeployment %s", *depOcid))
-			depInstance, err = c.GetDeployment(ctx, *depOcid, nil)
-			if err != nil {
-				c.Log.ErrorLog(err, "Error while getting ApiGatewayDeployment by OCID")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-			dep.Status.OsokStatus.Ocid = *depOcid
-			if err = c.UpdateDeployment(ctx, dep); err != nil {
-				c.Log.ErrorLog(err, "Error while updating ApiGatewayDeployment")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		}
-	} else {
-		// Bind to an existing deployment by ID
-		depInstance, err = c.GetDeployment(ctx, dep.Spec.DeploymentId, nil)
-		if err != nil {
-			c.Log.ErrorLog(err, "Error while getting existing ApiGatewayDeployment")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-		dep.Status.OsokStatus.Ocid = dep.Spec.DeploymentId
-		if err = c.UpdateDeployment(ctx, dep); err != nil {
-			c.Log.ErrorLog(err, "Error while updating ApiGatewayDeployment")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
+	depInstance, err := c.resolveDeploymentInstance(ctx, dep)
+	if err != nil {
+		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
-	dep.Status.OsokStatus.Ocid = ociv1beta1.OCID(*depInstance.Id)
-	if dep.Status.OsokStatus.CreatedAt == nil {
-		now := metav1.NewTime(time.Now())
-		dep.Status.OsokStatus.CreatedAt = &now
+	if depInstance.Id != nil {
+		dep.Status.OsokStatus.Ocid = ociv1beta1.OCID(*depInstance.Id)
 	}
+	servicemanager.SetCreatedAtIfUnset(&dep.Status.OsokStatus)
 
-	switch depInstance.LifecycleState {
-	case apigateway.DeploymentLifecycleStateFailed, apigateway.DeploymentLifecycleStateDeleted:
-		dep.Status.OsokStatus = util.UpdateOSOKStatusCondition(dep.Status.OsokStatus,
-			ociv1beta1.Failed, v1.ConditionFalse, "",
-			fmt.Sprintf("ApiGatewayDeployment %s is %s", *depInstance.DisplayName, depInstance.LifecycleState), c.Log)
-		c.Log.InfoLog(fmt.Sprintf("ApiGatewayDeployment %s is %s", *depInstance.DisplayName, depInstance.LifecycleState))
-		return servicemanager.OSOKResponse{IsSuccessful: false}, nil
-	case apigateway.DeploymentLifecycleStateActive:
-		dep.Status.OsokStatus = util.UpdateOSOKStatusCondition(dep.Status.OsokStatus,
-			ociv1beta1.Active, v1.ConditionTrue, "",
-			fmt.Sprintf("ApiGatewayDeployment %s is %s", *depInstance.DisplayName, depInstance.LifecycleState), c.Log)
-		c.Log.InfoLog(fmt.Sprintf("ApiGatewayDeployment %s is Active", *depInstance.DisplayName))
-		return servicemanager.OSOKResponse{IsSuccessful: true}, nil
-	default:
-		dep.Status.OsokStatus = util.UpdateOSOKStatusCondition(dep.Status.OsokStatus,
-			ociv1beta1.Provisioning, v1.ConditionTrue, "",
-			fmt.Sprintf("ApiGatewayDeployment %s is %s", *depInstance.DisplayName, depInstance.LifecycleState), c.Log)
-		c.Log.InfoLog(fmt.Sprintf("ApiGatewayDeployment %s is %s, requeueing", *depInstance.DisplayName, depInstance.LifecycleState))
-		return servicemanager.OSOKResponse{IsSuccessful: false, ShouldRequeue: true}, nil
-	}
+	return reconcileDeploymentLifecycle(&dep.Status.OsokStatus, depInstance, c.Log), nil
 }
 
 // Delete handles deletion of the API Gateway Deployment (called by the finalizer).
@@ -206,4 +124,74 @@ func isDeploymentNotFound(err error) bool {
 	}
 	serviceErr, ok := common.IsServiceError(err)
 	return ok && serviceErr.GetHTTPStatusCode() == 404
+}
+
+func (c *DeploymentServiceManager) resolveDeploymentInstance(ctx context.Context,
+	dep *ociv1beta1.ApiGatewayDeployment) (*apigateway.Deployment, error) {
+	if strings.TrimSpace(string(dep.Spec.DeploymentId)) != "" {
+		return c.bindDeployment(ctx, dep)
+	}
+	return c.lookupOrCreateDeployment(ctx, dep)
+}
+
+func (c *DeploymentServiceManager) lookupOrCreateDeployment(ctx context.Context,
+	dep *ociv1beta1.ApiGatewayDeployment) (*apigateway.Deployment, error) {
+	depOcid, err := c.GetDeploymentOcid(ctx, *dep)
+	if err != nil {
+		return nil, err
+	}
+	if depOcid == nil {
+		return c.createDeploymentInstance(ctx, dep)
+	}
+	return c.updateResolvedDeployment(ctx, dep, *depOcid)
+}
+
+func (c *DeploymentServiceManager) bindDeployment(ctx context.Context,
+	dep *ociv1beta1.ApiGatewayDeployment) (*apigateway.Deployment, error) {
+	depInstance, err := c.GetDeployment(ctx, dep.Spec.DeploymentId, nil)
+	if err != nil {
+		c.Log.ErrorLog(err, "Error while getting existing ApiGatewayDeployment")
+		return nil, err
+	}
+	dep.Status.OsokStatus.Ocid = dep.Spec.DeploymentId
+	if err := c.UpdateDeployment(ctx, dep); err != nil {
+		c.Log.ErrorLog(err, "Error while updating ApiGatewayDeployment")
+		return nil, err
+	}
+	return depInstance, nil
+}
+
+func (c *DeploymentServiceManager) createDeploymentInstance(ctx context.Context,
+	dep *ociv1beta1.ApiGatewayDeployment) (*apigateway.Deployment, error) {
+	resp, err := c.CreateDeployment(ctx, *dep)
+	if err != nil {
+		applyGatewayCreateFailure(&dep.Status.OsokStatus, err, c.Log, "ApiGatewayDeployment")
+		return nil, err
+	}
+
+	c.Log.InfoLog(fmt.Sprintf("ApiGatewayDeployment %s is Provisioning", dep.Spec.DisplayName))
+	setGatewayProvisioning(&dep.Status.OsokStatus, "ApiGatewayDeployment", dep.Spec.DisplayName, ociv1beta1.OCID(*resp.Id), c.Log)
+	retryPolicy := c.getDeploymentRetryPolicy(30)
+	depInstance, err := c.GetDeployment(ctx, ociv1beta1.OCID(*resp.Id), &retryPolicy)
+	if err != nil {
+		c.Log.ErrorLog(err, "Error while getting ApiGatewayDeployment after create")
+		return nil, err
+	}
+	return depInstance, nil
+}
+
+func (c *DeploymentServiceManager) updateResolvedDeployment(ctx context.Context,
+	dep *ociv1beta1.ApiGatewayDeployment, depOcid ociv1beta1.OCID) (*apigateway.Deployment, error) {
+	c.Log.InfoLog(fmt.Sprintf("Getting existing ApiGatewayDeployment %s", depOcid))
+	depInstance, err := c.GetDeployment(ctx, depOcid, nil)
+	if err != nil {
+		c.Log.ErrorLog(err, "Error while getting ApiGatewayDeployment by OCID")
+		return nil, err
+	}
+	dep.Status.OsokStatus.Ocid = depOcid
+	if err := c.UpdateDeployment(ctx, dep); err != nil {
+		c.Log.ErrorLog(err, "Error while updating ApiGatewayDeployment")
+		return nil, err
+	}
+	return depInstance, nil
 }

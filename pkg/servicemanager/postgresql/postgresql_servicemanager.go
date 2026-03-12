@@ -7,6 +7,7 @@ package postgresql
 
 import (
 	"context"
+	goerrors "errors"
 	"fmt"
 	"strings"
 
@@ -56,66 +57,14 @@ func (c *PostgresDbSystemServiceManager) CreateOrUpdate(ctx context.Context, obj
 		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
-	var dbSystemInstance *psql.DbSystem
-
-	if strings.TrimSpace(string(dbSystem.Spec.PostgresDbSystemId)) == "" {
-		// No ID provided — check by display name or create
-		dbSystemOcid, err := c.GetPostgresDbSystemByName(ctx, *dbSystem)
-		if err != nil {
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		if dbSystemOcid == nil {
-			// Create a new PostgreSQL DB system
-			resp, err := c.CreatePostgresDbSystem(ctx, *dbSystem)
-			if err != nil {
-				dbSystem.Status.OsokStatus = util.UpdateOSOKStatusCondition(dbSystem.Status.OsokStatus,
-					ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), c.Log)
-				if _, ok := err.(errorutil.BadRequestOciError); !ok {
-					c.Log.ErrorLog(err, "Create PostgresDbSystem failed")
-					return servicemanager.OSOKResponse{IsSuccessful: false}, err
-				}
-				dbSystem.Status.OsokStatus.Message = err.(common.ServiceError).GetCode()
-				c.Log.ErrorLog(err, "Create PostgresDbSystem bad request")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-
-			c.Log.InfoLog(fmt.Sprintf("PostgresDbSystem %s is Provisioning", dbSystem.Spec.DisplayName))
-			dbSystem.Status.OsokStatus = util.UpdateOSOKStatusCondition(dbSystem.Status.OsokStatus,
-				ociv1beta1.Provisioning, v1.ConditionTrue, "", "PostgresDbSystem Provisioning", c.Log)
-			dbSystem.Status.OsokStatus.Ocid = ociv1beta1.OCID(*resp.DbSystem.Id)
-
-			dbSystemInstance, err = c.GetPostgresDbSystem(ctx, ociv1beta1.OCID(*resp.DbSystem.Id))
-			if err != nil {
-				c.Log.ErrorLog(err, "Error while getting PostgresDbSystem after create")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		} else {
-			c.Log.InfoLog(fmt.Sprintf("Getting existing PostgresDbSystem %s", *dbSystemOcid))
-			dbSystemInstance, err = c.GetPostgresDbSystem(ctx, *dbSystemOcid)
-			if err != nil {
-				c.Log.ErrorLog(err, "Error while getting PostgresDbSystem by OCID")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		}
-
-	} else {
-		// Bind to an existing DB system by ID
-		dbSystemInstance, err = c.GetPostgresDbSystem(ctx, dbSystem.Spec.PostgresDbSystemId)
-		if err != nil {
-			c.Log.ErrorLog(err, "Error while getting existing PostgresDbSystem")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		if err = c.UpdatePostgresDbSystem(ctx, dbSystem); err != nil {
-			c.Log.ErrorLog(err, "Error while updating PostgresDbSystem")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
+	dbSystemInstance, response, done, err := c.resolveDbSystemForReconcile(ctx, dbSystem)
+	if err != nil || done {
+		return response, err
 	}
 
-	response := reconcileLifecycleStatus(&dbSystem.Status.OsokStatus, dbSystemInstance, c.Log)
-	if !response.IsSuccessful {
-		return response, nil
+	reconcileResponse := reconcileLifecycleStatus(&dbSystem.Status.OsokStatus, dbSystemInstance, c.Log)
+	if !reconcileResponse.IsSuccessful {
+		return reconcileResponse, nil
 	}
 
 	_, err = c.addToSecret(ctx, dbSystem.Namespace, dbSystem.Name, *dbSystemInstance)
@@ -127,7 +76,92 @@ func (c *PostgresDbSystemServiceManager) CreateOrUpdate(ctx context.Context, obj
 		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
-	return response, nil
+	return reconcileResponse, nil
+}
+
+func (c *PostgresDbSystemServiceManager) resolveDbSystemForReconcile(ctx context.Context,
+	dbSystem *ociv1beta1.PostgresDbSystem) (*psql.DbSystem, servicemanager.OSOKResponse, bool, error) {
+	if strings.TrimSpace(string(dbSystem.Spec.PostgresDbSystemId)) == "" {
+		return c.resolveManagedDbSystem(ctx, dbSystem)
+	}
+
+	return c.resolveBoundDbSystem(ctx, dbSystem)
+}
+
+func (c *PostgresDbSystemServiceManager) resolveManagedDbSystem(ctx context.Context,
+	dbSystem *ociv1beta1.PostgresDbSystem) (*psql.DbSystem, servicemanager.OSOKResponse, bool, error) {
+	dbSystemOcid, err := c.GetPostgresDbSystemByName(ctx, *dbSystem)
+	if err != nil {
+		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
+	}
+	if dbSystemOcid == nil {
+		return c.createManagedDbSystem(ctx, dbSystem)
+	}
+
+	c.Log.InfoLog(fmt.Sprintf("Getting existing PostgresDbSystem %s", *dbSystemOcid))
+	dbSystemInstance, err := c.GetPostgresDbSystem(ctx, *dbSystemOcid)
+	if err != nil {
+		c.Log.ErrorLog(err, "Error while getting PostgresDbSystem by OCID")
+		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
+	}
+
+	return dbSystemInstance, servicemanager.OSOKResponse{}, false, nil
+}
+
+func (c *PostgresDbSystemServiceManager) createManagedDbSystem(ctx context.Context,
+	dbSystem *ociv1beta1.PostgresDbSystem) (*psql.DbSystem, servicemanager.OSOKResponse, bool, error) {
+	resp, err := c.CreatePostgresDbSystem(ctx, *dbSystem)
+	if err != nil {
+		return c.handleCreateDbSystemError(dbSystem, err)
+	}
+
+	c.markPostgresDbSystemProvisioning(dbSystem, *resp.Id)
+	dbSystemInstance, err := c.GetPostgresDbSystem(ctx, ociv1beta1.OCID(*resp.Id))
+	if err != nil {
+		c.Log.ErrorLog(err, "Error while getting PostgresDbSystem after create")
+		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
+	}
+
+	return dbSystemInstance, servicemanager.OSOKResponse{}, false, nil
+}
+
+func (c *PostgresDbSystemServiceManager) resolveBoundDbSystem(ctx context.Context,
+	dbSystem *ociv1beta1.PostgresDbSystem) (*psql.DbSystem, servicemanager.OSOKResponse, bool, error) {
+	dbSystemInstance, err := c.GetPostgresDbSystem(ctx, dbSystem.Spec.PostgresDbSystemId)
+	if err != nil {
+		c.Log.ErrorLog(err, "Error while getting existing PostgresDbSystem")
+		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
+	}
+
+	if err = c.UpdatePostgresDbSystem(ctx, dbSystem); err != nil {
+		c.Log.ErrorLog(err, "Error while updating PostgresDbSystem")
+		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
+	}
+
+	return dbSystemInstance, servicemanager.OSOKResponse{}, false, nil
+}
+
+func (c *PostgresDbSystemServiceManager) handleCreateDbSystemError(dbSystem *ociv1beta1.PostgresDbSystem,
+	err error) (*psql.DbSystem, servicemanager.OSOKResponse, bool, error) {
+	dbSystem.Status.OsokStatus = util.UpdateOSOKStatusCondition(dbSystem.Status.OsokStatus,
+		ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), c.Log)
+	var badRequestErr errorutil.BadRequestOciError
+	if !goerrors.As(err, &badRequestErr) {
+		c.Log.ErrorLog(err, "Create PostgresDbSystem failed")
+		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
+	}
+	if serviceErr, ok := common.IsServiceError(err); ok {
+		dbSystem.Status.OsokStatus.Message = serviceErr.GetCode()
+	}
+	c.Log.ErrorLog(err, "Create PostgresDbSystem bad request")
+	return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
+}
+
+func (c *PostgresDbSystemServiceManager) markPostgresDbSystemProvisioning(dbSystem *ociv1beta1.PostgresDbSystem, dbSystemID string) {
+	c.Log.InfoLog(fmt.Sprintf("PostgresDbSystem %s is Provisioning", dbSystem.Spec.DisplayName))
+	dbSystem.Status.OsokStatus = util.UpdateOSOKStatusCondition(dbSystem.Status.OsokStatus,
+		ociv1beta1.Provisioning, v1.ConditionTrue, "", "PostgresDbSystem Provisioning", c.Log)
+	dbSystem.Status.OsokStatus.Ocid = ociv1beta1.OCID(dbSystemID)
 }
 
 // Delete handles deletion of the PostgreSQL DB system (called by the finalizer).

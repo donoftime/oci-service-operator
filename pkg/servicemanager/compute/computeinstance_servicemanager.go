@@ -7,6 +7,7 @@ package compute
 
 import (
 	"context"
+	goerrors "errors"
 	"fmt"
 	"strings"
 
@@ -54,69 +55,102 @@ func (c *ComputeInstanceServiceManager) CreateOrUpdate(ctx context.Context, obj 
 		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
-	var instance *core.Instance
-
-	if strings.TrimSpace(string(ci.Spec.ComputeInstanceId)) == "" {
-		// No ID provided — check by display name or create
-		instanceOcid, err := c.GetInstanceOcid(ctx, *ci)
-		if err != nil {
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		if instanceOcid == nil {
-			// Launch a new compute instance
-			resp, err := c.LaunchInstance(ctx, *ci)
-			if err != nil {
-				ci.Status.OsokStatus = util.UpdateOSOKStatusCondition(ci.Status.OsokStatus,
-					ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), c.Log)
-				if _, ok := err.(errorutil.BadRequestOciError); !ok {
-					c.Log.ErrorLog(err, "Launch ComputeInstance failed")
-					return servicemanager.OSOKResponse{IsSuccessful: false}, err
-				}
-				ci.Status.OsokStatus.Message = err.(common.ServiceError).GetCode()
-				c.Log.ErrorLog(err, "Launch ComputeInstance bad request")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-
-			displayName := ""
-			if ci.Spec.DisplayName != nil {
-				displayName = *ci.Spec.DisplayName
-			}
-			c.Log.InfoLog(fmt.Sprintf("ComputeInstance %s is Provisioning", displayName))
-			ci.Status.OsokStatus = util.UpdateOSOKStatusCondition(ci.Status.OsokStatus,
-				ociv1beta1.Provisioning, v1.ConditionTrue, "", "ComputeInstance Provisioning", c.Log)
-			ci.Status.OsokStatus.Ocid = ociv1beta1.OCID(*resp.Id)
-
-			retryPolicy := c.getRetryPolicy(30)
-			instance, err = c.GetInstance(ctx, ociv1beta1.OCID(*resp.Id), &retryPolicy)
-			if err != nil {
-				c.Log.ErrorLog(err, "Error while getting ComputeInstance after launch")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		} else {
-			c.Log.InfoLog(fmt.Sprintf("Getting existing ComputeInstance %s", *instanceOcid))
-			instance, err = c.GetInstance(ctx, *instanceOcid, nil)
-			if err != nil {
-				c.Log.ErrorLog(err, "Error while getting ComputeInstance by OCID")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		}
-
-	} else {
-		// Bind to an existing compute instance by ID
-		instance, err = c.GetInstance(ctx, ci.Spec.ComputeInstanceId, nil)
-		if err != nil {
-			c.Log.ErrorLog(err, "Error while getting existing ComputeInstance")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		if err = c.UpdateInstance(ctx, ci); err != nil {
-			c.Log.ErrorLog(err, "Error while updating ComputeInstance")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
+	instance, response, done, err := c.resolveInstanceForReconcile(ctx, ci, req)
+	if err != nil || done {
+		return response, err
 	}
 
 	return reconcileLifecycleStatus(&ci.Status.OsokStatus, instance, c.Log), nil
+}
+
+func (c *ComputeInstanceServiceManager) resolveInstanceForReconcile(ctx context.Context, ci *ociv1beta1.ComputeInstance,
+	req ctrl.Request) (*core.Instance, servicemanager.OSOKResponse, bool, error) {
+	if strings.TrimSpace(string(ci.Spec.ComputeInstanceId)) == "" {
+		return c.resolveManagedInstance(ctx, ci, req)
+	}
+
+	return c.resolveBoundInstance(ctx, ci)
+}
+
+func (c *ComputeInstanceServiceManager) resolveManagedInstance(ctx context.Context, ci *ociv1beta1.ComputeInstance,
+	req ctrl.Request) (*core.Instance, servicemanager.OSOKResponse, bool, error) {
+	instanceOcid, err := c.GetInstanceOcid(ctx, *ci)
+	if err != nil {
+		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
+	}
+	if instanceOcid == nil {
+		return c.launchManagedInstance(ctx, ci, req)
+	}
+
+	c.Log.InfoLog(fmt.Sprintf("Getting existing ComputeInstance %s", *instanceOcid))
+	instance, err := c.GetInstance(ctx, *instanceOcid, nil)
+	if err != nil {
+		c.Log.ErrorLog(err, "Error while getting ComputeInstance by OCID")
+		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
+	}
+
+	return instance, servicemanager.OSOKResponse{}, false, nil
+}
+
+func (c *ComputeInstanceServiceManager) launchManagedInstance(ctx context.Context, ci *ociv1beta1.ComputeInstance,
+	req ctrl.Request) (*core.Instance, servicemanager.OSOKResponse, bool, error) {
+	resp, err := c.LaunchInstance(ctx, *ci)
+	if err != nil {
+		return c.handleLaunchInstanceError(ci, err)
+	}
+
+	c.markComputeInstanceProvisioning(ci, *resp.Id)
+	retryPolicy := c.getRetryPolicy(30)
+	instance, err := c.GetInstance(ctx, ociv1beta1.OCID(*resp.Id), &retryPolicy)
+	if err != nil {
+		c.Log.ErrorLog(err, "Error while getting ComputeInstance after launch")
+		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
+	}
+
+	return instance, servicemanager.OSOKResponse{}, false, nil
+}
+
+func (c *ComputeInstanceServiceManager) resolveBoundInstance(ctx context.Context, ci *ociv1beta1.ComputeInstance) (*core.Instance, servicemanager.OSOKResponse, bool, error) {
+	instance, err := c.GetInstance(ctx, ci.Spec.ComputeInstanceId, nil)
+	if err != nil {
+		c.Log.ErrorLog(err, "Error while getting existing ComputeInstance")
+		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
+	}
+
+	if err = c.UpdateInstance(ctx, ci); err != nil {
+		c.Log.ErrorLog(err, "Error while updating ComputeInstance")
+		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
+	}
+
+	return instance, servicemanager.OSOKResponse{}, false, nil
+}
+
+func (c *ComputeInstanceServiceManager) handleLaunchInstanceError(ci *ociv1beta1.ComputeInstance,
+	err error) (*core.Instance, servicemanager.OSOKResponse, bool, error) {
+	ci.Status.OsokStatus = util.UpdateOSOKStatusCondition(ci.Status.OsokStatus,
+		ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), c.Log)
+	var badRequestErr errorutil.BadRequestOciError
+	if !goerrors.As(err, &badRequestErr) {
+		c.Log.ErrorLog(err, "Launch ComputeInstance failed")
+		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
+	}
+	if serviceErr, ok := common.IsServiceError(err); ok {
+		ci.Status.OsokStatus.Message = serviceErr.GetCode()
+	}
+	c.Log.ErrorLog(err, "Launch ComputeInstance bad request")
+	return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
+}
+
+func (c *ComputeInstanceServiceManager) markComputeInstanceProvisioning(ci *ociv1beta1.ComputeInstance, instanceID string) {
+	displayName := ""
+	if ci.Spec.DisplayName != nil {
+		displayName = *ci.Spec.DisplayName
+	}
+
+	c.Log.InfoLog(fmt.Sprintf("ComputeInstance %s is Provisioning", displayName))
+	ci.Status.OsokStatus = util.UpdateOSOKStatusCondition(ci.Status.OsokStatus,
+		ociv1beta1.Provisioning, v1.ConditionTrue, "", "ComputeInstance Provisioning", c.Log)
+	ci.Status.OsokStatus.Ocid = ociv1beta1.OCID(instanceID)
 }
 
 // Delete handles deletion of the compute instance (called by the finalizer).

@@ -499,14 +499,14 @@ func TestCreateQueue_WithDeadLetterAndRetention(t *testing.T) {
 	wrID, err := mgr.CreateQueue(context.Background(), q)
 	assert.NoError(t, err)
 	assert.Equal(t, "wr-dlq-001", wrID)
-	assert.NotNil(t, capturedReq.CreateQueueDetails.RetentionInSeconds)
-	assert.Equal(t, 3600, *capturedReq.CreateQueueDetails.RetentionInSeconds)
-	assert.NotNil(t, capturedReq.CreateQueueDetails.DeadLetterQueueDeliveryCount)
-	assert.Equal(t, 10, *capturedReq.CreateQueueDetails.DeadLetterQueueDeliveryCount)
-	assert.NotNil(t, capturedReq.CreateQueueDetails.VisibilityInSeconds)
-	assert.Equal(t, 60, *capturedReq.CreateQueueDetails.VisibilityInSeconds)
-	assert.NotNil(t, capturedReq.CreateQueueDetails.TimeoutInSeconds)
-	assert.Equal(t, 30, *capturedReq.CreateQueueDetails.TimeoutInSeconds)
+	assert.NotNil(t, capturedReq.RetentionInSeconds)
+	assert.Equal(t, 3600, *capturedReq.RetentionInSeconds)
+	assert.NotNil(t, capturedReq.DeadLetterQueueDeliveryCount)
+	assert.Equal(t, 10, *capturedReq.DeadLetterQueueDeliveryCount)
+	assert.NotNil(t, capturedReq.VisibilityInSeconds)
+	assert.Equal(t, 60, *capturedReq.VisibilityInSeconds)
+	assert.NotNil(t, capturedReq.TimeoutInSeconds)
+	assert.Equal(t, 30, *capturedReq.TimeoutInSeconds)
 }
 
 // TestCreateQueue_MinimalFields verifies zero-value optional fields are omitted.
@@ -528,8 +528,8 @@ func TestCreateQueue_MinimalFields(t *testing.T) {
 
 	_, err := mgr.CreateQueue(context.Background(), q)
 	assert.NoError(t, err)
-	assert.Nil(t, capturedReq.CreateQueueDetails.RetentionInSeconds)
-	assert.Nil(t, capturedReq.CreateQueueDetails.DeadLetterQueueDeliveryCount)
+	assert.Nil(t, capturedReq.RetentionInSeconds)
+	assert.Nil(t, capturedReq.DeadLetterQueueDeliveryCount)
 }
 
 // ---------------------------------------------------------------------------

@@ -134,138 +134,66 @@ const (
 	ServiceUnavailable                     string = "ServiceUnavailable"
 )
 
-// For 400 errors
-func BadRequestResponse(err error, description string) error {
-
-	br := BadRequestOciError{
-		ErrorCode:      err.(ocierrors).ErrorCode,
-		HTTPStatusCode: err.(ocierrors).HTTPStatusCode,
+func buildOciError(err ocierrors, description string) OciErrors {
+	return OciErrors{
+		ErrorCode:      err.ErrorCode,
+		HTTPStatusCode: err.HTTPStatusCode,
 		Description:    description,
-		OpcRequestID:   err.(ocierrors).OpcRequestID,
+		OpcRequestID:   err.OpcRequestID,
 	}
-	return br
+}
+
+// For 400 errors
+func BadRequestResponse(err ocierrors, description string) error {
+	return BadRequestOciError(buildOciError(err, description))
 }
 
 // For 401 errros
-func NotAuthenticatedResponse(err error, description string) error {
-
-	na := NotAuthenticatedOciError{
-		ErrorCode:      err.(ocierrors).ErrorCode,
-		HTTPStatusCode: err.(ocierrors).HTTPStatusCode,
-		Description:    description,
-		OpcRequestID:   err.(ocierrors).OpcRequestID,
-	}
-	return na
+func NotAuthenticatedResponse(err ocierrors, description string) error {
+	return NotAuthenticatedOciError(buildOciError(err, description))
 }
 
 // For 402 errors
-func SignUpRequiredResponse(err error, description string) error {
-
-	sur := SignUpRequiredOciError{
-		ErrorCode:      err.(ocierrors).ErrorCode,
-		HTTPStatusCode: err.(ocierrors).HTTPStatusCode,
-		Description:    description,
-		OpcRequestID:   err.(ocierrors).OpcRequestID,
-	}
-	return sur
+func SignUpRequiredResponse(err ocierrors, description string) error {
+	return SignUpRequiredOciError(buildOciError(err, description))
 }
 
 // For 403 and 404 errors
-func UnauthorizedAndNotFoundResponse(err error, description string) error {
-
-	uanf := UnauthorizedAndNotFoundOciError{
-		ErrorCode:      err.(ocierrors).ErrorCode,
-		HTTPStatusCode: err.(ocierrors).HTTPStatusCode,
-		Description:    description,
-		OpcRequestID:   err.(ocierrors).OpcRequestID,
-	}
-
-	return uanf
+func UnauthorizedAndNotFoundResponse(err ocierrors, description string) error {
+	return UnauthorizedAndNotFoundOciError(buildOciError(err, description))
 }
 
 // For 405 errors
-func MethodNotAllowedResponse(err error, description string) error {
-
-	mna := MethodNotAllowedOciError{
-		ErrorCode:      err.(ocierrors).ErrorCode,
-		HTTPStatusCode: err.(ocierrors).HTTPStatusCode,
-		Description:    description,
-		OpcRequestID:   err.(ocierrors).OpcRequestID,
-	}
-
-	return mna
+func MethodNotAllowedResponse(err ocierrors, description string) error {
+	return MethodNotAllowedOciError(buildOciError(err, description))
 }
 
 // For 409 errors
-func ConflictResponse(err error, description string) error {
-
-	c := ConflictOciError{
-		ErrorCode:      err.(ocierrors).ErrorCode,
-		HTTPStatusCode: err.(ocierrors).HTTPStatusCode,
-		Description:    description,
-		OpcRequestID:   err.(ocierrors).OpcRequestID,
-	}
-
-	return c
+func ConflictResponse(err ocierrors, description string) error {
+	return ConflictOciError(buildOciError(err, description))
 }
 
 // For 412 errors
-func NoEtagMatchResponse(err error, description string) error {
-
-	nem := NoEtagMatchOciError{
-		ErrorCode:      err.(ocierrors).ErrorCode,
-		HTTPStatusCode: err.(ocierrors).HTTPStatusCode,
-		Description:    description,
-		OpcRequestID:   err.(ocierrors).OpcRequestID,
-	}
-
-	return nem
+func NoEtagMatchResponse(err ocierrors, description string) error {
+	return NoEtagMatchOciError(buildOciError(err, description))
 }
 
 // For 429 Error
-func TooManyRequestsResponse(err error, description string) error {
-
-	tmr := TooManyRequestsOciError{
-		ErrorCode:      err.(ocierrors).ErrorCode,
-		HTTPStatusCode: err.(ocierrors).HTTPStatusCode,
-		Description:    description,
-		OpcRequestID:   err.(ocierrors).OpcRequestID,
-	}
-	return tmr
+func TooManyRequestsResponse(err ocierrors, description string) error {
+	return TooManyRequestsOciError(buildOciError(err, description))
 }
 
 // For 500 error
-func InternalServerErrorResponse(err error, description string) error {
-
-	ise := InternalServerErrorOciError{
-		ErrorCode:      err.(ocierrors).ErrorCode,
-		HTTPStatusCode: err.(ocierrors).HTTPStatusCode,
-		Description:    description,
-		OpcRequestID:   err.(ocierrors).OpcRequestID,
-	}
-	return ise
+func InternalServerErrorResponse(err ocierrors, description string) error {
+	return InternalServerErrorOciError(buildOciError(err, description))
 }
 
 // For 501 error
-func MethodNotImplementedResponse(err error, description string) error {
-
-	mni := MethodNotImplementedOciError{
-		ErrorCode:      err.(ocierrors).ErrorCode,
-		HTTPStatusCode: err.(ocierrors).HTTPStatusCode,
-		Description:    description,
-		OpcRequestID:   err.(ocierrors).OpcRequestID,
-	}
-	return mni
+func MethodNotImplementedResponse(err ocierrors, description string) error {
+	return MethodNotImplementedOciError(buildOciError(err, description))
 }
 
 // For 503 error
-func ServiceUnavailableResponse(err error, description string) error {
-
-	su := ServiceUnavailableOciError{
-		ErrorCode:      err.(ocierrors).ErrorCode,
-		HTTPStatusCode: err.(ocierrors).HTTPStatusCode,
-		Description:    description,
-		OpcRequestID:   err.(ocierrors).OpcRequestID,
-	}
-	return su
+func ServiceUnavailableResponse(err ocierrors, description string) error {
+	return ServiceUnavailableOciError(buildOciError(err, description))
 }

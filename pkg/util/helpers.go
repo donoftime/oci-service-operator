@@ -8,13 +8,14 @@ package util
 import (
 	"archive/zip"
 	"context"
+	"io"
+	"time"
+
 	"github.com/oracle/oci-service-operator/api/v1beta1"
 	"github.com/oracle/oci-service-operator/pkg/loggerutil"
-	"io/ioutil"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"time"
 )
 
 func RequeueWithError(ctx context.Context, err error, duration time.Duration, log loggerutil.OSOKLogger) (ctrl.Result, error) {
@@ -31,7 +32,7 @@ func DoNotRequeue() (ctrl.Result, error) {
 	return ctrl.Result{}, nil
 }
 
-func GetOSOKStatusCondition(status v1beta1.OSOKStatus, conditionType v1beta1.OSOKConditionType, log loggerutil.OSOKLogger) *v1beta1.OSOKCondition {
+func GetOSOKStatusCondition(status v1beta1.OSOKStatus, conditionType v1beta1.OSOKConditionType, _ loggerutil.OSOKLogger) *v1beta1.OSOKCondition {
 	for cnt := range status.Conditions {
 		if status.Conditions[cnt].Type == conditionType {
 			return &status.Conditions[cnt]
@@ -81,24 +82,32 @@ func UpdateOSOKStatusCondition(osokStatus v1beta1.OSOKStatus, conditionType v1be
 	return osokStatus
 }
 
-func UnzipWallet(filename string) (map[string][]byte, error) {
-	data := map[string][]byte{}
+func UnzipWallet(filename string) (data map[string][]byte, err error) {
+	data = map[string][]byte{}
 
 	reader, err := zip.OpenReader(filename)
 	if err != nil {
 		return data, err
 	}
 
-	defer reader.Close()
+	defer func() {
+		if closeErr := reader.Close(); err == nil && closeErr != nil {
+			err = closeErr
+		}
+	}()
 	for _, file := range reader.File {
-		reader, err := file.Open()
-		if err != nil {
-			return data, err
+		entryReader, openErr := file.Open()
+		if openErr != nil {
+			return data, openErr
 		}
 
-		content, err := ioutil.ReadAll(reader)
-		if err != nil {
-			return data, err
+		content, readErr := io.ReadAll(entryReader)
+		closeErr := entryReader.Close()
+		if readErr != nil {
+			return data, readErr
+		}
+		if closeErr != nil {
+			return data, closeErr
 		}
 
 		data[file.Name] = content

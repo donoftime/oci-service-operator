@@ -94,10 +94,10 @@ func TestPropertyExplicitFalseBooleansTriggerUpdate(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, resp.IsSuccessful)
 	assert.True(t, updateCalled)
-	assert.NotNil(t, captured.UpdateAutonomousDatabaseDetails.IsAutoScalingEnabled)
-	assert.False(t, *captured.UpdateAutonomousDatabaseDetails.IsAutoScalingEnabled)
-	assert.NotNil(t, captured.UpdateAutonomousDatabaseDetails.IsFreeTier)
-	assert.False(t, *captured.UpdateAutonomousDatabaseDetails.IsFreeTier)
+	assert.NotNil(t, captured.IsAutoScalingEnabled)
+	assert.False(t, *captured.IsAutoScalingEnabled)
+	assert.NotNil(t, captured.IsFreeTier)
+	assert.False(t, *captured.IsFreeTier)
 }
 
 func TestPropertyOmittedFalseBooleansDoNotTriggerUpdate(t *testing.T) {

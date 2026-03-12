@@ -55,7 +55,11 @@ func TestGetAuthProvider_NilConfig_UsesDefaultProvider(t *testing.T) {
 	// It should be the default file-based provider — check via Tenancy() not panicking.
 	// (We can't assert the tenancy value since there's no real OCI config file in CI.)
 	assert.NotPanics(t, func() {
-		_, _ = provider.TenancyOCID()
+		tenancy, tenancyErr := provider.TenancyOCID()
+		assert.IsType(t, "", tenancy)
+		if tenancyErr != nil {
+			assert.Error(t, tenancyErr)
+		}
 	})
 }
 
@@ -74,14 +78,17 @@ func TestGetAuthProvider_EmptyUserAuth_AttemptsInstancePrincipal(t *testing.T) {
 	cfg := nilStyleConfig{} // empty UserAuthConfig → reflect.DeepEqual true → instance principal
 
 	done := make(chan struct{})
+	resultErr := make(chan error, 1)
 	go func() {
 		defer close(done)
-		_, _ = p.GetAuthProvider(cfg)
+		_, getErr := p.GetAuthProvider(cfg)
+		resultErr <- getErr
 	}()
 
 	select {
 	case <-done:
 		// Completed (possibly on an OCI instance or if IMDS fast-fails).
+		assert.Error(t, <-resultErr)
 	case <-time.After(500 * time.Millisecond):
 		// Instance metadata service timed out — expected in non-OCI environments.
 		// Lines in GetAuthProvider up to the blocking call are already counted.
@@ -182,5 +189,5 @@ func TestGetAuthProvider_NilConfig_ReturnsDefaultProviderType(t *testing.T) {
 	assert.NoError(t, err)
 
 	// The default config provider returned should satisfy the interface.
-	var _ common.ConfigurationProvider = provider
+	assert.Implements(t, (*common.ConfigurationProvider)(nil), provider)
 }

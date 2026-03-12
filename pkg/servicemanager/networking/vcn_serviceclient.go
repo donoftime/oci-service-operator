@@ -927,38 +927,8 @@ func buildIngressRules(rules []ociv1beta1.IngressSecurityRule) []ocicore.Ingress
 		if r.Description != "" {
 			rule.Description = common.String(r.Description)
 		}
-		if r.TcpOptions != nil {
-			tcpOpts := &ocicore.TcpOptions{}
-			if r.TcpOptions.DestinationPortRange != nil {
-				tcpOpts.DestinationPortRange = &ocicore.PortRange{
-					Min: common.Int(r.TcpOptions.DestinationPortRange.Min),
-					Max: common.Int(r.TcpOptions.DestinationPortRange.Max),
-				}
-			}
-			if r.TcpOptions.SourcePortRange != nil {
-				tcpOpts.SourcePortRange = &ocicore.PortRange{
-					Min: common.Int(r.TcpOptions.SourcePortRange.Min),
-					Max: common.Int(r.TcpOptions.SourcePortRange.Max),
-				}
-			}
-			rule.TcpOptions = tcpOpts
-		}
-		if r.UdpOptions != nil {
-			udpOpts := &ocicore.UdpOptions{}
-			if r.UdpOptions.DestinationPortRange != nil {
-				udpOpts.DestinationPortRange = &ocicore.PortRange{
-					Min: common.Int(r.UdpOptions.DestinationPortRange.Min),
-					Max: common.Int(r.UdpOptions.DestinationPortRange.Max),
-				}
-			}
-			if r.UdpOptions.SourcePortRange != nil {
-				udpOpts.SourcePortRange = &ocicore.PortRange{
-					Min: common.Int(r.UdpOptions.SourcePortRange.Min),
-					Max: common.Int(r.UdpOptions.SourcePortRange.Max),
-				}
-			}
-			rule.UdpOptions = udpOpts
-		}
+		rule.TcpOptions = buildTCPOptions(r.TcpOptions)
+		rule.UdpOptions = buildUDPOptions(r.UdpOptions)
 		result[i] = rule
 	}
 	return result
@@ -978,41 +948,44 @@ func buildEgressRules(rules []ociv1beta1.EgressSecurityRule) []ocicore.EgressSec
 		if r.Description != "" {
 			rule.Description = common.String(r.Description)
 		}
-		if r.TcpOptions != nil {
-			tcpOpts := &ocicore.TcpOptions{}
-			if r.TcpOptions.DestinationPortRange != nil {
-				tcpOpts.DestinationPortRange = &ocicore.PortRange{
-					Min: common.Int(r.TcpOptions.DestinationPortRange.Min),
-					Max: common.Int(r.TcpOptions.DestinationPortRange.Max),
-				}
-			}
-			if r.TcpOptions.SourcePortRange != nil {
-				tcpOpts.SourcePortRange = &ocicore.PortRange{
-					Min: common.Int(r.TcpOptions.SourcePortRange.Min),
-					Max: common.Int(r.TcpOptions.SourcePortRange.Max),
-				}
-			}
-			rule.TcpOptions = tcpOpts
-		}
-		if r.UdpOptions != nil {
-			udpOpts := &ocicore.UdpOptions{}
-			if r.UdpOptions.DestinationPortRange != nil {
-				udpOpts.DestinationPortRange = &ocicore.PortRange{
-					Min: common.Int(r.UdpOptions.DestinationPortRange.Min),
-					Max: common.Int(r.UdpOptions.DestinationPortRange.Max),
-				}
-			}
-			if r.UdpOptions.SourcePortRange != nil {
-				udpOpts.SourcePortRange = &ocicore.PortRange{
-					Min: common.Int(r.UdpOptions.SourcePortRange.Min),
-					Max: common.Int(r.UdpOptions.SourcePortRange.Max),
-				}
-			}
-			rule.UdpOptions = udpOpts
-		}
+		rule.TcpOptions = buildTCPOptions(r.TcpOptions)
+		rule.UdpOptions = buildUDPOptions(r.UdpOptions)
 		result[i] = rule
 	}
 	return result
+}
+
+func buildPortRange(portRange *ociv1beta1.PortRange) *ocicore.PortRange {
+	if portRange == nil {
+		return nil
+	}
+
+	return &ocicore.PortRange{
+		Min: common.Int(portRange.Min),
+		Max: common.Int(portRange.Max),
+	}
+}
+
+func buildTCPOptions(tcpOptions *ociv1beta1.TcpOptions) *ocicore.TcpOptions {
+	if tcpOptions == nil {
+		return nil
+	}
+
+	return &ocicore.TcpOptions{
+		DestinationPortRange: buildPortRange(tcpOptions.DestinationPortRange),
+		SourcePortRange:      buildPortRange(tcpOptions.SourcePortRange),
+	}
+}
+
+func buildUDPOptions(udpOptions *ociv1beta1.UdpOptions) *ocicore.UdpOptions {
+	if udpOptions == nil {
+		return nil
+	}
+
+	return &ocicore.UdpOptions{
+		DestinationPortRange: buildPortRange(udpOptions.DestinationPortRange),
+		SourcePortRange:      buildPortRange(udpOptions.SourcePortRange),
+	}
 }
 
 // CreateSecurityList calls the OCI API to create a new Security List.
