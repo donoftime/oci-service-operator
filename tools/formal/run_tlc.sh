@@ -14,7 +14,12 @@ module_name="${spec_file%.tla}"
 cfg_path="${spec_dir}/${module_name}.cfg"
 log_dir="${spec_dir}/out"
 log_path="${log_dir}/tlc.log"
-work_dir="$(mktemp -d "/tmp/osok-tlc-${module_name}.XXXXXX")"
+tmp_root="${FORMAL_TMP_DIR:-${TMPDIR:-${repo_root}/.tmp/formal}}"
+java_tmp_dir="${tmp_root}/java"
+
+mkdir -p "${tmp_root}" "${java_tmp_dir}" "${log_dir}"
+
+work_dir="$(mktemp -d "${tmp_root}/osok-tlc-${module_name}.XXXXXX")"
 
 cleanup() {
   rm -rf "${work_dir}"
@@ -26,8 +31,6 @@ if [[ ! -f "${cfg_path}" ]]; then
   exit 1
 fi
 
-mkdir -p "${log_dir}"
-
 find "${spec_dir}" -maxdepth 1 -type f \( -name '*.tla' -o -name '*.cfg' \) -exec cp {} "${work_dir}/" \;
 if [[ -d "${shared_dir}" ]]; then
   find "${shared_dir}" -maxdepth 1 -type f -name '*.tla' -exec cp {} "${work_dir}/" \;
@@ -35,5 +38,5 @@ fi
 
 (
   cd "${work_dir}"
-  java -cp "${jar_path}" tlc2.TLC -cleanup -dfid 32 -config "$(basename "${cfg_path}")" "${module_name}"
+  java -Djava.io.tmpdir="${java_tmp_dir}" -cp "${jar_path}" tlc2.TLC -cleanup -dfid 32 -config "$(basename "${cfg_path}")" "${module_name}"
 ) | tee "${log_path}"

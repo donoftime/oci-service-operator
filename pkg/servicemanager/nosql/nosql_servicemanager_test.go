@@ -45,11 +45,13 @@ func (f *fakeCredentialClient) UpdateSecret(ctx context.Context, name, ns string
 
 // mockNosqlClient implements NosqlClientInterface for unit testing.
 type mockNosqlClient struct {
-	createFn func(context.Context, nosql.CreateTableRequest) (nosql.CreateTableResponse, error)
-	getFn    func(context.Context, nosql.GetTableRequest) (nosql.GetTableResponse, error)
-	listFn   func(context.Context, nosql.ListTablesRequest) (nosql.ListTablesResponse, error)
-	updateFn func(context.Context, nosql.UpdateTableRequest) (nosql.UpdateTableResponse, error)
-	deleteFn func(context.Context, nosql.DeleteTableRequest) (nosql.DeleteTableResponse, error)
+	createFn           func(context.Context, nosql.CreateTableRequest) (nosql.CreateTableResponse, error)
+	getFn              func(context.Context, nosql.GetTableRequest) (nosql.GetTableResponse, error)
+	listFn             func(context.Context, nosql.ListTablesRequest) (nosql.ListTablesResponse, error)
+	updateFn           func(context.Context, nosql.UpdateTableRequest) (nosql.UpdateTableResponse, error)
+	deleteFn           func(context.Context, nosql.DeleteTableRequest) (nosql.DeleteTableResponse, error)
+	getWorkRequestFn   func(context.Context, nosql.GetWorkRequestRequest) (nosql.GetWorkRequestResponse, error)
+	listWorkRequestsFn func(context.Context, nosql.ListWorkRequestsRequest) (nosql.ListWorkRequestsResponse, error)
 }
 
 func (m *mockNosqlClient) CreateTable(ctx context.Context, req nosql.CreateTableRequest) (nosql.CreateTableResponse, error) {
@@ -85,6 +87,20 @@ func (m *mockNosqlClient) DeleteTable(ctx context.Context, req nosql.DeleteTable
 		return m.deleteFn(ctx, req)
 	}
 	return nosql.DeleteTableResponse{}, nil
+}
+
+func (m *mockNosqlClient) GetWorkRequest(ctx context.Context, req nosql.GetWorkRequestRequest) (nosql.GetWorkRequestResponse, error) {
+	if m.getWorkRequestFn != nil {
+		return m.getWorkRequestFn(ctx, req)
+	}
+	return nosql.GetWorkRequestResponse{}, nil
+}
+
+func (m *mockNosqlClient) ListWorkRequests(ctx context.Context, req nosql.ListWorkRequestsRequest) (nosql.ListWorkRequestsResponse, error) {
+	if m.listWorkRequestsFn != nil {
+		return m.listWorkRequestsFn(ctx, req)
+	}
+	return nosql.ListWorkRequestsResponse{}, nil
 }
 
 // newTestManager creates a manager with a mock OCI client injected.

@@ -86,28 +86,109 @@ func (c *DbSystemServiceManager) Delete(ctx context.Context, obj runtime.Object)
 		return false, err
 	}
 
-	dbSystemID := mysqlDbSystem.Status.OsokStatus.Ocid
-	if dbSystemID == "" {
-		dbSystemID = mysqlDbSystem.Spec.MySqlDbSystemId
-	}
+	dbSystemID := resolveDeleteMySQLDbSystemID(mysqlDbSystem)
 	if dbSystemID == "" {
 		return true, nil
 	}
 
-	if _, err := c.GetMySqlDbSystem(ctx, dbSystemID, nil); err != nil {
-		if isNotFoundServiceError(err) {
-			if _, secretErr := c.deleteFromSecret(ctx, mysqlDbSystem.Namespace, mysqlDbSystem.Name); secretErr != nil {
-				c.Log.ErrorLog(secretErr, "Error while deleting MySqlDbSystem secret")
-			}
-			return true, nil
-		}
-		return false, err
+	currentDbSystem, done, handled, err := c.getMySQLDbSystemForDelete(ctx, mysqlDbSystem, dbSystemID)
+	if handled {
+		return done, err
 	}
 
-	if err := c.DeleteMySqlDbSystem(ctx, dbSystemID); err != nil && !isNotFoundServiceError(err) {
+	done, handled, err = c.handleExistingDeleteMySQLWorkRequest(ctx, mysqlDbSystem, dbSystemID, currentDbSystem)
+	if handled {
+		return done, err
+	}
+
+	if _, err := c.submitDeleteMySqlDbSystem(ctx, dbSystemID); err != nil && !isNotFoundServiceError(err) {
 		return false, err
 	}
 	return false, nil
+}
+
+func (c *DbSystemServiceManager) finalizeDeleteSecret(ctx context.Context, mysqlDbSystem *ociv1beta1.MySqlDbSystem) (bool, error) {
+	if _, secretErr := c.deleteFromSecret(ctx, mysqlDbSystem.Namespace, mysqlDbSystem.Name); secretErr != nil {
+		c.Log.ErrorLog(secretErr, "Error while deleting MySqlDbSystem secret")
+	}
+	return true, nil
+}
+
+func resolveDeleteMySQLDbSystemID(mysqlDbSystem *ociv1beta1.MySqlDbSystem) ociv1beta1.OCID {
+	if mysqlDbSystem.Status.OsokStatus.Ocid != "" {
+		return mysqlDbSystem.Status.OsokStatus.Ocid
+	}
+
+	return mysqlDbSystem.Spec.MySqlDbSystemId
+}
+
+func (c *DbSystemServiceManager) getMySQLDbSystemForDelete(
+	ctx context.Context,
+	mysqlDbSystem *ociv1beta1.MySqlDbSystem,
+	dbSystemID ociv1beta1.OCID,
+) (*mysql.DbSystem, bool, bool, error) {
+	currentDbSystem, err := c.GetMySqlDbSystem(ctx, dbSystemID, nil)
+	if err == nil {
+		return currentDbSystem, false, false, nil
+	}
+	if isNotFoundServiceError(err) {
+		done, secretErr := c.finalizeDeleteSecret(ctx, mysqlDbSystem)
+		return nil, done, true, secretErr
+	}
+	if isRetryableReadServiceError(err) {
+		c.Log.ErrorLog(err, "Transient MySqlDbSystem read failure during delete; requeueing")
+		return nil, false, true, nil
+	}
+
+	return nil, false, true, err
+}
+
+func (c *DbSystemServiceManager) handleExistingDeleteMySQLWorkRequest(
+	ctx context.Context,
+	mysqlDbSystem *ociv1beta1.MySqlDbSystem,
+	dbSystemID ociv1beta1.OCID,
+	currentDbSystem *mysql.DbSystem,
+) (bool, bool, error) {
+	workRequestID, err := c.findDeleteMySQLWorkRequestID(ctx, resolveDeleteMySQLCompartmentID(mysqlDbSystem, currentDbSystem), dbSystemID)
+	if err != nil {
+		if isRetryableReadServiceError(err) {
+			c.Log.ErrorLog(err, "Transient MySqlDbSystem work request lookup failure during delete; requeueing")
+			return false, true, nil
+		}
+		return false, true, err
+	}
+	if workRequestID == nil {
+		return false, false, nil
+	}
+
+	completed, inProgress, err := c.handleDeleteMySQLWorkRequest(ctx, *workRequestID)
+	if err != nil {
+		if isRetryableReadServiceError(err) {
+			c.Log.ErrorLog(err, "Transient MySqlDbSystem work request read failure during delete; requeueing")
+			return false, true, nil
+		}
+		return false, true, err
+	}
+	if inProgress {
+		return false, true, nil
+	}
+	if !completed {
+		return false, false, nil
+	}
+
+	done, err := c.finalizeDeleteSecret(ctx, mysqlDbSystem)
+	return done, true, err
+}
+
+func resolveDeleteMySQLCompartmentID(mysqlDbSystem *ociv1beta1.MySqlDbSystem, currentDbSystem *mysql.DbSystem) ociv1beta1.OCID {
+	if mysqlDbSystem.Spec.CompartmentId != "" {
+		return mysqlDbSystem.Spec.CompartmentId
+	}
+	if currentDbSystem != nil && currentDbSystem.CompartmentId != nil {
+		return ociv1beta1.OCID(*currentDbSystem.CompartmentId)
+	}
+
+	return ""
 }
 
 func (c *DbSystemServiceManager) GetCrdStatus(obj runtime.Object) (*ociv1beta1.OSOKStatus, error) {
@@ -139,6 +220,17 @@ func (c *DbSystemServiceManager) getDbSystemRetryPolicy(attempts uint) common.Re
 	return common.NewRetryPolicy(attempts, shouldRetry, nextDuration)
 }
 
+func (c *DbSystemServiceManager) handleRetryableReadError(mysqlDbSystem *ociv1beta1.MySqlDbSystem, resourceID ociv1beta1.OCID,
+	operation string, err error) (servicemanager.OSOKResponse, bool, error) {
+	if !isRetryableReadServiceError(err) {
+		return servicemanager.OSOKResponse{}, false, err
+	}
+
+	c.Log.ErrorLog(err, fmt.Sprintf("Transient MySqlDbSystem read failure while %s; requeueing", operation))
+	response := requeueForTransientReadFailure(&mysqlDbSystem.Status.OsokStatus, resourceID, mysqlDbSystem.Spec.DisplayName, operation, err, c.Log)
+	return response, true, nil
+}
+
 func (c *DbSystemServiceManager) resolveDbSystemForReconcile(ctx context.Context, mysqlDbSystem *ociv1beta1.MySqlDbSystem,
 	req ctrl.Request) (*mysql.DbSystem, servicemanager.OSOKResponse, bool, error) {
 	if strings.TrimSpace(string(mysqlDbSystem.Spec.MySqlDbSystemId)) == "" {
@@ -154,6 +246,9 @@ func (c *DbSystemServiceManager) resolveManagedDbSystem(ctx context.Context, mys
 
 	mySqlDbSystemOcid, err := c.GetMySqlDbSystemOcid(ctx, *mysqlDbSystem)
 	if err != nil {
+		if response, handled, handleErr := c.handleRetryableReadError(mysqlDbSystem, mysqlDbSystem.Status.OsokStatus.Ocid, "listing existing MySqlDbSystems", err); handled {
+			return nil, response, true, handleErr
+		}
 		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
 	}
 	if mySqlDbSystemOcid == nil {
@@ -163,6 +258,9 @@ func (c *DbSystemServiceManager) resolveManagedDbSystem(ctx context.Context, mys
 	c.Log.InfoLog(fmt.Sprintf("Getting MySqlDbSystem %s", *mySqlDbSystemOcid))
 	mySqlDbSystemInstance, err := c.GetMySqlDbSystem(ctx, *mySqlDbSystemOcid, nil)
 	if err != nil {
+		if response, handled, handleErr := c.handleRetryableReadError(mysqlDbSystem, *mySqlDbSystemOcid, "getting existing MySqlDbSystem", err); handled {
+			return nil, response, true, handleErr
+		}
 		c.Log.ErrorLog(err, "Error while getting MySqlDbSystem database")
 		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
 	}
@@ -186,6 +284,9 @@ func (c *DbSystemServiceManager) createManagedDbSystem(ctx context.Context, mysq
 	retryPolicy := c.getDbSystemRetryPolicy(30)
 	mySqlDbSystemInstance, err := c.GetMySqlDbSystem(ctx, ociv1beta1.OCID(*resp.Id), &retryPolicy)
 	if err != nil {
+		if response, handled, handleErr := c.handleRetryableReadError(mysqlDbSystem, ociv1beta1.OCID(*resp.Id), "observing newly created MySqlDbSystem", err); handled {
+			return nil, response, true, handleErr
+		}
 		c.Log.ErrorLog(err, "Error while getting MySqlDbSystem")
 		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
 	}
@@ -197,12 +298,15 @@ func (c *DbSystemServiceManager) resolveBoundDbSystem(ctx context.Context,
 	mysqlDbSystem *ociv1beta1.MySqlDbSystem) (*mysql.DbSystem, servicemanager.OSOKResponse, bool, error) {
 	mySqlDbSystemInstance, err := c.GetMySqlDbSystem(ctx, mysqlDbSystem.Spec.MySqlDbSystemId, nil)
 	if err != nil {
+		if response, handled, handleErr := c.handleRetryableReadError(mysqlDbSystem, mysqlDbSystem.Spec.MySqlDbSystemId, "getting bound MySqlDbSystem", err); handled {
+			return nil, response, true, handleErr
+		}
 		c.Log.ErrorLog(err, "Error while getting the MySqlDbSystem")
 		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
 	}
 
 	if isValidUpdate(*mysqlDbSystem, *mySqlDbSystemInstance) {
-		if err = c.UpdateMySqlDbSystem(ctx, mysqlDbSystem); err != nil {
+		if err = c.UpdateMySqlDbSystem(ctx, mysqlDbSystem, mySqlDbSystemInstance); err != nil {
 			c.Log.ErrorLog(err, "Error while updating MysqlDbSystem")
 			return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
 		}
@@ -298,4 +402,25 @@ func mySQLDescriptionUpdated(dbSystem ociv1beta1.MySqlDbSystem, mySqlDbInstance 
 
 func mySQLConfigurationUpdated(dbSystem ociv1beta1.MySqlDbSystem, mySqlDbInstance mysql.DbSystem) bool {
 	return dbSystem.Spec.ConfigurationId.Id != "" && string(dbSystem.Spec.ConfigurationId.Id) != *mySqlDbInstance.ConfigurationId
+}
+
+func (c *DbSystemServiceManager) handleDeleteMySQLWorkRequest(ctx context.Context, workRequestID string) (bool, bool, error) {
+	workRequest, err := c.getMySQLWorkRequest(ctx, workRequestID)
+	if err != nil {
+		return false, false, err
+	}
+
+	switch workRequest.Status {
+	case mysql.WorkRequestOperationStatusAccepted,
+		mysql.WorkRequestOperationStatusInProgress,
+		mysql.WorkRequestOperationStatusCanceling:
+		return false, true, nil
+	case mysql.WorkRequestOperationStatusSucceeded:
+		return true, false, nil
+	case mysql.WorkRequestOperationStatusFailed,
+		mysql.WorkRequestOperationStatusCanceled:
+		return false, false, fmt.Errorf("MySqlDbSystem delete work request %s ended with status %s", workRequestID, workRequest.Status)
+	default:
+		return false, false, nil
+	}
 }

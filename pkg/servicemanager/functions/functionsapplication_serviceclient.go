@@ -8,6 +8,7 @@ package functions
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	ocifunctions "github.com/oracle/oci-go-sdk/v65/functions"
@@ -141,21 +142,12 @@ func (m *FunctionsApplicationServiceManager) UpdateApplication(ctx context.Conte
 		return err
 	}
 
-	updateDetails := ocifunctions.UpdateApplicationDetails{}
-	updateNeeded := false
+	existing, err := m.GetApplication(ctx, app.Status.OsokStatus.Ocid, nil)
+	if err != nil {
+		return err
+	}
 
-	if len(app.Spec.Config) > 0 {
-		updateDetails.Config = app.Spec.Config
-		updateNeeded = true
-	}
-	if len(app.Spec.NetworkSecurityGroupIds) > 0 {
-		updateDetails.NetworkSecurityGroupIds = app.Spec.NetworkSecurityGroupIds
-		updateNeeded = true
-	}
-	if app.Spec.SyslogUrl != "" {
-		updateDetails.SyslogUrl = common.String(app.Spec.SyslogUrl)
-		updateNeeded = true
-	}
+	updateDetails, updateNeeded := buildApplicationUpdateDetails(app, existing)
 
 	if !updateNeeded {
 		return nil
@@ -168,6 +160,92 @@ func (m *FunctionsApplicationServiceManager) UpdateApplication(ctx context.Conte
 
 	_, err = client.UpdateApplication(ctx, req)
 	return err
+}
+
+func buildApplicationUpdateDetails(app *ociv1beta1.FunctionsApplication, existing *ocifunctions.Application) (ocifunctions.UpdateApplicationDetails, bool) {
+	updateDetails := ocifunctions.UpdateApplicationDetails{}
+	updateNeeded := false
+
+	updateNeeded = applyApplicationConfigUpdate(&updateDetails, app, existing) || updateNeeded
+	updateNeeded = applyApplicationNetworkSecurityGroupUpdate(&updateDetails, app, existing) || updateNeeded
+	updateNeeded = applyApplicationSyslogUpdate(&updateDetails, app, existing) || updateNeeded
+	updateNeeded = applyApplicationFreeformTagUpdate(&updateDetails, app, existing) || updateNeeded
+	updateNeeded = applyApplicationDefinedTagUpdate(&updateDetails, app, existing) || updateNeeded
+
+	return updateDetails, updateNeeded
+}
+
+func applyApplicationConfigUpdate(
+	updateDetails *ocifunctions.UpdateApplicationDetails,
+	app *ociv1beta1.FunctionsApplication,
+	existing *ocifunctions.Application,
+) bool {
+	if len(app.Spec.Config) == 0 || reflect.DeepEqual(existing.Config, app.Spec.Config) {
+		return false
+	}
+
+	updateDetails.Config = app.Spec.Config
+	return true
+}
+
+func applyApplicationNetworkSecurityGroupUpdate(
+	updateDetails *ocifunctions.UpdateApplicationDetails,
+	app *ociv1beta1.FunctionsApplication,
+	existing *ocifunctions.Application,
+) bool {
+	if len(app.Spec.NetworkSecurityGroupIds) == 0 || reflect.DeepEqual(existing.NetworkSecurityGroupIds, app.Spec.NetworkSecurityGroupIds) {
+		return false
+	}
+
+	updateDetails.NetworkSecurityGroupIds = app.Spec.NetworkSecurityGroupIds
+	return true
+}
+
+func applyApplicationSyslogUpdate(
+	updateDetails *ocifunctions.UpdateApplicationDetails,
+	app *ociv1beta1.FunctionsApplication,
+	existing *ocifunctions.Application,
+) bool {
+	if app.Spec.SyslogUrl == "" {
+		return false
+	}
+	if existing.SyslogUrl != nil && *existing.SyslogUrl == app.Spec.SyslogUrl {
+		return false
+	}
+
+	updateDetails.SyslogUrl = common.String(app.Spec.SyslogUrl)
+	return true
+}
+
+func applyApplicationFreeformTagUpdate(
+	updateDetails *ocifunctions.UpdateApplicationDetails,
+	app *ociv1beta1.FunctionsApplication,
+	existing *ocifunctions.Application,
+) bool {
+	if app.Spec.FreeFormTags == nil || reflect.DeepEqual(existing.FreeformTags, app.Spec.FreeFormTags) {
+		return false
+	}
+
+	updateDetails.FreeformTags = app.Spec.FreeFormTags
+	return true
+}
+
+func applyApplicationDefinedTagUpdate(
+	updateDetails *ocifunctions.UpdateApplicationDetails,
+	app *ociv1beta1.FunctionsApplication,
+	existing *ocifunctions.Application,
+) bool {
+	if app.Spec.DefinedTags == nil {
+		return false
+	}
+
+	desiredDefinedTags := *util.ConvertToOciDefinedTags(&app.Spec.DefinedTags)
+	if reflect.DeepEqual(existing.DefinedTags, desiredDefinedTags) {
+		return false
+	}
+
+	updateDetails.DefinedTags = desiredDefinedTags
+	return true
 }
 
 // DeleteApplication deletes the Functions application for the given OCID.

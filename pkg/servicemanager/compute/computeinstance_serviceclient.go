@@ -8,6 +8,7 @@ package compute
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
@@ -155,14 +156,7 @@ func (c *ComputeInstanceServiceManager) UpdateInstance(ctx context.Context, ci *
 		return err
 	}
 
-	updateDetails := core.UpdateInstanceDetails{}
-	updateNeeded := false
-
-	if ci.Spec.DisplayName != nil && (existing.DisplayName == nil || *existing.DisplayName != *ci.Spec.DisplayName) {
-		updateDetails.DisplayName = ci.Spec.DisplayName
-		updateNeeded = true
-	}
-
+	updateDetails, updateNeeded := buildUpdateInstanceDetails(ci, existing)
 	if !updateNeeded {
 		return nil
 	}
@@ -174,6 +168,29 @@ func (c *ComputeInstanceServiceManager) UpdateInstance(ctx context.Context, ci *
 
 	_, err = client.UpdateInstance(ctx, req)
 	return err
+}
+
+func buildUpdateInstanceDetails(ci *ociv1beta1.ComputeInstance, existing *core.Instance) (core.UpdateInstanceDetails, bool) {
+	updateDetails := core.UpdateInstanceDetails{}
+	updateNeeded := false
+
+	if ci.Spec.DisplayName != nil && (existing.DisplayName == nil || *existing.DisplayName != *ci.Spec.DisplayName) {
+		updateDetails.DisplayName = ci.Spec.DisplayName
+		updateNeeded = true
+	}
+	if ci.Spec.FreeFormTags != nil && !reflect.DeepEqual(existing.FreeformTags, ci.Spec.FreeFormTags) {
+		updateDetails.FreeformTags = ci.Spec.FreeFormTags
+		updateNeeded = true
+	}
+	if ci.Spec.DefinedTags != nil {
+		desiredDefinedTags := *util.ConvertToOciDefinedTags(&ci.Spec.DefinedTags)
+		if !reflect.DeepEqual(existing.DefinedTags, desiredDefinedTags) {
+			updateDetails.DefinedTags = desiredDefinedTags
+			updateNeeded = true
+		}
+	}
+
+	return updateDetails, updateNeeded
 }
 
 // TerminateInstance terminates the compute instance for the given OCID.

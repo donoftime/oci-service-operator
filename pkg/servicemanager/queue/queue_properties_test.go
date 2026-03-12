@@ -79,3 +79,38 @@ func TestOciQueue_PropertyBindByIDUsesSpecIDForUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestOciQueue_PropertyTagDriftTriggersUpdate(t *testing.T) {
+	property := func(seed uint16) bool {
+		queueID := fmt.Sprintf("ocid1.queue.oc1..tags-%d", seed)
+		var updatedReq ociqueue.UpdateQueueRequest
+		fake := &fakeQueueAdminClient{
+			getQueueFn: func(_ context.Context, _ ociqueue.GetQueueRequest) (ociqueue.GetQueueResponse, error) {
+				queue := makeActiveQueue(queueID, "tagged-queue", "")
+				queue.FreeformTags = map[string]string{"team": "old"}
+				queue.DefinedTags = map[string]map[string]interface{}{"ops": {"env": "dev"}}
+				return ociqueue.GetQueueResponse{Queue: queue}, nil
+			},
+			updateQueueFn: func(_ context.Context, req ociqueue.UpdateQueueRequest) (ociqueue.UpdateQueueResponse, error) {
+				updatedReq = req
+				return ociqueue.UpdateQueueResponse{}, nil
+			},
+		}
+
+		mgr := mgrWithFake(&fakeCredentialClient{}, fake)
+		q := &ociv1beta1.OciQueue{}
+		q.Spec.QueueId = ociv1beta1.OCID(queueID)
+		q.Spec.FreeFormTags = map[string]string{"team": "platform"}
+		q.Spec.DefinedTags = map[string]ociv1beta1.MapValue{"ops": {"env": "prod"}}
+
+		resp, err := mgr.CreateOrUpdate(context.Background(), q, ctrl.Request{})
+		return err == nil &&
+			resp.IsSuccessful &&
+			updatedReq.FreeformTags["team"] == "platform" &&
+			updatedReq.DefinedTags["ops"]["env"] == "prod"
+	}
+
+	if err := quick.Check(property, nil); err != nil {
+		t.Fatal(err)
+	}
+}

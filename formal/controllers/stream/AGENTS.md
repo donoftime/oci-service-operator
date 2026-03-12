@@ -1,9 +1,41 @@
 # Stream
 
-Source of truth: [spec.tla](spec.tla) and [spec.cfg](spec.cfg).
+- Source of truth: `spec.tla` and `spec.cfg`
+- Shared contracts: `../../shared/ControllerCoreContract.tla`, `../../shared/NameResolutionContract.tla`,
+  `../../shared/ListResolutionContract.tla`, `../../shared/DriftAwareUpdateContract.tla`,
+  `../../shared/CollectionEquivalenceContract.tla`, `../../shared/WholeListConvergenceContract.tla`,
+  `../../shared/BestEffortCleanupContract.tla`, `../../shared/SecretSideEffectContract.tla`
+- Diagram source: `diagrams/lifecycle.puml`
+- Known gaps and fix history: `logic-gaps.md`
+- Capabilities: `bind_by_id,resolve_by_name,drift_update,confirmed_delete,secret_write,secret_delete`
 
-- Owned code: `pkg/servicemanager/streams/stream_servicemanager.go`
-- Shared contract: `formal/shared/BaseReconcilerContract.tla`
-- Property tests: `pkg/servicemanager/streams/stream_properties_test.go`
-- Diagram: `diagrams/state-machine.puml`
-- Verified properties: success only on `ACTIVE`, retryable states requeue, finalizer stays until delete completes, secrets only in usable states
+## Verified Properties
+
+- `ControllerMetadataInvariant`
+- `TypeInvariant`
+- `SuccessRequiresActiveInvariant`
+- `RetryableRequiresRequeueInvariant`
+- `DeleteRequiresResourceGoneInvariant`
+- `MutationUsesBoundIDInvariant`
+- `DeleteRequiresConfirmationInvariant`
+- `DeleteSubmittedKeepsFinalizerInvariant`
+- `ConfirmedDeleteRemovesResourceInvariant`
+- `BindByIDUsesSpecInvariant`
+- `ResolvedNameUsesResolvedIDInvariant`
+- `LaterPageResolutionUsesResolvedIDInvariant`
+- `SupportedDriftRequiresUpdateInvariant`
+- `MatchingStateSkipsUpdateInvariant`
+- `CollectionDifferenceRequiresUpdateInvariant`
+- `MatchingCollectionSkipsUpdateInvariant`
+- `WholeListConvergesAfterUpdateInvariant`
+- `SecretRequiresUsableStateInvariant`
+- `SecretWriteFailuresBlockSuccessInvariant`
+- `SecretDeleteFailuresBlockCompletionInvariant`
+- `MissingSecretAllowsDeleteInvariant`
+- `BestEffortCleanupKeepsSuccessInvariant`
+- `CleanupTargetsStayEligibleInvariant`
+
+## Notes
+
+- This file is the controller-local knowledge log for formal verification work.
+- Update it with controller-specific counterexamples, linked Go property tests, and the final code fixes.

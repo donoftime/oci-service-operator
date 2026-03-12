@@ -1,26 +1,26 @@
-slug	kind	retryable_states	active_states	failed_states	has_secret
-autonomous-databases	AutonomousDatabases	PROVISIONING,UPDATING	AVAILABLE	FAILED,TERMINATED	TRUE
-stream	Stream	CREATING,UPDATING,DELETING	ACTIVE	FAILED,DELETED	TRUE
-mysql-dbsystem	MySqlDbSystem	CREATING,UPDATING,INACTIVE	ACTIVE	FAILED,DELETED	TRUE
-redis-cluster	RedisCluster	CREATING,UPDATING	ACTIVE	FAILED,DELETED	TRUE
-postgres-db-system	PostgresDbSystem	CREATING,UPDATING	ACTIVE	FAILED,DELETED	TRUE
-api-gateway	ApiGateway	CREATING,UPDATING	ACTIVE	FAILED,DELETED	TRUE
-api-gateway-deployment	ApiGatewayDeployment	CREATING,UPDATING	ACTIVE	FAILED,DELETED	FALSE
-nosql-database	NoSQLDatabase	CREATING,UPDATING	ACTIVE	FAILED,DELETED	FALSE
-open-search-cluster	OpenSearchCluster	CREATING,UPDATING	ACTIVE	FAILED,DELETED	FALSE
-oci-queue	OciQueue	CREATING,UPDATING	ACTIVE	FAILED,DELETED	TRUE
-object-storage-bucket	ObjectStorageBucket	CREATING,UPDATING,RESOLVING	READY	FAILED,DELETED	TRUE
-functions-application	FunctionsApplication	CREATING,UPDATING	ACTIVE	FAILED,DELETED	FALSE
-functions-function	FunctionsFunction	CREATING,UPDATING	ACTIVE	FAILED,DELETED	TRUE
-dataflow-application	DataFlowApplication	CREATING,UPDATING	ACTIVE	FAILED,DELETED	FALSE
-container-instance	ContainerInstance	CREATING,UPDATING	ACTIVE	FAILED,DELETED	FALSE
-compute-instance	ComputeInstance	PROVISIONING,STARTING,STOPPING	RUNNING,STOPPED	FAILED,TERMINATED	FALSE
-oci-vcn	OciVcn	PROVISIONING,UPDATING	AVAILABLE	FAILED,DELETED	FALSE
-oci-subnet	OciSubnet	PROVISIONING,UPDATING	AVAILABLE	FAILED,DELETED	FALSE
-oci-internet-gateway	OciInternetGateway	PROVISIONING,UPDATING	AVAILABLE	FAILED,DELETED	FALSE
-oci-nat-gateway	OciNatGateway	PROVISIONING,UPDATING	AVAILABLE	FAILED,DELETED	FALSE
-oci-service-gateway	OciServiceGateway	PROVISIONING,UPDATING	AVAILABLE	FAILED,DELETED	FALSE
-oci-drg	OciDrg	PROVISIONING,UPDATING	AVAILABLE	FAILED,DELETED	FALSE
-oci-security-list	OciSecurityList	PROVISIONING,UPDATING	AVAILABLE	FAILED,DELETED	FALSE
-oci-network-security-group	OciNetworkSecurityGroup	PROVISIONING,UPDATING	AVAILABLE	FAILED,DELETED	FALSE
-oci-route-table	OciRouteTable	PROVISIONING,UPDATING	AVAILABLE	FAILED,DELETED	FALSE
+slug	kind	family	retryable_states	active_states	failed_states	has_secret	capabilities
+autonomous-databases	AutonomousDatabases	database	PROVISIONING,UPDATING,STARTING,STOPPING,MAINTENANCE_IN_PROGRESS,RESTARTING,SCALE_IN_PROGRESS,BACKUP_IN_PROGRESS,RESTORE_IN_PROGRESS	AVAILABLE,AVAILABLE_NEEDS_ATTENTION	FAILED,UNAVAILABLE,TERMINATING,TERMINATED,RESTORE_FAILED,INACCESSIBLE	TRUE	bind_by_id,resolve_by_name,drift_update,confirmed_delete,secret_write,secret_delete
+stream	Stream	messaging	CREATING,UPDATING,DELETING	ACTIVE	FAILED,DELETED	TRUE	bind_by_id,resolve_by_name,drift_update,confirmed_delete,secret_write,secret_delete
+mysql-dbsystem	MySqlDbSystem	database	CREATING,UPDATING,INACTIVE,TRANSIENT_READ_ERROR	ACTIVE	FAILED,DELETING,DELETED	TRUE	bind_by_id,resolve_by_name,drift_update,confirmed_delete,secret_write,secret_delete
+redis-cluster	RedisCluster	database	CREATING,UPDATING	ACTIVE	FAILED,DELETED	TRUE	bind_by_id,resolve_by_name,drift_update,confirmed_delete,secret_write,secret_delete
+postgres-db-system	PostgresDbSystem	database	CREATING,UPDATING	ACTIVE	FAILED,DELETED	TRUE	bind_by_id,resolve_by_name,drift_update,confirmed_delete,secret_write,secret_delete
+api-gateway	ApiGateway	api	CREATING,UPDATING	ACTIVE	FAILED,DELETED	TRUE	bind_by_id,resolve_by_name,drift_update,confirmed_delete,secret_write
+api-gateway-deployment	ApiGatewayDeployment	api	CREATING,UPDATING	ACTIVE	FAILED,DELETED	FALSE	bind_by_id,resolve_by_name,drift_update,confirmed_delete,collection_equivalence
+nosql-database	NoSQLDatabase	database	CREATING,UPDATING	ACTIVE	FAILED,DELETING,DELETED	FALSE	bind_by_id,resolve_by_name,drift_update,confirmed_delete
+open-search-cluster	OpenSearchCluster	search	CREATING,UPDATING	ACTIVE	FAILED,DELETED	FALSE	bind_by_id,resolve_by_name,drift_update,confirmed_delete
+oci-queue	OciQueue	messaging	CREATING,UPDATING	ACTIVE	FAILED,DELETED	TRUE	bind_by_id,resolve_by_name,drift_update,confirmed_delete,secret_write,secret_delete
+object-storage-bucket	ObjectStorageBucket	storage	CREATING,UPDATING,RESOLVING	READY	FAILED,DELETED	TRUE	bind_by_id,drift_update,confirmed_delete,secret_write,secret_delete
+functions-application	FunctionsApplication	functions	CREATING,UPDATING	ACTIVE	FAILED,DELETED	FALSE	bind_by_id,resolve_by_name,drift_update,confirmed_delete
+functions-function	FunctionsFunction	functions	CREATING,UPDATING	ACTIVE	FAILED,DELETED	TRUE	bind_by_id,resolve_by_name,drift_update,confirmed_delete,secret_write,secret_delete
+dataflow-application	DataFlowApplication	analytics		ACTIVE,INACTIVE	FAILED,DELETED	FALSE	bind_by_id,resolve_by_name,drift_update,confirmed_delete
+container-instance	ContainerInstance	compute	CREATING,UPDATING	ACTIVE	FAILED,DELETED	FALSE	bind_by_id,resolve_by_name,drift_update,confirmed_delete,best_effort_cleanup
+compute-instance	ComputeInstance	compute	PROVISIONING,STARTING,STOPPING	RUNNING,STOPPED	FAILED,TERMINATED	FALSE	bind_by_id,resolve_by_name,drift_update,confirmed_delete
+oci-vcn	OciVcn	networking	PROVISIONING,UPDATING	AVAILABLE	FAILED,DELETED	FALSE	bind_by_id,resolve_by_name,drift_update,confirmed_delete,paginated_resolution
+oci-subnet	OciSubnet	networking	PROVISIONING,UPDATING	AVAILABLE	FAILED,DELETED	FALSE	bind_by_id,resolve_by_name,drift_update,confirmed_delete,paginated_resolution
+oci-internet-gateway	OciInternetGateway	networking	PROVISIONING,UPDATING	AVAILABLE	FAILED,DELETED	FALSE	bind_by_id,resolve_by_name,drift_update,confirmed_delete,paginated_resolution
+oci-nat-gateway	OciNatGateway	networking	PROVISIONING,UPDATING	AVAILABLE	FAILED,DELETED	FALSE	bind_by_id,resolve_by_name,drift_update,confirmed_delete,paginated_resolution
+oci-service-gateway	OciServiceGateway	networking	PROVISIONING,UPDATING	AVAILABLE	FAILED,DELETED	FALSE	bind_by_id,resolve_by_name,drift_update,confirmed_delete,paginated_resolution
+oci-drg	OciDrg	networking	PROVISIONING,UPDATING	AVAILABLE	FAILED,DELETED	FALSE	bind_by_id,resolve_by_name,drift_update,confirmed_delete,paginated_resolution
+oci-security-list	OciSecurityList	networking	PROVISIONING,UPDATING	AVAILABLE	FAILED,DELETED	FALSE	bind_by_id,resolve_by_name,drift_update,confirmed_delete,paginated_resolution,collection_equivalence,whole_list_convergence
+oci-network-security-group	OciNetworkSecurityGroup	networking	PROVISIONING,UPDATING	AVAILABLE	FAILED,DELETED	FALSE	bind_by_id,resolve_by_name,drift_update,confirmed_delete,paginated_resolution
+oci-route-table	OciRouteTable	networking	PROVISIONING,UPDATING	AVAILABLE	FAILED,DELETED	FALSE	bind_by_id,resolve_by_name,drift_update,confirmed_delete,paginated_resolution,collection_equivalence,whole_list_convergence

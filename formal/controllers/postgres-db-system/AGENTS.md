@@ -1,21 +1,41 @@
 # PostgresDbSystem
 
 - Source of truth: `spec.tla` and `spec.cfg`
-- Shared contract: `../../shared/BaseReconcilerContract.tla`
+- Shared contracts: `../../shared/ControllerCoreContract.tla`, `../../shared/NameResolutionContract.tla`,
+  `../../shared/ListResolutionContract.tla`, `../../shared/DriftAwareUpdateContract.tla`,
+  `../../shared/CollectionEquivalenceContract.tla`, `../../shared/WholeListConvergenceContract.tla`,
+  `../../shared/BestEffortCleanupContract.tla`, `../../shared/SecretSideEffectContract.tla`
 - Diagram source: `diagrams/lifecycle.puml`
 - Known gaps and fix history: `logic-gaps.md`
+- Capabilities: `bind_by_id,resolve_by_name,drift_update,confirmed_delete,secret_write,secret_delete`
 
 ## Verified Properties
 
+- `ControllerMetadataInvariant`
 - `TypeInvariant`
 - `SuccessRequiresActiveInvariant`
 - `RetryableRequiresRequeueInvariant`
 - `DeleteRequiresResourceGoneInvariant`
+- `MutationUsesBoundIDInvariant`
+- `DeleteRequiresConfirmationInvariant`
+- `DeleteSubmittedKeepsFinalizerInvariant`
+- `ConfirmedDeleteRemovesResourceInvariant`
+- `BindByIDUsesSpecInvariant`
+- `ResolvedNameUsesResolvedIDInvariant`
+- `LaterPageResolutionUsesResolvedIDInvariant`
+- `SupportedDriftRequiresUpdateInvariant`
+- `MatchingStateSkipsUpdateInvariant`
+- `CollectionDifferenceRequiresUpdateInvariant`
+- `MatchingCollectionSkipsUpdateInvariant`
+- `WholeListConvergesAfterUpdateInvariant`
 - `SecretRequiresUsableStateInvariant`
+- `SecretWriteFailuresBlockSuccessInvariant`
+- `SecretDeleteFailuresBlockCompletionInvariant`
+- `MissingSecretAllowsDeleteInvariant`
+- `BestEffortCleanupKeepsSuccessInvariant`
+- `CleanupTargetsStayEligibleInvariant`
 
 ## Notes
 
 - This file is the controller-local knowledge log for formal verification work.
-- Go implementation: `pkg/servicemanager/postgresql/`
-- Property tests: `TestPropertyPostgresPendingStatesRequestRequeue`, `TestPropertyPostgresBindByIDUsesSpecIDWhenStatusIsEmpty`, `TestPropertyPostgresDeleteWaitsForConfirmedDisappearance`
-- Fixed in code: `CREATING`/`UPDATING` now requeue instead of succeeding, explicit-ID updates resolve the spec ID when status is empty, and delete completion waits for confirmed disappearance.
+- Update it with controller-specific counterexamples, linked Go property tests, and the final code fixes.

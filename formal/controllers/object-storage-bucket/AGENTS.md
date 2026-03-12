@@ -1,10 +1,41 @@
-# Object Storage Bucket
+# ObjectStorageBucket
 
-Source of truth: [spec.tla](spec.tla) and [spec.cfg](spec.cfg).
+- Source of truth: `spec.tla` and `spec.cfg`
+- Shared contracts: `../../shared/ControllerCoreContract.tla`, `../../shared/NameResolutionContract.tla`,
+  `../../shared/ListResolutionContract.tla`, `../../shared/DriftAwareUpdateContract.tla`,
+  `../../shared/CollectionEquivalenceContract.tla`, `../../shared/WholeListConvergenceContract.tla`,
+  `../../shared/BestEffortCleanupContract.tla`, `../../shared/SecretSideEffectContract.tla`
+- Diagram source: `diagrams/lifecycle.puml`
+- Known gaps and fix history: `logic-gaps.md`
+- Capabilities: `bind_by_id,drift_update,confirmed_delete,secret_write,secret_delete`
 
-- Owned code: `pkg/servicemanager/objectstorage/objectstorage_servicemanager.go`
-- Shared contract: `formal/shared/BaseReconcilerContract.tla`
-- Property tests: `pkg/servicemanager/objectstorage/objectstorage_properties_test.go`
-- Diagram: `diagrams/state-machine.puml`
-- Verified properties: success only on usable states, delete keeps the finalizer until the bucket is gone, secrets only exist in usable states
-- Go-side delete coverage now includes spec-ID fallback and finalizer completion when the backing Secret is already absent.
+## Verified Properties
+
+- `ControllerMetadataInvariant`
+- `TypeInvariant`
+- `SuccessRequiresActiveInvariant`
+- `RetryableRequiresRequeueInvariant`
+- `DeleteRequiresResourceGoneInvariant`
+- `MutationUsesBoundIDInvariant`
+- `DeleteRequiresConfirmationInvariant`
+- `DeleteSubmittedKeepsFinalizerInvariant`
+- `ConfirmedDeleteRemovesResourceInvariant`
+- `BindByIDUsesSpecInvariant`
+- `ResolvedNameUsesResolvedIDInvariant`
+- `LaterPageResolutionUsesResolvedIDInvariant`
+- `SupportedDriftRequiresUpdateInvariant`
+- `MatchingStateSkipsUpdateInvariant`
+- `CollectionDifferenceRequiresUpdateInvariant`
+- `MatchingCollectionSkipsUpdateInvariant`
+- `WholeListConvergesAfterUpdateInvariant`
+- `SecretRequiresUsableStateInvariant`
+- `SecretWriteFailuresBlockSuccessInvariant`
+- `SecretDeleteFailuresBlockCompletionInvariant`
+- `MissingSecretAllowsDeleteInvariant`
+- `BestEffortCleanupKeepsSuccessInvariant`
+- `CleanupTargetsStayEligibleInvariant`
+
+## Notes
+
+- This file is the controller-local knowledge log for formal verification work.
+- Update it with controller-specific counterexamples, linked Go property tests, and the final code fixes.

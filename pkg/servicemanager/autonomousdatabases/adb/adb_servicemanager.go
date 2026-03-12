@@ -257,31 +257,70 @@ func (c *AdbServiceManager) Delete(ctx context.Context, obj runtime.Object) (boo
 		return false, err
 	}
 
-	adbID := autonomousDatabases.Status.OsokStatus.Ocid
-	if adbID == "" {
-		adbID = autonomousDatabases.Spec.AdbId
-	}
+	adbID := resolveDeleteAdbID(autonomousDatabases)
 	if adbID == "" {
 		return true, nil
 	}
 
 	if _, err := c.GetAdb(ctx, adbID, nil); err != nil {
 		if isNotFoundServiceError(err) {
-			walletName := walletSecretName(autonomousDatabases)
-			if walletName != "" {
-				if _, secretErr := servicemanager.DeleteOwnedSecretIfPresent(ctx, c.CredentialClient, walletName, autonomousDatabases.Namespace, autonomousDatabaseKindName, autonomousDatabases.Name); secretErr != nil {
-					c.Log.ErrorLog(secretErr, "Error while deleting Autonomous Database wallet secret")
-				}
-			}
-			return true, nil
+			return c.finalizeDeleteWalletSecret(ctx, autonomousDatabases)
 		}
 		return false, err
 	}
 
-	if err := c.DeleteAdb(ctx, adbID); err != nil && !isNotFoundServiceError(err) {
+	workRequestID, err := c.submitDeleteAdb(ctx, adbID)
+	if err != nil && !isNotFoundServiceError(err) {
 		return false, err
 	}
+	if workRequestID != nil && *workRequestID != "" {
+		c.Log.InfoLog(fmt.Sprintf("Submitted Autonomous Database delete work request %s for %s", *workRequestID, adbID))
+	}
 	return false, nil
+}
+
+func resolveDeleteAdbID(autonomousDatabases *ociv1beta1.AutonomousDatabases) ociv1beta1.OCID {
+	if autonomousDatabases.Status.OsokStatus.Ocid != "" {
+		return autonomousDatabases.Status.OsokStatus.Ocid
+	}
+
+	return autonomousDatabases.Spec.AdbId
+}
+
+func (c *AdbServiceManager) finalizeDeleteWalletSecret(ctx context.Context, autonomousDatabases *ociv1beta1.AutonomousDatabases) (bool, error) {
+	walletName := walletSecretName(autonomousDatabases)
+	if walletName == "" {
+		return true, nil
+	}
+
+	c.logPreservedLegacyWalletSecret(ctx, autonomousDatabases, walletName)
+	if _, secretErr := servicemanager.DeleteOwnedSecretIfPresent(ctx, c.CredentialClient, walletName, autonomousDatabases.Namespace, autonomousDatabaseKindName, autonomousDatabases.Name); secretErr != nil {
+		c.Log.ErrorLog(secretErr, "Error while deleting Autonomous Database wallet secret")
+	}
+
+	return true, nil
+}
+
+func (c *AdbServiceManager) logPreservedLegacyWalletSecret(ctx context.Context, autonomousDatabases *ociv1beta1.AutonomousDatabases, walletName string) {
+	existingSecret, err := c.CredentialClient.GetSecret(ctx, walletName, autonomousDatabases.Namespace)
+	if err != nil {
+		if !servicemanager.IsSecretNotFoundError(err) {
+			c.Log.ErrorLog(err, "Error while inspecting Autonomous Database wallet secret ownership")
+		}
+		return
+	}
+
+	if servicemanager.SecretOwnedBy(existingSecret, autonomousDatabaseKindName, autonomousDatabases.Name) {
+		return
+	}
+
+	c.Log.InfoLog(fmt.Sprintf(
+		"Preserving legacy Autonomous Database wallet secret %s/%s because it is not owned by %s %s",
+		autonomousDatabases.Namespace,
+		walletName,
+		autonomousDatabaseKindName,
+		autonomousDatabases.Name,
+	))
 }
 
 func (c *AdbServiceManager) GetCrdStatus(obj runtime.Object) (*ociv1beta1.OSOKStatus, error) {

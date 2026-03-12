@@ -1,24 +1,41 @@
-# NoSQL Database
+# NoSQLDatabase
 
-## Source Of Truth
-- `formal/controllers/nosql-database/spec.tla`
-- `formal/controllers/nosql-database/spec.cfg`
-
-## Scope
-- Controller surface: `NoSQLDatabaseReconciler`
-- Service-manager surface: `pkg/servicemanager/nosql`
+- Source of truth: `spec.tla` and `spec.cfg`
+- Shared contracts: `../../shared/ControllerCoreContract.tla`, `../../shared/NameResolutionContract.tla`,
+  `../../shared/ListResolutionContract.tla`, `../../shared/DriftAwareUpdateContract.tla`,
+  `../../shared/CollectionEquivalenceContract.tla`, `../../shared/WholeListConvergenceContract.tla`,
+  `../../shared/BestEffortCleanupContract.tla`, `../../shared/SecretSideEffectContract.tla`
+- Diagram source: `diagrams/lifecycle.puml`
+- Known gaps and fix history: `logic-gaps.md`
+- Capabilities: `bind_by_id,resolve_by_name,drift_update,confirmed_delete`
 
 ## Verified Properties
-- Retryable table lifecycle states must request requeue.
-- Successful reconcile requires an active table.
-- Delete keeps the finalizer until OCI stops returning the table.
-- Bind-by-ID updates must use the explicit table ID even before status is populated.
 
-## Go Property Tests
-- `TestPropertyRetryableLifecycleStatesRequeue`
-- `TestPropertyBindByIDUsesExplicitSpecID`
-- `TestPropertyDeleteWaitsForNotFound`
+- `ControllerMetadataInvariant`
+- `TypeInvariant`
+- `SuccessRequiresActiveInvariant`
+- `RetryableRequiresRequeueInvariant`
+- `DeleteRequiresResourceGoneInvariant`
+- `MutationUsesBoundIDInvariant`
+- `DeleteRequiresConfirmationInvariant`
+- `DeleteSubmittedKeepsFinalizerInvariant`
+- `ConfirmedDeleteRemovesResourceInvariant`
+- `BindByIDUsesSpecInvariant`
+- `ResolvedNameUsesResolvedIDInvariant`
+- `LaterPageResolutionUsesResolvedIDInvariant`
+- `SupportedDriftRequiresUpdateInvariant`
+- `MatchingStateSkipsUpdateInvariant`
+- `CollectionDifferenceRequiresUpdateInvariant`
+- `MatchingCollectionSkipsUpdateInvariant`
+- `WholeListConvergesAfterUpdateInvariant`
+- `SecretRequiresUsableStateInvariant`
+- `SecretWriteFailuresBlockSuccessInvariant`
+- `SecretDeleteFailuresBlockCompletionInvariant`
+- `MissingSecretAllowsDeleteInvariant`
+- `BestEffortCleanupKeepsSuccessInvariant`
+- `CleanupTargetsStayEligibleInvariant`
 
 ## Notes
-- This controller does not create runtime secrets, so the shared secret-use invariant is vacuously satisfied.
-- `logic-gaps.md` records the fixed gaps and remaining limitations.
+
+- This file is the controller-local knowledge log for formal verification work.
+- Update it with controller-specific counterexamples, linked Go property tests, and the final code fixes.

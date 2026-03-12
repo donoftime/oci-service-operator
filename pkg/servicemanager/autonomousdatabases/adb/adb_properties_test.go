@@ -190,4 +190,38 @@ func TestPropertyDeleteWaitsForResourceToDisappear(t *testing.T) {
 		assert.True(t, done)
 		assert.False(t, credClient.deleteCalled)
 	})
+
+	t.Run("legacy unowned wallet secret is preserved", func(t *testing.T) {
+		credClient := &fakeCredentialClient{
+			getSecretFn: func(_ context.Context, name, _ string) (map[string][]byte, error) {
+				assert.Equal(t, "adb-wallet", name)
+				return map[string][]byte{"tnsnames.ora": []byte("legacy")}, nil
+			},
+			deleteSecretFn: func(_ context.Context, _, _ string) (bool, error) {
+				t.Fatal("DeleteSecret should not be called for an unowned legacy wallet secret")
+				return false, nil
+			},
+		}
+		mgr := newTestManager(credClient)
+		mockClient := &mockOciDbClient{
+			getFn: func(_ context.Context, _ database.GetAutonomousDatabaseRequest) (database.GetAutonomousDatabaseResponse, error) {
+				return database.GetAutonomousDatabaseResponse{}, propertyServiceError{
+					status: 404,
+					code:   "NotFound",
+					msg:    "adb not found",
+				}
+			},
+		}
+		ExportSetClientForTest(mgr, mockClient)
+
+		adb := &ociv1beta1.AutonomousDatabases{}
+		adb.Name = "adb"
+		adb.Namespace = "default"
+		adb.Status.OsokStatus.Ocid = "ocid1.autonomousdatabase.oc1..delete"
+
+		done, err := mgr.Delete(context.Background(), adb)
+		assert.NoError(t, err)
+		assert.True(t, done)
+		assert.False(t, credClient.deleteCalled)
+	})
 }

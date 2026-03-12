@@ -197,6 +197,10 @@ func (m *FunctionsApplicationServiceManager) loadResolvedApplication(ctx context
 		return nil, err
 	}
 	app.Status.OsokStatus.Ocid = ociv1beta1.OCID(*appInstance.Id)
+	if err := m.UpdateApplication(ctx, app); err != nil {
+		m.Log.ErrorLog(err, "Error while updating FunctionsApplication by resolved OCID")
+		return nil, err
+	}
 	m.Log.InfoLog(fmt.Sprintf("FunctionsApplication %s is %s", safeFunctionsString(appInstance.DisplayName), appInstance.LifecycleState))
 	return appInstance, nil
 }

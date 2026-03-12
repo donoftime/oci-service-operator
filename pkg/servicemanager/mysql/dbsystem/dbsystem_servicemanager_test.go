@@ -64,11 +64,13 @@ func (f *fakeCredentialClient) UpdateSecret(ctx context.Context, name, ns string
 
 // mockOciDbSystemClient implements MySQLDbSystemClientInterface for testing.
 type mockOciDbSystemClient struct {
-	createFn func(context.Context, mysql.CreateDbSystemRequest) (mysql.CreateDbSystemResponse, error)
-	listFn   func(context.Context, mysql.ListDbSystemsRequest) (mysql.ListDbSystemsResponse, error)
-	getFn    func(context.Context, mysql.GetDbSystemRequest) (mysql.GetDbSystemResponse, error)
-	updateFn func(context.Context, mysql.UpdateDbSystemRequest) (mysql.UpdateDbSystemResponse, error)
-	deleteFn func(context.Context, mysql.DeleteDbSystemRequest) (mysql.DeleteDbSystemResponse, error)
+	createFn           func(context.Context, mysql.CreateDbSystemRequest) (mysql.CreateDbSystemResponse, error)
+	listFn             func(context.Context, mysql.ListDbSystemsRequest) (mysql.ListDbSystemsResponse, error)
+	getFn              func(context.Context, mysql.GetDbSystemRequest) (mysql.GetDbSystemResponse, error)
+	updateFn           func(context.Context, mysql.UpdateDbSystemRequest) (mysql.UpdateDbSystemResponse, error)
+	deleteFn           func(context.Context, mysql.DeleteDbSystemRequest) (mysql.DeleteDbSystemResponse, error)
+	getWorkRequestFn   func(context.Context, mysql.GetWorkRequestRequest) (mysql.GetWorkRequestResponse, error)
+	listWorkRequestsFn func(context.Context, mysql.ListWorkRequestsRequest) (mysql.ListWorkRequestsResponse, error)
 }
 
 func (m *mockOciDbSystemClient) CreateDbSystem(ctx context.Context, req mysql.CreateDbSystemRequest) (mysql.CreateDbSystemResponse, error) {
@@ -104,6 +106,20 @@ func (m *mockOciDbSystemClient) DeleteDbSystem(ctx context.Context, req mysql.De
 		return m.deleteFn(ctx, req)
 	}
 	return mysql.DeleteDbSystemResponse{}, nil
+}
+
+func (m *mockOciDbSystemClient) GetWorkRequest(ctx context.Context, req mysql.GetWorkRequestRequest) (mysql.GetWorkRequestResponse, error) {
+	if m.getWorkRequestFn != nil {
+		return m.getWorkRequestFn(ctx, req)
+	}
+	return mysql.GetWorkRequestResponse{}, nil
+}
+
+func (m *mockOciDbSystemClient) ListWorkRequests(ctx context.Context, req mysql.ListWorkRequestsRequest) (mysql.ListWorkRequestsResponse, error) {
+	if m.listWorkRequestsFn != nil {
+		return m.listWorkRequestsFn(ctx, req)
+	}
+	return mysql.ListWorkRequestsResponse{}, nil
 }
 
 // makeActiveDbSystem returns a minimal mysql.DbSystem for mock responses.

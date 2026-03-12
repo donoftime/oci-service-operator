@@ -8,6 +8,7 @@ package nosql
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	"github.com/oracle/oci-go-sdk/v65/nosql"
@@ -22,6 +23,8 @@ type NosqlClientInterface interface {
 	ListTables(ctx context.Context, request nosql.ListTablesRequest) (nosql.ListTablesResponse, error)
 	UpdateTable(ctx context.Context, request nosql.UpdateTableRequest) (nosql.UpdateTableResponse, error)
 	DeleteTable(ctx context.Context, request nosql.DeleteTableRequest) (nosql.DeleteTableResponse, error)
+	GetWorkRequest(ctx context.Context, request nosql.GetWorkRequestRequest) (nosql.GetWorkRequestResponse, error)
+	ListWorkRequests(ctx context.Context, request nosql.ListWorkRequestsRequest) (nosql.ListWorkRequestsResponse, error)
 }
 
 func getNosqlClient(provider common.ConfigurationProvider) (nosql.NosqlClient, error) {
@@ -131,15 +134,172 @@ func (c *NoSQLDatabaseServiceManager) UpdateTable(ctx context.Context, db *ociv1
 		return err
 	}
 
+	tableID, err := resolveTableID(db.Status.OsokStatus.Ocid, db.Spec.TableId)
+	if err != nil {
+		return err
+	}
+
+	existingTable, err := c.GetTable(ctx, tableID, nil)
+	if err != nil {
+		return err
+	}
+
+	updateDetails, updateNeeded := buildUpdateTableDetails(db, existingTable)
+	if !updateNeeded {
+		return nil
+	}
+
+	req := nosql.UpdateTableRequest{
+		TableNameOrId:      common.String(string(tableID)),
+		UpdateTableDetails: updateDetails,
+	}
+
+	_, err = client.UpdateTable(ctx, req)
+	return err
+}
+
+// DeleteTable deletes the NoSQL table for the given OCID.
+func (c *NoSQLDatabaseServiceManager) DeleteTable(ctx context.Context, tableId ociv1beta1.OCID) error {
+	_, err := c.submitDeleteTable(ctx, tableId)
+	return err
+}
+
+func (c *NoSQLDatabaseServiceManager) submitDeleteTable(ctx context.Context, tableID ociv1beta1.OCID) (*string, error) {
+	client, err := c.getOCIClient()
+	if err != nil {
+		return nil, err
+	}
+
+	req := nosql.DeleteTableRequest{
+		TableNameOrId: common.String(string(tableID)),
+		IsIfExists:    common.Bool(true),
+	}
+
+	resp, err := client.DeleteTable(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return resp.OpcWorkRequestId, nil
+}
+
+func (c *NoSQLDatabaseServiceManager) findDeleteTableWorkRequestID(ctx context.Context, compartmentID, tableID ociv1beta1.OCID) (*string, error) {
+	if !canFindDeleteTableWorkRequest(compartmentID, tableID) {
+		return nil, nil
+	}
+
+	client, err := c.getOCIClient()
+	if err != nil {
+		return nil, err
+	}
+
+	req := newDeleteTableWorkRequestListRequest(compartmentID)
+
+	for {
+		workRequestID, nextPage, err := c.findDeleteTableWorkRequestPage(ctx, client, req, tableID)
+		if err != nil {
+			return nil, err
+		}
+		if workRequestID != nil {
+			return workRequestID, nil
+		}
+		if nextPage == nil || *nextPage == "" {
+			return nil, nil
+		}
+		req.Page = nextPage
+	}
+}
+
+func canFindDeleteTableWorkRequest(compartmentID, tableID ociv1beta1.OCID) bool {
+	return compartmentID != "" && tableID != ""
+}
+
+func newDeleteTableWorkRequestListRequest(compartmentID ociv1beta1.OCID) nosql.ListWorkRequestsRequest {
+	return nosql.ListWorkRequestsRequest{
+		CompartmentId: common.String(string(compartmentID)),
+		Limit:         common.Int(100),
+	}
+}
+
+func (c *NoSQLDatabaseServiceManager) findDeleteTableWorkRequestPage(
+	ctx context.Context,
+	client NosqlClientInterface,
+	req nosql.ListWorkRequestsRequest,
+	tableID ociv1beta1.OCID,
+) (*string, *string, error) {
+	resp, err := client.ListWorkRequests(ctx, req)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	workRequestID := matchDeleteTableWorkRequest(resp.Items, tableID)
+	if workRequestID != nil {
+		return workRequestID, nil, nil
+	}
+
+	return nil, resp.OpcNextPage, nil
+}
+
+func matchDeleteTableWorkRequest(items []nosql.WorkRequestSummary, tableID ociv1beta1.OCID) *string {
+	for _, item := range items {
+		if workRequestID := matchDeleteTableWorkRequestSummary(item, tableID); workRequestID != nil {
+			return workRequestID
+		}
+	}
+
+	return nil
+}
+
+func matchDeleteTableWorkRequestSummary(item nosql.WorkRequestSummary, tableID ociv1beta1.OCID) *string {
+	if !isDeleteTableWorkRequestSummary(item) {
+		return nil
+	}
+	if !noSQLWorkRequestTargetsTable(item.Resources, tableID) {
+		return nil
+	}
+
+	return item.Id
+}
+
+func isDeleteTableWorkRequestSummary(item nosql.WorkRequestSummary) bool {
+	return item.OperationType == nosql.WorkRequestSummaryOperationTypeDeleteTable && item.Id != nil
+}
+
+func noSQLWorkRequestTargetsTable(resources []nosql.WorkRequestResource, tableID ociv1beta1.OCID) bool {
+	for _, resource := range resources {
+		if resource.Identifier != nil && *resource.Identifier == string(tableID) {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *NoSQLDatabaseServiceManager) getTableWorkRequest(ctx context.Context, workRequestID string) (*nosql.WorkRequest, error) {
+	client, err := c.getOCIClient()
+	if err != nil {
+		return nil, err
+	}
+
+	req := nosql.GetWorkRequestRequest{
+		WorkRequestId: common.String(workRequestID),
+	}
+
+	resp, err := client.GetWorkRequest(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return &resp.WorkRequest, nil
+}
+
+func buildUpdateTableDetails(db *ociv1beta1.NoSQLDatabase, existingTable *nosql.Table) (nosql.UpdateTableDetails, bool) {
 	updateDetails := nosql.UpdateTableDetails{}
 	updateNeeded := false
 
-	if db.Spec.DdlStatement != "" {
+	if ddlStatementChanged(db.Spec.DdlStatement, existingTable.DdlStatement) {
 		updateDetails.DdlStatement = common.String(db.Spec.DdlStatement)
 		updateNeeded = true
 	}
 
-	if db.Spec.TableLimits != nil {
+	if tableLimitsChanged(db.Spec.TableLimits, existingTable.TableLimits) {
 		updateDetails.TableLimits = &nosql.TableLimits{
 			MaxReadUnits:    common.Int(db.Spec.TableLimits.MaxReadUnits),
 			MaxWriteUnits:   common.Int(db.Spec.TableLimits.MaxWriteUnits),
@@ -148,37 +308,55 @@ func (c *NoSQLDatabaseServiceManager) UpdateTable(ctx context.Context, db *ociv1
 		updateNeeded = true
 	}
 
-	if !updateNeeded {
-		return nil
+	if freeformTagsChanged(db.Spec.FreeFormTags, existingTable.FreeformTags) {
+		updateDetails.FreeformTags = db.Spec.FreeFormTags
+		updateNeeded = true
 	}
 
-	req := nosql.UpdateTableRequest{
-		TableNameOrId:      common.String(string(db.Status.OsokStatus.Ocid)),
-		UpdateTableDetails: updateDetails,
+	if definedTagsChanged(db.Spec.DefinedTags, existingTable.DefinedTags) {
+		updateDetails.DefinedTags = *util.ConvertToOciDefinedTags(&db.Spec.DefinedTags)
+		updateNeeded = true
 	}
 
-	tableID, err := resolveTableID(db.Status.OsokStatus.Ocid, db.Spec.TableId)
-	if err != nil {
-		return err
-	}
-	req.TableNameOrId = common.String(string(tableID))
-
-	_, err = client.UpdateTable(ctx, req)
-	return err
+	return updateDetails, updateNeeded
 }
 
-// DeleteTable deletes the NoSQL table for the given OCID.
-func (c *NoSQLDatabaseServiceManager) DeleteTable(ctx context.Context, tableId ociv1beta1.OCID) error {
-	client, err := c.getOCIClient()
-	if err != nil {
-		return err
+func ddlStatementChanged(desired string, existing *string) bool {
+	return desired != "" && desired != safeString(existing)
+}
+
+func tableLimitsChanged(desired *ociv1beta1.NoSQLDatabaseTableLimits, existing *nosql.TableLimits) bool {
+	if desired == nil {
+		return false
+	}
+	if existing == nil {
+		return true
 	}
 
-	req := nosql.DeleteTableRequest{
-		TableNameOrId: common.String(string(tableId)),
-		IsIfExists:    common.Bool(true),
+	return desired.MaxReadUnits != safeInt(existing.MaxReadUnits) ||
+		desired.MaxWriteUnits != safeInt(existing.MaxWriteUnits) ||
+		desired.MaxStorageInGBs != safeInt(existing.MaxStorageInGBs)
+}
+
+func freeformTagsChanged(desired map[string]string, existing map[string]string) bool {
+	if desired == nil {
+		return false
 	}
 
-	_, err = client.DeleteTable(ctx, req)
-	return err
+	return !reflect.DeepEqual(existing, desired)
+}
+
+func definedTagsChanged(desired map[string]ociv1beta1.MapValue, existing map[string]map[string]interface{}) bool {
+	if desired == nil {
+		return false
+	}
+
+	return !reflect.DeepEqual(existing, *util.ConvertToOciDefinedTags(&desired))
+}
+
+func safeInt(value *int) int {
+	if value == nil {
+		return 0
+	}
+	return *value
 }

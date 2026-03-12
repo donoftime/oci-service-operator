@@ -22,3 +22,10 @@ The shared controller contract is grounded in `pkg/core/reconciler.go`:
 - retryable states must explicitly request requeue
 - finalizers must remain until deletion is complete
 - secrets must only be created for usable resources
+- explicit spec IDs must take precedence when status OCIDs are empty
+- name-resolved resources must keep using their resolved OCIDs for mutation paths
+- paginated name lookup must still resolve later-page matches to the same mutation path
+- supported drift must update, while matching state must skip no-op writes
+- collection-based desired state must trigger update on semantic difference and converge after full-list resubmission
+- best-effort cleanup must remain non-blocking and stay within the controller's eligible target set
+- secret side-effect failures must block successful completion

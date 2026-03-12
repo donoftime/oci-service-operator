@@ -9,9 +9,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"testing"
 	"testing/quick"
 
+	"github.com/oracle/oci-go-sdk/v65/common"
 	ocifunctions "github.com/oracle/oci-go-sdk/v65/functions"
 	ociv1beta1 "github.com/oracle/oci-service-operator/api/v1beta1"
 	corev1 "k8s.io/api/core/v1"
@@ -103,6 +105,108 @@ func TestFunctionsApplication_PropertyRetryableStatesRequeue(t *testing.T) {
 
 		resp, err := mgr.CreateOrUpdate(context.Background(), app, ctrl.Request{})
 		return err == nil && !resp.IsSuccessful && resp.ShouldRequeue
+	}
+
+	if err := quick.Check(property, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFunctionsApplication_PropertyExistingByNameUsesResolvedIDForUpdate(t *testing.T) {
+	property := func(seed uint16) bool {
+		appID := fmt.Sprintf("ocid1.fnapp.oc1..existing-%d", seed)
+		var updatedReq ocifunctions.UpdateApplicationRequest
+		ociClient := &mockFunctionsClient{
+			listApplicationsFn: func(_ context.Context, _ ocifunctions.ListApplicationsRequest) (ocifunctions.ListApplicationsResponse, error) {
+				return ocifunctions.ListApplicationsResponse{
+					Items: []ocifunctions.ApplicationSummary{
+						{Id: common.String(appID), LifecycleState: ocifunctions.ApplicationLifecycleStateActive},
+					},
+				}, nil
+			},
+			getApplicationFn: func(_ context.Context, _ ocifunctions.GetApplicationRequest) (ocifunctions.GetApplicationResponse, error) {
+				app := makeActiveApplication(appID, "prop-app")
+				app.Config = map[string]string{"mode": "old"}
+				app.NetworkSecurityGroupIds = []string{"ocid1.nsg.oc1..old"}
+				app.SyslogUrl = common.String("tcp://old.example.com")
+				app.FreeformTags = map[string]string{"team": "old"}
+				app.DefinedTags = map[string]map[string]interface{}{"ops": {"env": "dev"}}
+				return ocifunctions.GetApplicationResponse{Application: app}, nil
+			},
+			updateApplicationFn: func(_ context.Context, req ocifunctions.UpdateApplicationRequest) (ocifunctions.UpdateApplicationResponse, error) {
+				updatedReq = req
+				return ocifunctions.UpdateApplicationResponse{}, nil
+			},
+		}
+
+		mgr := newAppMgr(t, ociClient)
+		app := &ociv1beta1.FunctionsApplication{}
+		app.Spec.DisplayName = "prop-app"
+		app.Spec.CompartmentId = ociv1beta1.OCID(fmt.Sprintf("ocid1.compartment.oc1..%d", seed))
+		app.Spec.Config = map[string]string{"mode": "new"}
+		app.Spec.NetworkSecurityGroupIds = []string{"ocid1.nsg.oc1..new"}
+		app.Spec.SyslogUrl = "tcp://new.example.com"
+		app.Spec.FreeFormTags = map[string]string{"team": "platform"}
+		app.Spec.DefinedTags = map[string]ociv1beta1.MapValue{"ops": {"env": "prod"}}
+
+		resp, err := mgr.CreateOrUpdate(context.Background(), app, ctrl.Request{})
+		return err == nil &&
+			resp.IsSuccessful &&
+			updatedReq.ApplicationId != nil &&
+			*updatedReq.ApplicationId == appID &&
+			updatedReq.Config["mode"] == "new" &&
+			len(updatedReq.NetworkSecurityGroupIds) == 1 &&
+			updatedReq.NetworkSecurityGroupIds[0] == "ocid1.nsg.oc1..new" &&
+			updatedReq.SyslogUrl != nil &&
+			*updatedReq.SyslogUrl == "tcp://new.example.com" &&
+			updatedReq.FreeformTags["team"] == "platform" &&
+			updatedReq.DefinedTags["ops"]["env"] == "prod"
+	}
+
+	if err := quick.Check(property, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFunctionsApplication_PropertyExistingByNameSkipsNoOpUpdate(t *testing.T) {
+	property := func(seed uint16) bool {
+		appID := fmt.Sprintf("ocid1.fnapp.oc1..noop-%d", seed)
+		updateCalled := false
+		ociClient := &mockFunctionsClient{
+			listApplicationsFn: func(_ context.Context, _ ocifunctions.ListApplicationsRequest) (ocifunctions.ListApplicationsResponse, error) {
+				return ocifunctions.ListApplicationsResponse{
+					Items: []ocifunctions.ApplicationSummary{
+						{Id: common.String(appID), LifecycleState: ocifunctions.ApplicationLifecycleStateActive},
+					},
+				}, nil
+			},
+			getApplicationFn: func(_ context.Context, _ ocifunctions.GetApplicationRequest) (ocifunctions.GetApplicationResponse, error) {
+				app := makeActiveApplication(appID, "prop-app")
+				app.Config = map[string]string{"mode": "steady"}
+				app.NetworkSecurityGroupIds = []string{"ocid1.nsg.oc1..steady"}
+				app.SyslogUrl = common.String("tcp://steady.example.com")
+				app.FreeformTags = map[string]string{"team": "platform"}
+				app.DefinedTags = map[string]map[string]interface{}{"ops": {"env": "prod"}}
+				return ocifunctions.GetApplicationResponse{Application: app}, nil
+			},
+			updateApplicationFn: func(_ context.Context, req ocifunctions.UpdateApplicationRequest) (ocifunctions.UpdateApplicationResponse, error) {
+				updateCalled = true
+				return ocifunctions.UpdateApplicationResponse{}, nil
+			},
+		}
+
+		mgr := newAppMgr(t, ociClient)
+		app := &ociv1beta1.FunctionsApplication{}
+		app.Spec.DisplayName = "prop-app"
+		app.Spec.CompartmentId = ociv1beta1.OCID(fmt.Sprintf("ocid1.compartment.oc1..%d", seed))
+		app.Spec.Config = map[string]string{"mode": "steady"}
+		app.Spec.NetworkSecurityGroupIds = []string{"ocid1.nsg.oc1..steady"}
+		app.Spec.SyslogUrl = "tcp://steady.example.com"
+		app.Spec.FreeFormTags = map[string]string{"team": "platform"}
+		app.Spec.DefinedTags = map[string]ociv1beta1.MapValue{"ops": {"env": "prod"}}
+
+		resp, err := mgr.CreateOrUpdate(context.Background(), app, ctrl.Request{})
+		return err == nil && resp.IsSuccessful && !updateCalled
 	}
 
 	if err := quick.Check(property, nil); err != nil {
@@ -268,6 +372,142 @@ func TestFunctionsFunction_PropertyDeleteFallsBackToSpecID(t *testing.T) {
 
 		done, err := mgr.Delete(context.Background(), fn)
 		return err == nil && done && deletedID == functionID
+	}
+
+	if err := quick.Check(property, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFunctionsApplication_PropertyConfigAndTagDriftTriggersUpdate(t *testing.T) {
+	property := func(seed uint16) bool {
+		appID := fmt.Sprintf("ocid1.fnapp.oc1..drift-%d", seed)
+		expectedDefinedTags := map[string]map[string]interface{}{
+			"ops": {"env": "prod"},
+		}
+		var captured ocifunctions.UpdateApplicationRequest
+		ociClient := &mockFunctionsClient{
+			getApplicationFn: func(_ context.Context, _ ocifunctions.GetApplicationRequest) (ocifunctions.GetApplicationResponse, error) {
+				app := makeActiveApplication(appID, "drift-app")
+				app.Config = map[string]string{"OLD": "value"}
+				app.NetworkSecurityGroupIds = []string{"ocid1.nsg.oc1..old"}
+				app.SyslogUrl = common.String("tcp://old.example.com:514")
+				app.FreeformTags = map[string]string{"team": "old"}
+				app.DefinedTags = map[string]map[string]interface{}{
+					"ops": {"env": "dev"},
+				}
+				return ocifunctions.GetApplicationResponse{Application: app}, nil
+			},
+			updateApplicationFn: func(_ context.Context, req ocifunctions.UpdateApplicationRequest) (ocifunctions.UpdateApplicationResponse, error) {
+				captured = req
+				return ocifunctions.UpdateApplicationResponse{}, nil
+			},
+		}
+
+		mgr := newAppMgr(t, ociClient)
+		app := &ociv1beta1.FunctionsApplication{}
+		app.Spec.FunctionsApplicationId = ociv1beta1.OCID(appID)
+		app.Spec.Config = map[string]string{"NEW": "value"}
+		app.Spec.NetworkSecurityGroupIds = []string{"ocid1.nsg.oc1..new"}
+		app.Spec.SyslogUrl = "tcp://new.example.com:514"
+		app.Spec.FreeFormTags = map[string]string{"team": "platform"}
+		app.Spec.DefinedTags = map[string]ociv1beta1.MapValue{
+			"ops": {"env": "prod"},
+		}
+
+		resp, err := mgr.CreateOrUpdate(context.Background(), app, ctrl.Request{})
+		return err == nil &&
+			resp.IsSuccessful &&
+			reflect.DeepEqual(captured.Config, app.Spec.Config) &&
+			reflect.DeepEqual(captured.NetworkSecurityGroupIds, app.Spec.NetworkSecurityGroupIds) &&
+			captured.SyslogUrl != nil &&
+			*captured.SyslogUrl == app.Spec.SyslogUrl &&
+			reflect.DeepEqual(captured.FreeformTags, app.Spec.FreeFormTags) &&
+			reflect.DeepEqual(captured.DefinedTags, expectedDefinedTags)
+	}
+
+	if err := quick.Check(property, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFunctionsApplication_PropertyMatchingConfigSkipsUpdate(t *testing.T) {
+	property := func(seed uint16) bool {
+		appID := fmt.Sprintf("ocid1.fnapp.oc1..same-%d", seed)
+		updateCalled := false
+		ociClient := &mockFunctionsClient{
+			getApplicationFn: func(_ context.Context, _ ocifunctions.GetApplicationRequest) (ocifunctions.GetApplicationResponse, error) {
+				app := makeActiveApplication(appID, "same-app")
+				app.Config = map[string]string{"APP_MODE": "prod"}
+				app.NetworkSecurityGroupIds = []string{"ocid1.nsg.oc1..same"}
+				app.SyslogUrl = common.String("tcp://same.example.com:514")
+				app.FreeformTags = map[string]string{"team": "platform"}
+				app.DefinedTags = map[string]map[string]interface{}{
+					"ops": {"env": "prod"},
+				}
+				return ocifunctions.GetApplicationResponse{Application: app}, nil
+			},
+			updateApplicationFn: func(_ context.Context, _ ocifunctions.UpdateApplicationRequest) (ocifunctions.UpdateApplicationResponse, error) {
+				updateCalled = true
+				return ocifunctions.UpdateApplicationResponse{}, nil
+			},
+		}
+
+		mgr := newAppMgr(t, ociClient)
+		app := &ociv1beta1.FunctionsApplication{}
+		app.Spec.FunctionsApplicationId = ociv1beta1.OCID(appID)
+		app.Spec.Config = map[string]string{"APP_MODE": "prod"}
+		app.Spec.NetworkSecurityGroupIds = []string{"ocid1.nsg.oc1..same"}
+		app.Spec.SyslogUrl = "tcp://same.example.com:514"
+		app.Spec.FreeFormTags = map[string]string{"team": "platform"}
+		app.Spec.DefinedTags = map[string]ociv1beta1.MapValue{
+			"ops": {"env": "prod"},
+		}
+
+		resp, err := mgr.CreateOrUpdate(context.Background(), app, ctrl.Request{})
+		return err == nil && resp.IsSuccessful && !updateCalled
+	}
+
+	if err := quick.Check(property, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFunctionsApplication_PropertyResolvedExistingApplicationAppliesUpdate(t *testing.T) {
+	property := func(seed uint16) bool {
+		appID := fmt.Sprintf("ocid1.fnapp.oc1..resolved-%d", seed)
+		var updatedID string
+		var updatedConfig map[string]string
+		ociClient := &mockFunctionsClient{
+			listApplicationsFn: func(_ context.Context, _ ocifunctions.ListApplicationsRequest) (ocifunctions.ListApplicationsResponse, error) {
+				return ocifunctions.ListApplicationsResponse{
+					Items: []ocifunctions.ApplicationSummary{{
+						Id:             common.String(appID),
+						DisplayName:    common.String("resolved-app"),
+						LifecycleState: ocifunctions.ApplicationLifecycleStateActive,
+					}},
+				}, nil
+			},
+			getApplicationFn: func(_ context.Context, req ocifunctions.GetApplicationRequest) (ocifunctions.GetApplicationResponse, error) {
+				app := makeActiveApplication(*req.ApplicationId, "resolved-app")
+				app.Config = map[string]string{"OLD": "value"}
+				return ocifunctions.GetApplicationResponse{Application: app}, nil
+			},
+			updateApplicationFn: func(_ context.Context, req ocifunctions.UpdateApplicationRequest) (ocifunctions.UpdateApplicationResponse, error) {
+				updatedID = *req.ApplicationId
+				updatedConfig = req.Config
+				return ocifunctions.UpdateApplicationResponse{}, nil
+			},
+		}
+
+		mgr := newAppMgr(t, ociClient)
+		app := &ociv1beta1.FunctionsApplication{}
+		app.Spec.DisplayName = "resolved-app"
+		app.Spec.CompartmentId = "ocid1.compartment.oc1..x"
+		app.Spec.Config = map[string]string{"NEW": "value"}
+
+		resp, err := mgr.CreateOrUpdate(context.Background(), app, ctrl.Request{})
+		return err == nil && resp.IsSuccessful && updatedID == appID && reflect.DeepEqual(updatedConfig, app.Spec.Config)
 	}
 
 	if err := quick.Check(property, nil); err != nil {

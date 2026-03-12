@@ -1,23 +1,41 @@
-# MySQL DB System
+# MySqlDbSystem
 
-## Source Of Truth
-- `formal/controllers/mysql-dbsystem/spec.tla`
-- `formal/controllers/mysql-dbsystem/spec.cfg`
-
-## Scope
-- Controller surface: `MySqlDBsystemReconciler`
-- Service-manager surface: `pkg/servicemanager/mysql/dbsystem`
+- Source of truth: `spec.tla` and `spec.cfg`
+- Shared contracts: `../../shared/ControllerCoreContract.tla`, `../../shared/NameResolutionContract.tla`,
+  `../../shared/ListResolutionContract.tla`, `../../shared/DriftAwareUpdateContract.tla`,
+  `../../shared/CollectionEquivalenceContract.tla`, `../../shared/WholeListConvergenceContract.tla`,
+  `../../shared/BestEffortCleanupContract.tla`, `../../shared/SecretSideEffectContract.tla`
+- Diagram source: `diagrams/lifecycle.puml`
+- Known gaps and fix history: `logic-gaps.md`
+- Capabilities: `bind_by_id,resolve_by_name,drift_update,confirmed_delete,secret_write,secret_delete`
 
 ## Verified Properties
-- Retryable OCI lifecycle states must requeue instead of reporting success.
-- Secret creation is only allowed once the DB system is usable.
-- Finalizers are only removed after OCI no longer returns the DB system.
-- Failed lifecycles must not produce successful reconcile results.
 
-## Go Property Tests
-- `TestPropertyRetryableLifecycleStatesRequeue`
-- `TestPropertyDeleteWaitsForResourceToDisappear`
+- `ControllerMetadataInvariant`
+- `TypeInvariant`
+- `SuccessRequiresActiveInvariant`
+- `RetryableRequiresRequeueInvariant`
+- `DeleteRequiresResourceGoneInvariant`
+- `MutationUsesBoundIDInvariant`
+- `DeleteRequiresConfirmationInvariant`
+- `DeleteSubmittedKeepsFinalizerInvariant`
+- `ConfirmedDeleteRemovesResourceInvariant`
+- `BindByIDUsesSpecInvariant`
+- `ResolvedNameUsesResolvedIDInvariant`
+- `LaterPageResolutionUsesResolvedIDInvariant`
+- `SupportedDriftRequiresUpdateInvariant`
+- `MatchingStateSkipsUpdateInvariant`
+- `CollectionDifferenceRequiresUpdateInvariant`
+- `MatchingCollectionSkipsUpdateInvariant`
+- `WholeListConvergesAfterUpdateInvariant`
+- `SecretRequiresUsableStateInvariant`
+- `SecretWriteFailuresBlockSuccessInvariant`
+- `SecretDeleteFailuresBlockCompletionInvariant`
+- `MissingSecretAllowsDeleteInvariant`
+- `BestEffortCleanupKeepsSuccessInvariant`
+- `CleanupTargetsStayEligibleInvariant`
 
 ## Notes
-- The formal model captures the controller contract around lifecycle classification, secret creation, and delete completion.
-- `logic-gaps.md` records the implementation changes behind those properties.
+
+- This file is the controller-local knowledge log for formal verification work.
+- Update it with controller-specific counterexamples, linked Go property tests, and the final code fixes.

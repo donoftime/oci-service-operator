@@ -27,46 +27,91 @@ EXTENDS ControllerLifecycleSpec
 """
 
 
-def build_cfg(kind: str, retryable: str, active: str, failed: str, has_secret: str) -> str:
+def build_cfg(kind: str, family: str, retryable: str, active: str, failed: str, has_secret: str,
+              capabilities: str) -> str:
     return f"""SPECIFICATION Spec
+CHECK_DEADLOCK TRUE
 CONSTANTS
     ControllerName = "{kind}"
+    Family = "{family}"
     RetryableStates = {tla_set(retryable)}
     ActiveStates = {tla_set(active)}
     FailedStates = {tla_set(failed)}
     HasSecret = {has_secret}
+    Capabilities = {tla_set(capabilities)}
 INVARIANTS
+    ControllerMetadataInvariant
     TypeInvariant
     SuccessRequiresActiveInvariant
     RetryableRequiresRequeueInvariant
     DeleteRequiresResourceGoneInvariant
+    MutationUsesBoundIDInvariant
+    DeleteRequiresConfirmationInvariant
+    DeleteSubmittedKeepsFinalizerInvariant
+    ConfirmedDeleteRemovesResourceInvariant
+    BindByIDUsesSpecInvariant
+    ResolvedNameUsesResolvedIDInvariant
+    LaterPageResolutionUsesResolvedIDInvariant
+    SupportedDriftRequiresUpdateInvariant
+    MatchingStateSkipsUpdateInvariant
+    CollectionDifferenceRequiresUpdateInvariant
+    MatchingCollectionSkipsUpdateInvariant
+    WholeListConvergesAfterUpdateInvariant
     SecretRequiresUsableStateInvariant
+    SecretWriteFailuresBlockSuccessInvariant
+    SecretDeleteFailuresBlockCompletionInvariant
+    MissingSecretAllowsDeleteInvariant
+    BestEffortCleanupKeepsSuccessInvariant
+    CleanupTargetsStayEligibleInvariant
 """
 
 
-def build_logic_gaps(kind: str) -> str:
+def build_logic_gaps(kind: str, capabilities: str) -> str:
     return f"""# Logic Gaps
 
-- This controller currently uses the shared lifecycle scaffold for `{kind}`.
+- This controller uses the shared capability scaffold for `{kind}` with `{capabilities or "no additional"}`
+  capability metadata.
 - Record controller-specific TLC counterexamples, failing property tests, and code fixes here as they are confirmed.
 """
 
 
-def build_agents(kind: str) -> str:
+def build_agents(kind: str, capabilities: str) -> str:
     return f"""# {kind}
 
 - Source of truth: `spec.tla` and `spec.cfg`
-- Shared contract: `../../shared/BaseReconcilerContract.tla`
+- Shared contracts: `../../shared/ControllerCoreContract.tla`, `../../shared/NameResolutionContract.tla`,
+  `../../shared/ListResolutionContract.tla`, `../../shared/DriftAwareUpdateContract.tla`,
+  `../../shared/CollectionEquivalenceContract.tla`, `../../shared/WholeListConvergenceContract.tla`,
+  `../../shared/BestEffortCleanupContract.tla`, `../../shared/SecretSideEffectContract.tla`
 - Diagram source: `diagrams/lifecycle.puml`
 - Known gaps and fix history: `logic-gaps.md`
+- Capabilities: `{capabilities}`
 
 ## Verified Properties
 
+- `ControllerMetadataInvariant`
 - `TypeInvariant`
 - `SuccessRequiresActiveInvariant`
 - `RetryableRequiresRequeueInvariant`
 - `DeleteRequiresResourceGoneInvariant`
+- `MutationUsesBoundIDInvariant`
+- `DeleteRequiresConfirmationInvariant`
+- `DeleteSubmittedKeepsFinalizerInvariant`
+- `ConfirmedDeleteRemovesResourceInvariant`
+- `BindByIDUsesSpecInvariant`
+- `ResolvedNameUsesResolvedIDInvariant`
+- `LaterPageResolutionUsesResolvedIDInvariant`
+- `SupportedDriftRequiresUpdateInvariant`
+- `MatchingStateSkipsUpdateInvariant`
+- `CollectionDifferenceRequiresUpdateInvariant`
+- `MatchingCollectionSkipsUpdateInvariant`
+- `WholeListConvergesAfterUpdateInvariant`
 - `SecretRequiresUsableStateInvariant`
+- `SecretWriteFailuresBlockSuccessInvariant`
+- `SecretDeleteFailuresBlockCompletionInvariant`
+- `MissingSecretAllowsDeleteInvariant`
+- `BestEffortCleanupKeepsSuccessInvariant`
+- `CleanupTargetsStayEligibleInvariant`
 
 ## Notes
 
@@ -103,12 +148,13 @@ state Deleted
 def main() -> None:
     rows = MANIFEST.read_text(encoding="ascii").strip().splitlines()
     for row in rows[1:]:
-        slug, kind, retryable, active, failed, has_secret = row.split("\t")
+        slug, kind, family, retryable, active, failed, has_secret, capabilities = row.split("\t")
         controller_dir = CONTROLLERS_DIR / slug
-        write_file(controller_dir / "spec.tla", SPEC)
-        write_file(controller_dir / "spec.cfg", build_cfg(kind, retryable, active, failed, has_secret))
-        write_file(controller_dir / "logic-gaps.md", build_logic_gaps(kind))
-        write_file(controller_dir / "AGENTS.md", build_agents(kind))
+        write_file(controller_dir / "spec.tla", SPEC, overwrite=True)
+        write_file(controller_dir / "spec.cfg",
+                   build_cfg(kind, family, retryable, active, failed, has_secret, capabilities), overwrite=True)
+        write_file(controller_dir / "logic-gaps.md", build_logic_gaps(kind, capabilities))
+        write_file(controller_dir / "AGENTS.md", build_agents(kind, capabilities), overwrite=True)
         write_file(controller_dir / "diagrams" / "lifecycle.puml", build_puml(kind, retryable, active, failed))
 
 

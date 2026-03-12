@@ -13,6 +13,7 @@ OCI cloud resources as Kubernetes custom resources.
 - **Code generation**: `make generate` (deepcopy) + `make manifests` (CRD yaml)
 - **Lint / Complexity**: `make lint`
 - **Formal Verification**: `make formal` or `make formal-<controller-slug>`
+- **Local temp/cache files**: use `.tmp/` under the repo root, not `/tmp`
 
 ## Project Layout
 

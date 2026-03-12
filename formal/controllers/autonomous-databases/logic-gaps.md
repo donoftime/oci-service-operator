@@ -7,6 +7,10 @@
 - `CreatedAt` is only set when it is missing instead of using the previous inverted condition.
 - Wallet secret deletion now only applies to Secrets owned by this AutonomousDatabases resource.
 
-## Residual
-- Delete progress is observed by polling `GetAutonomousDatabase` for `404`, not by OCI work-request introspection.
-- Legacy wallet Secrets without ownership markers are left in place during finalization rather than being force-adopted or deleted.
+## Fixed In This Pass
+- Delete submission now captures and logs the returned OCI work-request ID for operator visibility while the controller waits for OCI to remove the database.
+- Legacy wallet Secrets without OSOK ownership markers are now explicitly inspected and logged during finalization so their preserve-by-default behavior is visible instead of implicit.
+
+## Accepted Boundaries
+- The vendored OCI Database SDK exposes delete work-request IDs but does not provide generated work-request lookup APIs, so delete completion still relies on follow-up `GetAutonomousDatabase` calls until OCI returns `404`.
+- Legacy wallet Secrets without OSOK ownership markers remain preserved by design; this controller does not force-adopt or delete pre-existing user-managed Secrets.

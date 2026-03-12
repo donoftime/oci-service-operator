@@ -106,3 +106,76 @@ func TestPropertyComputeInstanceDeleteWaitsForConfirmedDisappearance(t *testing.
 	assert.NoError(t, err)
 	assert.False(t, done)
 }
+
+func TestPropertyComputeInstanceTagDriftTriggersUpdate(t *testing.T) {
+	var updated core.UpdateInstanceRequest
+	ociClient := &fakeComputeClient{
+		getFn: func(_ context.Context, req core.GetInstanceRequest) (core.GetInstanceResponse, error) {
+			return core.GetInstanceResponse{
+				Instance: core.Instance{
+					Id:             req.InstanceId,
+					DisplayName:    common.String("tagged-instance"),
+					LifecycleState: core.InstanceLifecycleStateRunning,
+					FreeformTags:   map[string]string{"team": "old"},
+					DefinedTags: map[string]map[string]interface{}{
+						"ops": {"env": "dev"},
+					},
+				},
+			}, nil
+		},
+		updateFn: func(_ context.Context, req core.UpdateInstanceRequest) (core.UpdateInstanceResponse, error) {
+			updated = req
+			return core.UpdateInstanceResponse{}, nil
+		},
+	}
+	mgr := newTestManager(ociClient)
+	ci := makeComputeInstanceSpec("tagged-instance")
+	ci.Spec.ComputeInstanceId = ociv1beta1.OCID("ocid1.instance.oc1..tags")
+	ci.Spec.FreeFormTags = map[string]string{"team": "platform"}
+	ci.Spec.DefinedTags = map[string]ociv1beta1.MapValue{
+		"ops": {"env": "prod"},
+	}
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), ci, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.Equal(t, map[string]string{"team": "platform"}, updated.FreeformTags)
+	assert.Equal(t, map[string]map[string]interface{}{
+		"ops": {"env": "prod"},
+	}, updated.DefinedTags)
+}
+
+func TestPropertyComputeInstanceMatchingTagsSkipUpdate(t *testing.T) {
+	updateCalled := false
+	ociClient := &fakeComputeClient{
+		getFn: func(_ context.Context, req core.GetInstanceRequest) (core.GetInstanceResponse, error) {
+			return core.GetInstanceResponse{
+				Instance: core.Instance{
+					Id:             req.InstanceId,
+					DisplayName:    common.String("tagged-instance"),
+					LifecycleState: core.InstanceLifecycleStateRunning,
+					FreeformTags:   map[string]string{"team": "platform"},
+					DefinedTags: map[string]map[string]interface{}{
+						"ops": {"env": "prod"},
+					},
+				},
+			}, nil
+		},
+		updateFn: func(_ context.Context, req core.UpdateInstanceRequest) (core.UpdateInstanceResponse, error) {
+			updateCalled = true
+			return core.UpdateInstanceResponse{}, nil
+		},
+	}
+	mgr := newTestManager(ociClient)
+	ci := makeComputeInstanceSpec("tagged-instance")
+	ci.Spec.ComputeInstanceId = ociv1beta1.OCID("ocid1.instance.oc1..tags")
+	ci.Spec.FreeFormTags = map[string]string{"team": "platform"}
+	ci.Spec.DefinedTags = map[string]ociv1beta1.MapValue{
+		"ops": {"env": "prod"},
+	}
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), ci, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.False(t, updateCalled)
+}

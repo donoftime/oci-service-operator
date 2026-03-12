@@ -8,6 +8,7 @@ package queue
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	ociqueue "github.com/oracle/oci-go-sdk/v65/queue"
@@ -151,6 +152,8 @@ func (c *OciQueueServiceManager) UpdateQueue(ctx context.Context, q *ociv1beta1.
 	updateNeeded = applyQueueVisibilityUpdate(&updateDetails, q, existing) || updateNeeded
 	updateNeeded = applyQueueTimeoutUpdate(&updateDetails, q, existing) || updateNeeded
 	updateNeeded = applyQueueDeadLetterCountUpdate(&updateDetails, q, existing) || updateNeeded
+	updateNeeded = applyQueueFreeformTagsUpdate(&updateDetails, q, existing) || updateNeeded
+	updateNeeded = applyQueueDefinedTagsUpdate(&updateDetails, q, existing) || updateNeeded
 
 	if !updateNeeded {
 		return nil
@@ -199,6 +202,29 @@ func applyQueueDeadLetterCountUpdate(updateDetails *ociqueue.UpdateQueueDetails,
 	}
 
 	updateDetails.DeadLetterQueueDeliveryCount = common.Int(q.Spec.DeadLetterQueueDeliveryCount)
+	return true
+}
+
+func applyQueueFreeformTagsUpdate(updateDetails *ociqueue.UpdateQueueDetails, q *ociv1beta1.OciQueue, existing *ociqueue.Queue) bool {
+	if q.Spec.FreeFormTags == nil || reflect.DeepEqual(existing.FreeformTags, q.Spec.FreeFormTags) {
+		return false
+	}
+
+	updateDetails.FreeformTags = q.Spec.FreeFormTags
+	return true
+}
+
+func applyQueueDefinedTagsUpdate(updateDetails *ociqueue.UpdateQueueDetails, q *ociv1beta1.OciQueue, existing *ociqueue.Queue) bool {
+	if q.Spec.DefinedTags == nil {
+		return false
+	}
+
+	desiredDefinedTags := *util.ConvertToOciDefinedTags(&q.Spec.DefinedTags)
+	if reflect.DeepEqual(existing.DefinedTags, desiredDefinedTags) {
+		return false
+	}
+
+	updateDetails.DefinedTags = desiredDefinedTags
 	return true
 }
 

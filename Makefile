@@ -45,6 +45,28 @@ BUNDLE_IMG ?= $(IMAGE_TAG_BASE)-bundle:$(VERSION)
 IMG ?= $(IMAGE_TAG_BASE):$(VERSION)
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
 CRD_OPTIONS ?= "crd:generateEmbeddedObjectMeta=true,allowDangerousTypes=true"
+API_GEN_PATHS ?= "./api/..."
+CONTROLLER_GEN_PATHS ?= "./controllers/..."
+
+# Keep Go and XDG caches under the repo's .tmp directory.
+TMP_DIR ?= $(CURDIR)/.tmp
+TMP_WORK_DIR ?= $(TMP_DIR)/tmp
+GOCACHE ?= $(TMP_DIR)/go-cache
+GOMODCACHE ?= $(TMP_DIR)/go-mod-cache
+GOTMPDIR ?= $(TMP_DIR)/go-tmp
+TMPDIR ?= $(TMP_WORK_DIR)
+XDG_CACHE_HOME ?= $(TMP_DIR)/xdg-cache
+
+export GOCACHE
+export GOMODCACHE
+export GOTMPDIR
+export TMPDIR
+export XDG_CACHE_HOME
+
+MODULE_CACHE_STAMP ?= $(GOMODCACHE)/.download.stamp
+
+# Use bash with pipefail for recipes where every stage must propagate failures.
+BASH_PIPEFAIL ?= /usr/bin/env bash -e -o pipefail -c
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -73,45 +95,46 @@ help: ## Display this help.
 
 ##@ Development
 
-manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) rbac:roleName=manager-role webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+manifests: module-cache cache-dirs controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) webhook paths=$(API_GEN_PATHS) output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) rbac:roleName=manager-role paths=$(CONTROLLER_GEN_PATHS)
 
-generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
-	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
+generate: module-cache cache-dirs controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths=$(API_GEN_PATHS)
 
-fmt: ## Run go fmt against code.
+fmt: module-cache cache-dirs ## Run go fmt against code.
 	go fmt ./...
 
-vet: ## Run go vet against code.
+vet: module-cache cache-dirs ## Run go vet against code.
 	go vet ./...
 
-lint: golangci-lint ## Run lint and complexity checks.
-	@mkdir -p "$(LINT_GOCACHE)" "$(LINT_CACHE)"
+lint: module-cache cache-dirs golangci-lint ## Run lint and complexity checks.
+	@mkdir -p "$(TMP_DIR)" "$(LINT_GOCACHE)" "$(LINT_CACHE)"
 	GOCACHE="$(LINT_GOCACHE)" GOLANGCI_LINT_CACHE="$(LINT_CACHE)" $(GOLANGCI_LINT) run ./...
 
 ENVTEST_K8S_VERSION ?= 1.28.0
 
-test: manifests generate fmt vet ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell go run sigs.k8s.io/controller-runtime/tools/setup-envtest@latest use $(ENVTEST_K8S_VERSION) -p path)" go test ./... -coverprofile cover.out | tee unittests.cover
-	go tool cover -func cover.out | grep total | awk '{print substr($$3, 1, length($$3)-1)}' > unittests.percent
+test: module-cache cache-dirs manifests generate fmt vet setup-envtest ## Run tests.
+	$(BASH_PIPEFAIL) 'assets="$$($(SETUP_ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)"; KUBEBUILDER_ASSETS="$$assets" go test ./... -coverprofile cover.out | tee unittests.cover'
+	$(BASH_PIPEFAIL) "go tool cover -func cover.out | tail -n 1 | xargs | cut -d ' ' -f 3 | tr -d '%' > unittests.percent"
 
 functionaltest: ## Run functionaltest (placeholder — no functional tests yet).
 	@echo "No functional tests available."
 
 ##@ Build Service
 
-test-sample: fmt vet ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell go run sigs.k8s.io/controller-runtime/tools/setup-envtest@latest use $(ENVTEST_K8S_VERSION) -p path)" go test -v ./... -coverprofile cover.out -args -ginkgo.v
+test-sample: module-cache cache-dirs fmt vet setup-envtest ## Run tests.
+	$(BASH_PIPEFAIL) 'assets="$$($(SETUP_ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)"; KUBEBUILDER_ASSETS="$$assets" go test -v ./... -coverprofile cover.out -args -ginkgo.v'
 
 docker-build-sample: ## Build docker image with the manager.
 	docker build -t ${IMG} .
 
 ##@ Build
 
-build: generate fmt vet ## Build manager binary.
+build: module-cache cache-dirs generate fmt vet ## Build manager binary.
 	go build -o bin/manager main.go
 
-run: manifests generate fmt vet ## Run a controller from your host.
+run: module-cache cache-dirs manifests generate fmt vet ## Run a controller from your host.
 	go run ./main.go
 
 docker-build: test bundle ## Build docker image with the manager and CRDs
@@ -137,20 +160,36 @@ undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/confi
 
 
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
-controller-gen: ## Download controller-gen locally if necessary.
+controller-gen: cache-dirs ## Download controller-gen locally if necessary.
 	$(call go-get-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@v0.17.0)
 
 KUSTOMIZE = $(shell pwd)/bin/kustomize
-kustomize: ## Download kustomize locally if necessary.
+kustomize: cache-dirs ## Download kustomize locally if necessary.
 	$(call go-get-tool,$(KUSTOMIZE),sigs.k8s.io/kustomize/kustomize/v5@v5.4.2)
 
 GOLANGCI_LINT_VERSION ?= v2.6.2
 GOLANGCI_LINT = $(shell pwd)/bin/golangci-lint
 GOLANGCI_LINT_PKG = github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
-LINT_GOCACHE ?= /tmp/osok-gocache
-LINT_CACHE ?= /tmp/osok-golangci-lint-cache
-golangci-lint: ## Download golangci-lint locally if necessary.
+LINT_GOCACHE ?= $(GOCACHE)
+LINT_CACHE ?= $(TMP_DIR)/golangci-lint-cache
+golangci-lint: cache-dirs ## Download golangci-lint locally if necessary.
 	$(call go-get-tool,$(GOLANGCI_LINT),$(GOLANGCI_LINT_PKG))
+
+SETUP_ENVTEST = $(shell pwd)/bin/setup-envtest
+setup-envtest: cache-dirs ## Download setup-envtest locally if necessary.
+	$(call go-get-tool,$(SETUP_ENVTEST),sigs.k8s.io/controller-runtime/tools/setup-envtest@latest)
+
+.PHONY: cache-dirs
+cache-dirs:
+	@mkdir -p "$(TMP_DIR)" "$(TMPDIR)" "$(GOCACHE)" "$(GOMODCACHE)" "$(GOTMPDIR)" "$(XDG_CACHE_HOME)" "$(LINT_CACHE)"
+
+.PHONY: module-cache
+module-cache: $(MODULE_CACHE_STAMP)
+
+$(MODULE_CACHE_STAMP): go.mod go.sum | cache-dirs
+	@echo "Downloading module graph into $(GOMODCACHE)"
+	go mod download all
+	@touch "$(MODULE_CACHE_STAMP)"
 
 # go-get-tool will 'go install' any package $2 and install it to $1.
 PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
@@ -164,6 +203,7 @@ endef
 
 FORMAL_DIR ?= $(PROJECT_DIR)/formal
 FORMAL_TOOLS_DIR ?= $(PROJECT_DIR)/bin/formal
+FORMAL_TMP_DIR ?= $(TMP_DIR)/formal
 TLA2TOOLS_VERSION ?= 1.8.0
 PLANTUML_VERSION ?= 1.2024.6
 TLA2TOOLS_JAR ?= $(FORMAL_TOOLS_DIR)/tla2tools-$(TLA2TOOLS_VERSION).jar
@@ -171,21 +211,22 @@ PLANTUML_JAR ?= $(FORMAL_TOOLS_DIR)/plantuml-$(PLANTUML_VERSION).jar
 
 .PHONY: formal-tools
 formal-tools: ## Download TLC and PlantUML locally if necessary.
-	./tools/formal/bootstrap.sh "$(FORMAL_TOOLS_DIR)" "$(TLA2TOOLS_VERSION)" "$(PLANTUML_VERSION)"
+	@mkdir -p "$(FORMAL_TMP_DIR)"
+	TMPDIR="$(FORMAL_TMP_DIR)" FORMAL_TMP_DIR="$(FORMAL_TMP_DIR)" ./tools/formal/bootstrap.sh "$(FORMAL_TOOLS_DIR)" "$(TLA2TOOLS_VERSION)" "$(PLANTUML_VERSION)"
 
 .PHONY: formal
 formal: formal-tools ## Run TLC for every controller spec under formal/controllers.
-	./tools/formal/run_all.sh "$(TLA2TOOLS_JAR)" "$(FORMAL_DIR)/controllers"
+	TMPDIR="$(FORMAL_TMP_DIR)" FORMAL_TMP_DIR="$(FORMAL_TMP_DIR)" ./tools/formal/run_all.sh "$(TLA2TOOLS_JAR)" "$(FORMAL_DIR)/controllers"
 
 formal-%: formal-tools ## Run TLC for a single controller slug from formal/controllers/<slug>.
-	./tools/formal/run_controller.sh "$(TLA2TOOLS_JAR)" "$(FORMAL_DIR)/controllers/$*"
+	TMPDIR="$(FORMAL_TMP_DIR)" FORMAL_TMP_DIR="$(FORMAL_TMP_DIR)" ./tools/formal/run_controller.sh "$(TLA2TOOLS_JAR)" "$(FORMAL_DIR)/controllers/$*"
 
 .PHONY: diagrams
 diagrams: formal-tools ## Render all PlantUML diagrams under formal/controllers.
-	./tools/formal/render_all.sh "$(PLANTUML_JAR)" "$(FORMAL_DIR)/controllers"
+	TMPDIR="$(FORMAL_TMP_DIR)" FORMAL_TMP_DIR="$(FORMAL_TMP_DIR)" ./tools/formal/render_all.sh "$(PLANTUML_JAR)" "$(FORMAL_DIR)/controllers"
 
 diagrams-%: formal-tools ## Render PlantUML diagrams for a single controller slug.
-	./tools/formal/render_controller.sh "$(PLANTUML_JAR)" "$(FORMAL_DIR)/controllers/$*"
+	TMPDIR="$(FORMAL_TMP_DIR)" FORMAL_TMP_DIR="$(FORMAL_TMP_DIR)" ./tools/formal/render_controller.sh "$(PLANTUML_JAR)" "$(FORMAL_DIR)/controllers/$*"
 
 .PHONY: bundle
 bundle: manifests kustomize ## Generate bundle manifests and metadata, then validate generated files.

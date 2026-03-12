@@ -135,17 +135,25 @@ func (c *AdbServiceManager) GetAdbOcid(ctx context.Context, adb ociv1beta1.Auton
 }
 
 func (c *AdbServiceManager) DeleteAdb(ctx context.Context, adbId ociv1beta1.OCID) error {
+	_, err := c.submitDeleteAdb(ctx, adbId)
+	return err
+}
+
+func (c *AdbServiceManager) submitDeleteAdb(ctx context.Context, adbId ociv1beta1.OCID) (*string, error) {
 	dbClient, err := c.getOCIClient()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	req := database.DeleteAutonomousDatabaseRequest{
 		AutonomousDatabaseId: common.String(string(adbId)),
 	}
 
-	_, err = dbClient.DeleteAutonomousDatabase(ctx, req)
-	return err
+	resp, err := dbClient.DeleteAutonomousDatabase(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return resp.OpcWorkRequestId, nil
 }
 
 // Sync the Autonomous Database details

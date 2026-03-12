@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
+	"github.com/oracle/oci-go-sdk/v65/nosql"
 	ociv1beta1 "github.com/oracle/oci-service-operator/api/v1beta1"
 	"github.com/oracle/oci-service-operator/pkg/credhelper"
 	"github.com/oracle/oci-service-operator/pkg/loggerutil"
@@ -67,24 +68,23 @@ func (c *NoSQLDatabaseServiceManager) Delete(ctx context.Context, obj runtime.Ob
 		return false, err
 	}
 
-	if db.Status.OsokStatus.Ocid == "" {
-		if db.Spec.TableId == "" {
-			c.Log.InfoLog("NoSQL table has no OCID, nothing to delete")
-			return true, nil
-		}
-		db.Status.OsokStatus.Ocid = db.Spec.TableId
+	tableID, done := c.resolveDeleteTableID(db)
+	if done {
+		return true, nil
 	}
 
-	if _, err := c.GetTable(ctx, db.Status.OsokStatus.Ocid, nil); err != nil {
-		if isNotFoundServiceError(err) {
-			return true, nil
-		}
-		c.Log.ErrorLog(err, "Error while getting NoSQL table during delete")
-		return false, err
+	currentTable, done, err := c.getTableForDelete(ctx, tableID)
+	if done || err != nil {
+		return done, err
 	}
 
-	c.Log.InfoLog(fmt.Sprintf("Deleting NoSQL table %s", db.Status.OsokStatus.Ocid))
-	if err := c.DeleteTable(ctx, db.Status.OsokStatus.Ocid); err != nil && !isNotFoundServiceError(err) {
+	done, handled, err := c.handleExistingDeleteTableWorkRequest(ctx, db, tableID, currentTable)
+	if handled || err != nil {
+		return done, err
+	}
+
+	c.Log.InfoLog(fmt.Sprintf("Deleting NoSQL table %s", tableID))
+	if _, err := c.submitDeleteTable(ctx, tableID); err != nil && !isNotFoundServiceError(err) {
 		c.Log.ErrorLog(err, "Error while deleting NoSQL table")
 		return false, err
 	}
@@ -107,4 +107,90 @@ func (c *NoSQLDatabaseServiceManager) convert(obj runtime.Object) (*ociv1beta1.N
 		return nil, fmt.Errorf("failed type assertion for NoSQLDatabase")
 	}
 	return db, nil
+}
+
+func (c *NoSQLDatabaseServiceManager) resolveDeleteTableID(db *ociv1beta1.NoSQLDatabase) (ociv1beta1.OCID, bool) {
+	if db.Status.OsokStatus.Ocid != "" {
+		return db.Status.OsokStatus.Ocid, false
+	}
+	if db.Spec.TableId == "" {
+		c.Log.InfoLog("NoSQL table has no OCID, nothing to delete")
+		return "", true
+	}
+
+	db.Status.OsokStatus.Ocid = db.Spec.TableId
+	return db.Status.OsokStatus.Ocid, false
+}
+
+func (c *NoSQLDatabaseServiceManager) getTableForDelete(
+	ctx context.Context,
+	tableID ociv1beta1.OCID,
+) (*nosql.Table, bool, error) {
+	currentTable, err := c.GetTable(ctx, tableID, nil)
+	if err == nil {
+		return currentTable, false, nil
+	}
+	if isNotFoundServiceError(err) {
+		return nil, true, nil
+	}
+
+	c.Log.ErrorLog(err, "Error while getting NoSQL table during delete")
+	return nil, false, err
+}
+
+func (c *NoSQLDatabaseServiceManager) handleExistingDeleteTableWorkRequest(
+	ctx context.Context,
+	db *ociv1beta1.NoSQLDatabase,
+	tableID ociv1beta1.OCID,
+	currentTable *nosql.Table,
+) (bool, bool, error) {
+	workRequestID, err := c.findDeleteTableWorkRequestID(ctx, resolveDeleteTableCompartmentID(db, currentTable), tableID)
+	if err != nil {
+		return false, true, err
+	}
+	if workRequestID == nil {
+		return false, false, nil
+	}
+
+	completed, inProgress, err := c.handleDeleteTableWorkRequest(ctx, *workRequestID)
+	if err != nil {
+		return false, true, err
+	}
+	if inProgress {
+		return false, true, nil
+	}
+
+	return completed, completed, nil
+}
+
+func resolveDeleteTableCompartmentID(db *ociv1beta1.NoSQLDatabase, currentTable *nosql.Table) ociv1beta1.OCID {
+	if db.Spec.CompartmentId != "" {
+		return db.Spec.CompartmentId
+	}
+	if currentTable != nil && currentTable.CompartmentId != nil {
+		return ociv1beta1.OCID(*currentTable.CompartmentId)
+	}
+
+	return ""
+}
+
+func (c *NoSQLDatabaseServiceManager) handleDeleteTableWorkRequest(ctx context.Context, workRequestID string) (bool, bool, error) {
+	workRequest, err := c.getTableWorkRequest(ctx, workRequestID)
+	if err != nil {
+		return false, false, err
+	}
+
+	switch workRequest.Status {
+	case nosql.WorkRequestStatusAccepted,
+		nosql.WorkRequestStatusInProgress,
+		nosql.WorkRequestStatusCanceling:
+		return false, true, nil
+	case nosql.WorkRequestStatusSucceeded:
+		return true, false, nil
+	case nosql.WorkRequestStatusFailed,
+		nosql.WorkRequestStatusCanceled:
+		return false, false, fmt.Errorf("NoSQL delete work request %s ended with status %s", workRequestID, workRequest.Status)
+	default:
+		return false, false, nil
+	}
 }

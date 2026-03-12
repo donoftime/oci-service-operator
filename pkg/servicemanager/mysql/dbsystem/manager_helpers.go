@@ -33,6 +33,16 @@ func isNotFoundServiceError(err error) bool {
 	return ok && serviceErr.GetHTTPStatusCode() == 404
 }
 
+func isRetryableReadServiceError(err error) bool {
+	serviceErr, ok := common.IsServiceError(err)
+	if !ok {
+		return false
+	}
+
+	statusCode := serviceErr.GetHTTPStatusCode()
+	return statusCode == 429 || statusCode >= 500
+}
+
 func setCreatedAtIfUnset(status *ociv1beta1.OSOKStatus) {
 	if status.CreatedAt != nil {
 		return
@@ -65,5 +75,21 @@ func reconcileLifecycleStatus(status *ociv1beta1.OSOKStatus, dbSystem *mysql.DbS
 		*status = util.UpdateOSOKStatusCondition(*status, ociv1beta1.Failed, v1.ConditionFalse, "",
 			fmt.Sprintf("MySqlDbSystem %s is %s", safeString(dbSystem.DisplayName), dbSystem.LifecycleState), log)
 		return servicemanager.OSOKResponse{IsSuccessful: false}
+	}
+}
+
+func requeueForTransientReadFailure(status *ociv1beta1.OSOKStatus, resourceID ociv1beta1.OCID, displayName string,
+	operation string, err error, log loggerutil.OSOKLogger) servicemanager.OSOKResponse {
+	if resourceID != "" {
+		status.Ocid = resourceID
+	}
+
+	*status = util.UpdateOSOKStatusCondition(*status, ociv1beta1.Provisioning, v1.ConditionTrue, "",
+		fmt.Sprintf("Transient MySqlDbSystem read failure while %s for %s: %s", operation, displayName, err.Error()), log)
+
+	return servicemanager.OSOKResponse{
+		IsSuccessful:    false,
+		ShouldRequeue:   true,
+		RequeueDuration: mysqlRequeueDuration,
 	}
 }

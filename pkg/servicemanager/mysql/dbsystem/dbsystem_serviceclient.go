@@ -35,10 +35,53 @@ type MySQLDbSystemClientInterface interface {
 	GetDbSystem(ctx context.Context, request mysql.GetDbSystemRequest) (mysql.GetDbSystemResponse, error)
 	UpdateDbSystem(ctx context.Context, request mysql.UpdateDbSystemRequest) (mysql.UpdateDbSystemResponse, error)
 	DeleteDbSystem(ctx context.Context, request mysql.DeleteDbSystemRequest) (mysql.DeleteDbSystemResponse, error)
+	GetWorkRequest(ctx context.Context, request mysql.GetWorkRequestRequest) (mysql.GetWorkRequestResponse, error)
+	ListWorkRequests(ctx context.Context, request mysql.ListWorkRequestsRequest) (mysql.ListWorkRequestsResponse, error)
 }
 
-func getDbSystemClient(provider common.ConfigurationProvider) (mysql.DbSystemClient, error) {
-	return mysql.NewDbSystemClientWithConfigurationProvider(provider)
+type mySQLClientSet struct {
+	dbSystemClient     mysql.DbSystemClient
+	workRequestsClient mysql.WorkRequestsClient
+}
+
+func getDbSystemClient(provider common.ConfigurationProvider) (MySQLDbSystemClientInterface, error) {
+	dbSystemClient, err := mysql.NewDbSystemClientWithConfigurationProvider(provider)
+	if err != nil {
+		return nil, err
+	}
+	workRequestsClient, err := mysql.NewWorkRequestsClientWithConfigurationProvider(provider)
+	if err != nil {
+		return nil, err
+	}
+	return mySQLClientSet{dbSystemClient: dbSystemClient, workRequestsClient: workRequestsClient}, nil
+}
+
+func (c mySQLClientSet) CreateDbSystem(ctx context.Context, request mysql.CreateDbSystemRequest) (mysql.CreateDbSystemResponse, error) {
+	return c.dbSystemClient.CreateDbSystem(ctx, request)
+}
+
+func (c mySQLClientSet) ListDbSystems(ctx context.Context, request mysql.ListDbSystemsRequest) (mysql.ListDbSystemsResponse, error) {
+	return c.dbSystemClient.ListDbSystems(ctx, request)
+}
+
+func (c mySQLClientSet) GetDbSystem(ctx context.Context, request mysql.GetDbSystemRequest) (mysql.GetDbSystemResponse, error) {
+	return c.dbSystemClient.GetDbSystem(ctx, request)
+}
+
+func (c mySQLClientSet) UpdateDbSystem(ctx context.Context, request mysql.UpdateDbSystemRequest) (mysql.UpdateDbSystemResponse, error) {
+	return c.dbSystemClient.UpdateDbSystem(ctx, request)
+}
+
+func (c mySQLClientSet) DeleteDbSystem(ctx context.Context, request mysql.DeleteDbSystemRequest) (mysql.DeleteDbSystemResponse, error) {
+	return c.dbSystemClient.DeleteDbSystem(ctx, request)
+}
+
+func (c mySQLClientSet) GetWorkRequest(ctx context.Context, request mysql.GetWorkRequestRequest) (mysql.GetWorkRequestResponse, error) {
+	return c.workRequestsClient.GetWorkRequest(ctx, request)
+}
+
+func (c mySQLClientSet) ListWorkRequests(ctx context.Context, request mysql.ListWorkRequestsRequest) (mysql.ListWorkRequestsResponse, error) {
+	return c.workRequestsClient.ListWorkRequests(ctx, request)
 }
 
 // getOCIClient returns the injected client if set, otherwise creates one from the provider.
@@ -167,17 +210,149 @@ func (c *DbSystemServiceManager) GetMySqlDbSystemOcid(ctx context.Context, dbSys
 }
 
 func (c *DbSystemServiceManager) DeleteMySqlDbSystem(ctx context.Context, dbSystemId ociv1beta1.OCID) error {
+	_, err := c.submitDeleteMySqlDbSystem(ctx, dbSystemId)
+	return err
+}
+
+func (c *DbSystemServiceManager) submitDeleteMySqlDbSystem(ctx context.Context, dbSystemId ociv1beta1.OCID) (*string, error) {
 	dbClient, err := c.getOCIClient()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	req := mysql.DeleteDbSystemRequest{
 		DbSystemId: common.String(string(dbSystemId)),
 	}
 
-	_, err = dbClient.DeleteDbSystem(ctx, req)
-	return err
+	resp, err := dbClient.DeleteDbSystem(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return resp.OpcWorkRequestId, nil
+}
+
+func (c *DbSystemServiceManager) findDeleteMySQLWorkRequestID(ctx context.Context, compartmentID, dbSystemID ociv1beta1.OCID) (*string, error) {
+	if !canFindDeleteMySQLWorkRequest(compartmentID, dbSystemID) {
+		return nil, nil
+	}
+
+	dbClient, err := c.getOCIClient()
+	if err != nil {
+		return nil, err
+	}
+
+	req := newDeleteMySQLWorkRequestListRequest(compartmentID)
+
+	for {
+		workRequestID, nextPage, err := c.findDeleteMySQLWorkRequestPage(ctx, dbClient, req, dbSystemID)
+		if err != nil {
+			return nil, err
+		}
+		if workRequestID != nil {
+			return workRequestID, nil
+		}
+		if nextPage == nil || *nextPage == "" {
+			return nil, nil
+		}
+		req.Page = nextPage
+	}
+}
+
+func canFindDeleteMySQLWorkRequest(compartmentID, dbSystemID ociv1beta1.OCID) bool {
+	return compartmentID != "" && dbSystemID != ""
+}
+
+func newDeleteMySQLWorkRequestListRequest(compartmentID ociv1beta1.OCID) mysql.ListWorkRequestsRequest {
+	return mysql.ListWorkRequestsRequest{
+		CompartmentId: common.String(string(compartmentID)),
+		SortBy:        mysql.ListWorkRequestsSortByTimeAccepted,
+		SortOrder:     mysql.ListWorkRequestsSortOrderDesc,
+		Limit:         common.Int(100),
+	}
+}
+
+func (c *DbSystemServiceManager) findDeleteMySQLWorkRequestPage(
+	ctx context.Context,
+	dbClient MySQLDbSystemClientInterface,
+	req mysql.ListWorkRequestsRequest,
+	dbSystemID ociv1beta1.OCID,
+) (*string, *string, error) {
+	resp, err := dbClient.ListWorkRequests(ctx, req)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	workRequestID, err := c.matchDeleteMySQLWorkRequest(ctx, resp.Items, dbSystemID)
+	if err != nil || workRequestID != nil {
+		return workRequestID, nil, err
+	}
+
+	return nil, resp.OpcNextPage, nil
+}
+
+func (c *DbSystemServiceManager) matchDeleteMySQLWorkRequest(
+	ctx context.Context,
+	items []mysql.WorkRequestSummary,
+	dbSystemID ociv1beta1.OCID,
+) (*string, error) {
+	for _, item := range items {
+		workRequestID, err := c.matchDeleteMySQLWorkRequestSummary(ctx, item, dbSystemID)
+		if err != nil || workRequestID != nil {
+			return workRequestID, err
+		}
+	}
+
+	return nil, nil
+}
+
+func (c *DbSystemServiceManager) matchDeleteMySQLWorkRequestSummary(
+	ctx context.Context,
+	item mysql.WorkRequestSummary,
+	dbSystemID ociv1beta1.OCID,
+) (*string, error) {
+	if !isDeleteMySQLWorkRequestSummary(item) {
+		return nil, nil
+	}
+
+	workRequest, err := c.getMySQLWorkRequest(ctx, *item.Id)
+	if err != nil {
+		return nil, err
+	}
+	if !mySQLWorkRequestTargetsDBSystem(workRequest.Resources, dbSystemID) {
+		return nil, nil
+	}
+
+	return item.Id, nil
+}
+
+func isDeleteMySQLWorkRequestSummary(item mysql.WorkRequestSummary) bool {
+	return item.OperationType == mysql.WorkRequestOperationTypeDeleteDbsystem && item.Id != nil
+}
+
+func mySQLWorkRequestTargetsDBSystem(resources []mysql.WorkRequestResource, dbSystemID ociv1beta1.OCID) bool {
+	for _, resource := range resources {
+		if resource.Identifier != nil && *resource.Identifier == string(dbSystemID) {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *DbSystemServiceManager) getMySQLWorkRequest(ctx context.Context, workRequestID string) (*mysql.WorkRequest, error) {
+	dbClient, err := c.getOCIClient()
+	if err != nil {
+		return nil, err
+	}
+
+	req := mysql.GetWorkRequestRequest{
+		WorkRequestId: common.String(workRequestID),
+	}
+
+	resp, err := dbClient.GetWorkRequest(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return &resp.WorkRequest, nil
 }
 
 // GetMySqlDbSystem Sync the MySqlDbSystem details
@@ -203,13 +378,8 @@ func (c *DbSystemServiceManager) GetMySqlDbSystem(ctx context.Context, dbSystemI
 	return &response.DbSystem, nil
 }
 
-func (c *DbSystemServiceManager) UpdateMySqlDbSystem(ctx context.Context, dbSystem *ociv1beta1.MySqlDbSystem) error {
+func (c *DbSystemServiceManager) UpdateMySqlDbSystem(ctx context.Context, dbSystem *ociv1beta1.MySqlDbSystem, existingDbSystem *mysql.DbSystem) error {
 	dbClient, err := c.getOCIClient()
-	if err != nil {
-		return err
-	}
-
-	existingDbSystem, err := c.GetMySqlDbSystem(ctx, dbSystem.Spec.MySqlDbSystemId, nil)
 	if err != nil {
 		return err
 	}

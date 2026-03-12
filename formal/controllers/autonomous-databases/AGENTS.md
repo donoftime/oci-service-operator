@@ -1,26 +1,41 @@
-# Autonomous Databases
+# AutonomousDatabases
 
-## Source Of Truth
-- `formal/controllers/autonomous-databases/spec.tla`
-- `formal/controllers/autonomous-databases/spec.cfg`
-
-## Scope
-- Controller surface: `AutonomousDatabasesReconciler`
-- Service-manager surface: `pkg/servicemanager/autonomousdatabases/adb`
+- Source of truth: `spec.tla` and `spec.cfg`
+- Shared contracts: `../../shared/ControllerCoreContract.tla`, `../../shared/NameResolutionContract.tla`,
+  `../../shared/ListResolutionContract.tla`, `../../shared/DriftAwareUpdateContract.tla`,
+  `../../shared/CollectionEquivalenceContract.tla`, `../../shared/WholeListConvergenceContract.tla`,
+  `../../shared/BestEffortCleanupContract.tla`, `../../shared/SecretSideEffectContract.tla`
+- Diagram source: `diagrams/lifecycle.puml`
+- Known gaps and fix history: `logic-gaps.md`
+- Capabilities: `bind_by_id,resolve_by_name,drift_update,confirmed_delete,secret_write,secret_delete`
 
 ## Verified Properties
-- Retryable OCI lifecycle states must return `ShouldRequeue`.
-- Terminal success is only allowed for usable OCI states.
-- Finalizers are only cleared once the OCI resource is gone.
-- Wallet secrets are only materialized for usable OCI states.
 
-## Go Property Tests
-- `TestPropertyRetryableLifecycleStatesRequeue`
-- `TestPropertyExplicitFalseBooleansTriggerUpdate`
-- `TestPropertyOmittedFalseBooleansDoNotTriggerUpdate`
-- `TestPropertySpecJSONTracksExplicitADBBooleans`
-- `TestPropertyDeleteWaitsForResourceToDisappear`
+- `ControllerMetadataInvariant`
+- `TypeInvariant`
+- `SuccessRequiresActiveInvariant`
+- `RetryableRequiresRequeueInvariant`
+- `DeleteRequiresResourceGoneInvariant`
+- `MutationUsesBoundIDInvariant`
+- `DeleteRequiresConfirmationInvariant`
+- `DeleteSubmittedKeepsFinalizerInvariant`
+- `ConfirmedDeleteRemovesResourceInvariant`
+- `BindByIDUsesSpecInvariant`
+- `ResolvedNameUsesResolvedIDInvariant`
+- `LaterPageResolutionUsesResolvedIDInvariant`
+- `SupportedDriftRequiresUpdateInvariant`
+- `MatchingStateSkipsUpdateInvariant`
+- `CollectionDifferenceRequiresUpdateInvariant`
+- `MatchingCollectionSkipsUpdateInvariant`
+- `WholeListConvergesAfterUpdateInvariant`
+- `SecretRequiresUsableStateInvariant`
+- `SecretWriteFailuresBlockSuccessInvariant`
+- `SecretDeleteFailuresBlockCompletionInvariant`
+- `MissingSecretAllowsDeleteInvariant`
+- `BestEffortCleanupKeepsSuccessInvariant`
+- `CleanupTargetsStayEligibleInvariant`
 
 ## Notes
-- The TLA+ model captures the controller contract rather than every OCI field.
-- `logic-gaps.md` records the concrete bugs fixed in the Go implementation and the remaining caveats.
+
+- This file is the controller-local knowledge log for formal verification work.
+- Update it with controller-specific counterexamples, linked Go property tests, and the final code fixes.

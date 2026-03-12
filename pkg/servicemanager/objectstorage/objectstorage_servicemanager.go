@@ -8,6 +8,7 @@ package objectstorage
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
@@ -325,17 +326,16 @@ func (m *ObjectStorageBucketServiceManager) updateBucket(ctx context.Context, ns
 		return err
 	}
 
-	updateDetails := ociobjectstorage.UpdateBucketDetails{}
-	updateNeeded := false
+	currentBucketResp, err := client.GetBucket(ctx, ociobjectstorage.GetBucketRequest{
+		NamespaceName: common.String(ns),
+		BucketName:    common.String(bucketName),
+	})
+	if err != nil {
+		return err
+	}
+	currentBucket := currentBucketResp.Bucket
 
-	if resource.Spec.AccessType != "" {
-		updateDetails.PublicAccessType = ociobjectstorage.UpdateBucketDetailsPublicAccessTypeEnum(resource.Spec.AccessType)
-		updateNeeded = true
-	}
-	if resource.Spec.Versioning != "" {
-		updateDetails.Versioning = ociobjectstorage.UpdateBucketDetailsVersioningEnum(resource.Spec.Versioning)
-		updateNeeded = true
-	}
+	updateDetails, updateNeeded := buildBucketUpdateDetails(resource, currentBucket)
 
 	if !updateNeeded {
 		return nil
@@ -348,6 +348,78 @@ func (m *ObjectStorageBucketServiceManager) updateBucket(ctx context.Context, ns
 	}
 	_, err = client.UpdateBucket(ctx, req)
 	return err
+}
+
+func buildBucketUpdateDetails(
+	resource *ociv1beta1.ObjectStorageBucket,
+	currentBucket ociobjectstorage.Bucket,
+) (ociobjectstorage.UpdateBucketDetails, bool) {
+	updateDetails := ociobjectstorage.UpdateBucketDetails{}
+	updateNeeded := false
+
+	updateNeeded = applyBucketAccessTypeUpdate(&updateDetails, resource, currentBucket) || updateNeeded
+	updateNeeded = applyBucketVersioningUpdate(&updateDetails, resource, currentBucket) || updateNeeded
+	updateNeeded = applyBucketFreeformTagUpdate(&updateDetails, resource, currentBucket) || updateNeeded
+	updateNeeded = applyBucketDefinedTagUpdate(&updateDetails, resource, currentBucket) || updateNeeded
+
+	return updateDetails, updateNeeded
+}
+
+func applyBucketAccessTypeUpdate(
+	updateDetails *ociobjectstorage.UpdateBucketDetails,
+	resource *ociv1beta1.ObjectStorageBucket,
+	currentBucket ociobjectstorage.Bucket,
+) bool {
+	if resource.Spec.AccessType == "" || string(currentBucket.PublicAccessType) == resource.Spec.AccessType {
+		return false
+	}
+
+	updateDetails.PublicAccessType = ociobjectstorage.UpdateBucketDetailsPublicAccessTypeEnum(resource.Spec.AccessType)
+	return true
+}
+
+func applyBucketVersioningUpdate(
+	updateDetails *ociobjectstorage.UpdateBucketDetails,
+	resource *ociv1beta1.ObjectStorageBucket,
+	currentBucket ociobjectstorage.Bucket,
+) bool {
+	if resource.Spec.Versioning == "" || string(currentBucket.Versioning) == resource.Spec.Versioning {
+		return false
+	}
+
+	updateDetails.Versioning = ociobjectstorage.UpdateBucketDetailsVersioningEnum(resource.Spec.Versioning)
+	return true
+}
+
+func applyBucketFreeformTagUpdate(
+	updateDetails *ociobjectstorage.UpdateBucketDetails,
+	resource *ociv1beta1.ObjectStorageBucket,
+	currentBucket ociobjectstorage.Bucket,
+) bool {
+	if resource.Spec.FreeFormTags == nil || reflect.DeepEqual(currentBucket.FreeformTags, resource.Spec.FreeFormTags) {
+		return false
+	}
+
+	updateDetails.FreeformTags = resource.Spec.FreeFormTags
+	return true
+}
+
+func applyBucketDefinedTagUpdate(
+	updateDetails *ociobjectstorage.UpdateBucketDetails,
+	resource *ociv1beta1.ObjectStorageBucket,
+	currentBucket ociobjectstorage.Bucket,
+) bool {
+	if resource.Spec.DefinedTags == nil {
+		return false
+	}
+
+	desiredDefinedTags := *util.ConvertToOciDefinedTags(&resource.Spec.DefinedTags)
+	if reflect.DeepEqual(currentBucket.DefinedTags, desiredDefinedTags) {
+		return false
+	}
+
+	updateDetails.DefinedTags = desiredDefinedTags
+	return true
 }
 
 func (m *ObjectStorageBucketServiceManager) convert(obj runtime.Object) (*ociv1beta1.ObjectStorageBucket, error) {

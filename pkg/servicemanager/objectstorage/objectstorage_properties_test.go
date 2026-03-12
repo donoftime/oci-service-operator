@@ -117,3 +117,52 @@ func TestObjectStorageBucket_PropertyDeleteUsesSpecIDAndIgnoresMissingSecret(t *
 		t.Fatal(err)
 	}
 }
+
+func TestObjectStorageBucket_PropertyTagDriftTriggersUpdate(t *testing.T) {
+	property := func(seed uint16) bool {
+		namespace := fmt.Sprintf("ns-%d", seed)
+		bucketName := fmt.Sprintf("bucket-%d", seed)
+		var updatedReq ociobjectstorage.UpdateBucketRequest
+
+		fake := &fakeObjectStorageClient{
+			getBucketFn: func(_ context.Context, req ociobjectstorage.GetBucketRequest) (ociobjectstorage.GetBucketResponse, error) {
+				return ociobjectstorage.GetBucketResponse{
+					Bucket: ociobjectstorage.Bucket{
+						Name:             common.String(bucketName),
+						Namespace:        common.String(namespace),
+						PublicAccessType: ociobjectstorage.BucketPublicAccessTypeObjectread,
+						Versioning:       ociobjectstorage.BucketVersioningEnabled,
+						FreeformTags:     map[string]string{"team": "old"},
+						DefinedTags: map[string]map[string]interface{}{
+							"ops": {"env": "dev"},
+						},
+					},
+				}, nil
+			},
+			updateBucketFn: func(_ context.Context, req ociobjectstorage.UpdateBucketRequest) (ociobjectstorage.UpdateBucketResponse, error) {
+				updatedReq = req
+				return ociobjectstorage.UpdateBucketResponse{}, nil
+			},
+		}
+
+		mgr := mgrWithFake(&fakeCredentialClient{}, fake)
+		bucket := &ociv1beta1.ObjectStorageBucket{}
+		bucket.Name = "bucket-cr"
+		bucket.Namespace = "default"
+		bucket.Status.OsokStatus.Ocid = ociv1beta1.OCID(namespace + "/" + bucketName)
+		bucket.Spec.FreeFormTags = map[string]string{"team": "platform"}
+		bucket.Spec.DefinedTags = map[string]ociv1beta1.MapValue{
+			"ops": {"env": "prod"},
+		}
+
+		resp, err := mgr.CreateOrUpdate(context.Background(), bucket, ctrl.Request{})
+		return err == nil &&
+			resp.IsSuccessful &&
+			updatedReq.FreeformTags["team"] == "platform" &&
+			updatedReq.DefinedTags["ops"]["env"] == "prod"
+	}
+
+	if err := quick.Check(property, nil); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -8,12 +8,26 @@ package networking
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	ocicore "github.com/oracle/oci-go-sdk/v65/core"
 	ociv1beta1 "github.com/oracle/oci-service-operator/api/v1beta1"
 	"github.com/oracle/oci-service-operator/pkg/util"
 )
+
+func networkingDefinedTagsChanged(desired map[string]ociv1beta1.MapValue, existing map[string]map[string]interface{}) (map[string]map[string]interface{}, bool) {
+	if desired == nil {
+		return nil, false
+	}
+
+	desiredTags := *util.ConvertToOciDefinedTags(&desired)
+	return desiredTags, !reflect.DeepEqual(existing, desiredTags)
+}
+
+func networkingLookupStateMatches(state string) bool {
+	return state == "AVAILABLE" || state == "PROVISIONING" || state == "UPDATING"
+}
 
 // VirtualNetworkClientInterface defines the OCI operations used by the VCN and Subnet service managers.
 type VirtualNetworkClientInterface interface {
@@ -173,22 +187,29 @@ func (c *OciVcnServiceManager) GetVcnOcid(ctx context.Context, vcn ociv1beta1.Oc
 		return nil, err
 	}
 
-	resp, err := client.ListVcns(ctx, ocicore.ListVcnsRequest{
+	req := ocicore.ListVcnsRequest{
 		CompartmentId: common.String(string(vcn.Spec.CompartmentId)),
 		DisplayName:   common.String(vcn.Spec.DisplayName),
-		Limit:         common.Int(1),
-	})
-	if err != nil {
-		c.Log.ErrorLog(err, "Error listing VCNs")
-		return nil, err
+		Limit:         common.Int(100),
 	}
-
-	for _, item := range resp.Items {
-		state := string(item.LifecycleState)
-		if state == "AVAILABLE" || state == "PROVISIONING" || state == "UPDATING" {
-			c.Log.DebugLog(fmt.Sprintf("OciVcn %s exists with OCID %s", vcn.Spec.DisplayName, *item.Id))
-			return (*ociv1beta1.OCID)(item.Id), nil
+	for {
+		resp, err := client.ListVcns(ctx, req)
+		if err != nil {
+			c.Log.ErrorLog(err, "Error listing VCNs")
+			return nil, err
 		}
+
+		for _, item := range resp.Items {
+			if networkingLookupStateMatches(string(item.LifecycleState)) {
+				c.Log.DebugLog(fmt.Sprintf("OciVcn %s exists with OCID %s", vcn.Spec.DisplayName, *item.Id))
+				return (*ociv1beta1.OCID)(item.Id), nil
+			}
+		}
+
+		if resp.OpcNextPage == nil || *resp.OpcNextPage == "" {
+			break
+		}
+		req.Page = resp.OpcNextPage
 	}
 
 	c.Log.DebugLog(fmt.Sprintf("OciVcn %s does not exist", vcn.Spec.DisplayName))
@@ -221,6 +242,10 @@ func (c *OciVcnServiceManager) UpdateVcn(ctx context.Context, vcn *ociv1beta1.Oc
 	}
 	if len(vcn.Spec.FreeFormTags) > 0 {
 		updateDetails.FreeformTags = vcn.Spec.FreeFormTags
+		updateNeeded = true
+	}
+	if desiredTags, changed := networkingDefinedTagsChanged(vcn.Spec.DefinedTags, existing.DefinedTags); changed {
+		updateDetails.DefinedTags = desiredTags
 		updateNeeded = true
 	}
 
@@ -313,23 +338,30 @@ func (c *OciSubnetServiceManager) GetSubnetOcid(ctx context.Context, subnet ociv
 		return nil, err
 	}
 
-	resp, err := client.ListSubnets(ctx, ocicore.ListSubnetsRequest{
+	req := ocicore.ListSubnetsRequest{
 		CompartmentId: common.String(string(subnet.Spec.CompartmentId)),
 		VcnId:         common.String(string(subnet.Spec.VcnId)),
 		DisplayName:   common.String(subnet.Spec.DisplayName),
-		Limit:         common.Int(1),
-	})
-	if err != nil {
-		c.Log.ErrorLog(err, "Error listing Subnets")
-		return nil, err
+		Limit:         common.Int(100),
 	}
-
-	for _, item := range resp.Items {
-		state := string(item.LifecycleState)
-		if state == "AVAILABLE" || state == "PROVISIONING" || state == "UPDATING" {
-			c.Log.DebugLog(fmt.Sprintf("OciSubnet %s exists with OCID %s", subnet.Spec.DisplayName, *item.Id))
-			return (*ociv1beta1.OCID)(item.Id), nil
+	for {
+		resp, err := client.ListSubnets(ctx, req)
+		if err != nil {
+			c.Log.ErrorLog(err, "Error listing Subnets")
+			return nil, err
 		}
+
+		for _, item := range resp.Items {
+			if networkingLookupStateMatches(string(item.LifecycleState)) {
+				c.Log.DebugLog(fmt.Sprintf("OciSubnet %s exists with OCID %s", subnet.Spec.DisplayName, *item.Id))
+				return (*ociv1beta1.OCID)(item.Id), nil
+			}
+		}
+
+		if resp.OpcNextPage == nil || *resp.OpcNextPage == "" {
+			break
+		}
+		req.Page = resp.OpcNextPage
 	}
 
 	c.Log.DebugLog(fmt.Sprintf("OciSubnet %s does not exist", subnet.Spec.DisplayName))
@@ -362,6 +394,10 @@ func (c *OciSubnetServiceManager) UpdateSubnet(ctx context.Context, subnet *ociv
 	}
 	if len(subnet.Spec.FreeFormTags) > 0 {
 		updateDetails.FreeformTags = subnet.Spec.FreeFormTags
+		updateNeeded = true
+	}
+	if desiredTags, changed := networkingDefinedTagsChanged(subnet.Spec.DefinedTags, existing.DefinedTags); changed {
+		updateDetails.DefinedTags = desiredTags
 		updateNeeded = true
 	}
 
@@ -438,23 +474,30 @@ func (c *OciInternetGatewayServiceManager) GetInternetGatewayOcid(ctx context.Co
 		return nil, err
 	}
 
-	resp, err := client.ListInternetGateways(ctx, ocicore.ListInternetGatewaysRequest{
+	req := ocicore.ListInternetGatewaysRequest{
 		CompartmentId: common.String(string(igw.Spec.CompartmentId)),
 		VcnId:         common.String(string(igw.Spec.VcnId)),
 		DisplayName:   common.String(igw.Spec.DisplayName),
-		Limit:         common.Int(1),
-	})
-	if err != nil {
-		c.Log.ErrorLog(err, "Error listing Internet Gateways")
-		return nil, err
+		Limit:         common.Int(100),
 	}
-
-	for _, item := range resp.Items {
-		state := string(item.LifecycleState)
-		if state == "AVAILABLE" || state == "PROVISIONING" || state == "UPDATING" {
-			c.Log.DebugLog(fmt.Sprintf("OciInternetGateway %s exists with OCID %s", igw.Spec.DisplayName, *item.Id))
-			return (*ociv1beta1.OCID)(item.Id), nil
+	for {
+		resp, err := client.ListInternetGateways(ctx, req)
+		if err != nil {
+			c.Log.ErrorLog(err, "Error listing Internet Gateways")
+			return nil, err
 		}
+
+		for _, item := range resp.Items {
+			if networkingLookupStateMatches(string(item.LifecycleState)) {
+				c.Log.DebugLog(fmt.Sprintf("OciInternetGateway %s exists with OCID %s", igw.Spec.DisplayName, *item.Id))
+				return (*ociv1beta1.OCID)(item.Id), nil
+			}
+		}
+
+		if resp.OpcNextPage == nil || *resp.OpcNextPage == "" {
+			break
+		}
+		req.Page = resp.OpcNextPage
 	}
 
 	c.Log.DebugLog(fmt.Sprintf("OciInternetGateway %s does not exist", igw.Spec.DisplayName))
@@ -487,6 +530,10 @@ func (c *OciInternetGatewayServiceManager) UpdateInternetGateway(ctx context.Con
 	}
 	if len(igw.Spec.FreeFormTags) > 0 {
 		updateDetails.FreeformTags = igw.Spec.FreeFormTags
+		updateNeeded = true
+	}
+	if desiredTags, changed := networkingDefinedTagsChanged(igw.Spec.DefinedTags, existing.DefinedTags); changed {
+		updateDetails.DefinedTags = desiredTags
 		updateNeeded = true
 	}
 
@@ -564,23 +611,30 @@ func (c *OciNatGatewayServiceManager) GetNatGatewayOcid(ctx context.Context, nat
 		return nil, err
 	}
 
-	resp, err := client.ListNatGateways(ctx, ocicore.ListNatGatewaysRequest{
+	req := ocicore.ListNatGatewaysRequest{
 		CompartmentId: common.String(string(nat.Spec.CompartmentId)),
 		VcnId:         common.String(string(nat.Spec.VcnId)),
 		DisplayName:   common.String(nat.Spec.DisplayName),
-		Limit:         common.Int(1),
-	})
-	if err != nil {
-		c.Log.ErrorLog(err, "Error listing NAT Gateways")
-		return nil, err
+		Limit:         common.Int(100),
 	}
-
-	for _, item := range resp.Items {
-		state := string(item.LifecycleState)
-		if state == "AVAILABLE" || state == "PROVISIONING" || state == "UPDATING" {
-			c.Log.DebugLog(fmt.Sprintf("OciNatGateway %s exists with OCID %s", nat.Spec.DisplayName, *item.Id))
-			return (*ociv1beta1.OCID)(item.Id), nil
+	for {
+		resp, err := client.ListNatGateways(ctx, req)
+		if err != nil {
+			c.Log.ErrorLog(err, "Error listing NAT Gateways")
+			return nil, err
 		}
+
+		for _, item := range resp.Items {
+			if networkingLookupStateMatches(string(item.LifecycleState)) {
+				c.Log.DebugLog(fmt.Sprintf("OciNatGateway %s exists with OCID %s", nat.Spec.DisplayName, *item.Id))
+				return (*ociv1beta1.OCID)(item.Id), nil
+			}
+		}
+
+		if resp.OpcNextPage == nil || *resp.OpcNextPage == "" {
+			break
+		}
+		req.Page = resp.OpcNextPage
 	}
 
 	c.Log.DebugLog(fmt.Sprintf("OciNatGateway %s does not exist", nat.Spec.DisplayName))
@@ -613,6 +667,10 @@ func (c *OciNatGatewayServiceManager) UpdateNatGateway(ctx context.Context, nat 
 	}
 	if len(nat.Spec.FreeFormTags) > 0 {
 		updateDetails.FreeformTags = nat.Spec.FreeFormTags
+		updateNeeded = true
+	}
+	if desiredTags, changed := networkingDefinedTagsChanged(nat.Spec.DefinedTags, existing.DefinedTags); changed {
+		updateDetails.DefinedTags = desiredTags
 		updateNeeded = true
 	}
 
@@ -693,24 +751,30 @@ func (c *OciServiceGatewayServiceManager) GetServiceGatewayOcid(ctx context.Cont
 		return nil, err
 	}
 
-	resp, err := client.ListServiceGateways(ctx, ocicore.ListServiceGatewaysRequest{
+	req := ocicore.ListServiceGatewaysRequest{
 		CompartmentId: common.String(string(sgw.Spec.CompartmentId)),
 		VcnId:         common.String(string(sgw.Spec.VcnId)),
 		Limit:         common.Int(1000),
-	})
-	if err != nil {
-		c.Log.ErrorLog(err, "Error listing Service Gateways")
-		return nil, err
 	}
+	for {
+		resp, err := client.ListServiceGateways(ctx, req)
+		if err != nil {
+			c.Log.ErrorLog(err, "Error listing Service Gateways")
+			return nil, err
+		}
 
-	for _, item := range resp.Items {
-		if item.DisplayName != nil && *item.DisplayName == sgw.Spec.DisplayName {
-			state := string(item.LifecycleState)
-			if state == "AVAILABLE" || state == "PROVISIONING" || state == "UPDATING" {
+		for _, item := range resp.Items {
+			if item.DisplayName != nil && *item.DisplayName == sgw.Spec.DisplayName &&
+				networkingLookupStateMatches(string(item.LifecycleState)) {
 				c.Log.DebugLog(fmt.Sprintf("OciServiceGateway %s exists with OCID %s", sgw.Spec.DisplayName, *item.Id))
 				return (*ociv1beta1.OCID)(item.Id), nil
 			}
 		}
+
+		if resp.OpcNextPage == nil || *resp.OpcNextPage == "" {
+			break
+		}
+		req.Page = resp.OpcNextPage
 	}
 
 	c.Log.DebugLog(fmt.Sprintf("OciServiceGateway %s does not exist", sgw.Spec.DisplayName))
@@ -743,6 +807,10 @@ func (c *OciServiceGatewayServiceManager) UpdateServiceGateway(ctx context.Conte
 	}
 	if len(sgw.Spec.FreeFormTags) > 0 {
 		updateDetails.FreeformTags = sgw.Spec.FreeFormTags
+		updateNeeded = true
+	}
+	if desiredTags, changed := networkingDefinedTagsChanged(sgw.Spec.DefinedTags, existing.DefinedTags); changed {
+		updateDetails.DefinedTags = desiredTags
 		updateNeeded = true
 	}
 
@@ -816,23 +884,29 @@ func (c *OciDrgServiceManager) GetDrgOcid(ctx context.Context, drg ociv1beta1.Oc
 		return nil, err
 	}
 
-	resp, err := client.ListDrgs(ctx, ocicore.ListDrgsRequest{
+	req := ocicore.ListDrgsRequest{
 		CompartmentId: common.String(string(drg.Spec.CompartmentId)),
 		Limit:         common.Int(1000),
-	})
-	if err != nil {
-		c.Log.ErrorLog(err, "Error listing DRGs")
-		return nil, err
 	}
+	for {
+		resp, err := client.ListDrgs(ctx, req)
+		if err != nil {
+			c.Log.ErrorLog(err, "Error listing DRGs")
+			return nil, err
+		}
 
-	for _, item := range resp.Items {
-		if item.DisplayName != nil && *item.DisplayName == drg.Spec.DisplayName {
-			state := string(item.LifecycleState)
-			if state == "AVAILABLE" || state == "PROVISIONING" || state == "UPDATING" {
+		for _, item := range resp.Items {
+			if item.DisplayName != nil && *item.DisplayName == drg.Spec.DisplayName &&
+				networkingLookupStateMatches(string(item.LifecycleState)) {
 				c.Log.DebugLog(fmt.Sprintf("OciDrg %s exists with OCID %s", drg.Spec.DisplayName, *item.Id))
 				return (*ociv1beta1.OCID)(item.Id), nil
 			}
 		}
+
+		if resp.OpcNextPage == nil || *resp.OpcNextPage == "" {
+			break
+		}
+		req.Page = resp.OpcNextPage
 	}
 
 	c.Log.DebugLog(fmt.Sprintf("OciDrg %s does not exist", drg.Spec.DisplayName))
@@ -865,6 +939,10 @@ func (c *OciDrgServiceManager) UpdateDrg(ctx context.Context, drg *ociv1beta1.Oc
 	}
 	if len(drg.Spec.FreeFormTags) > 0 {
 		updateDetails.FreeformTags = drg.Spec.FreeFormTags
+		updateNeeded = true
+	}
+	if desiredTags, changed := networkingDefinedTagsChanged(drg.Spec.DefinedTags, existing.DefinedTags); changed {
+		updateDetails.DefinedTags = desiredTags
 		updateNeeded = true
 	}
 
@@ -1037,23 +1115,30 @@ func (c *OciSecurityListServiceManager) GetSecurityListOcid(ctx context.Context,
 		return nil, err
 	}
 
-	resp, err := client.ListSecurityLists(ctx, ocicore.ListSecurityListsRequest{
+	req := ocicore.ListSecurityListsRequest{
 		CompartmentId: common.String(string(sl.Spec.CompartmentId)),
 		VcnId:         common.String(string(sl.Spec.VcnId)),
 		DisplayName:   common.String(sl.Spec.DisplayName),
-		Limit:         common.Int(1),
-	})
-	if err != nil {
-		c.Log.ErrorLog(err, "Error listing Security Lists")
-		return nil, err
+		Limit:         common.Int(100),
 	}
-
-	for _, item := range resp.Items {
-		state := string(item.LifecycleState)
-		if state == "AVAILABLE" || state == "PROVISIONING" || state == "UPDATING" {
-			c.Log.DebugLog(fmt.Sprintf("OciSecurityList %s exists with OCID %s", sl.Spec.DisplayName, *item.Id))
-			return (*ociv1beta1.OCID)(item.Id), nil
+	for {
+		resp, err := client.ListSecurityLists(ctx, req)
+		if err != nil {
+			c.Log.ErrorLog(err, "Error listing Security Lists")
+			return nil, err
 		}
+
+		for _, item := range resp.Items {
+			if networkingLookupStateMatches(string(item.LifecycleState)) {
+				c.Log.DebugLog(fmt.Sprintf("OciSecurityList %s exists with OCID %s", sl.Spec.DisplayName, *item.Id))
+				return (*ociv1beta1.OCID)(item.Id), nil
+			}
+		}
+
+		if resp.OpcNextPage == nil || *resp.OpcNextPage == "" {
+			break
+		}
+		req.Page = resp.OpcNextPage
 	}
 
 	c.Log.DebugLog(fmt.Sprintf("OciSecurityList %s does not exist", sl.Spec.DisplayName))
@@ -1079,6 +1164,9 @@ func (c *OciSecurityListServiceManager) UpdateSecurityList(ctx context.Context, 
 	}
 	if len(sl.Spec.FreeFormTags) > 0 {
 		updateDetails.FreeformTags = sl.Spec.FreeFormTags
+	}
+	if sl.Spec.DefinedTags != nil {
+		updateDetails.DefinedTags = *util.ConvertToOciDefinedTags(&sl.Spec.DefinedTags)
 	}
 	// Always reconcile egress and ingress rules so spec changes are applied on every update.
 	updateDetails.EgressSecurityRules = buildEgressRules(sl.Spec.EgressSecurityRules)
@@ -1151,23 +1239,30 @@ func (c *OciNetworkSecurityGroupServiceManager) GetNetworkSecurityGroupOcid(ctx 
 		return nil, err
 	}
 
-	resp, err := client.ListNetworkSecurityGroups(ctx, ocicore.ListNetworkSecurityGroupsRequest{
+	req := ocicore.ListNetworkSecurityGroupsRequest{
 		CompartmentId: common.String(string(nsg.Spec.CompartmentId)),
 		VcnId:         common.String(string(nsg.Spec.VcnId)),
 		DisplayName:   common.String(nsg.Spec.DisplayName),
-		Limit:         common.Int(1),
-	})
-	if err != nil {
-		c.Log.ErrorLog(err, "Error listing Network Security Groups")
-		return nil, err
+		Limit:         common.Int(100),
 	}
-
-	for _, item := range resp.Items {
-		state := string(item.LifecycleState)
-		if state == "AVAILABLE" || state == "PROVISIONING" || state == "UPDATING" {
-			c.Log.DebugLog(fmt.Sprintf("OciNetworkSecurityGroup %s exists with OCID %s", nsg.Spec.DisplayName, *item.Id))
-			return (*ociv1beta1.OCID)(item.Id), nil
+	for {
+		resp, err := client.ListNetworkSecurityGroups(ctx, req)
+		if err != nil {
+			c.Log.ErrorLog(err, "Error listing Network Security Groups")
+			return nil, err
 		}
+
+		for _, item := range resp.Items {
+			if networkingLookupStateMatches(string(item.LifecycleState)) {
+				c.Log.DebugLog(fmt.Sprintf("OciNetworkSecurityGroup %s exists with OCID %s", nsg.Spec.DisplayName, *item.Id))
+				return (*ociv1beta1.OCID)(item.Id), nil
+			}
+		}
+
+		if resp.OpcNextPage == nil || *resp.OpcNextPage == "" {
+			break
+		}
+		req.Page = resp.OpcNextPage
 	}
 
 	c.Log.DebugLog(fmt.Sprintf("OciNetworkSecurityGroup %s does not exist", nsg.Spec.DisplayName))
@@ -1200,6 +1295,10 @@ func (c *OciNetworkSecurityGroupServiceManager) UpdateNetworkSecurityGroup(ctx c
 	}
 	if len(nsg.Spec.FreeFormTags) > 0 {
 		updateDetails.FreeformTags = nsg.Spec.FreeFormTags
+		updateNeeded = true
+	}
+	if desiredTags, changed := networkingDefinedTagsChanged(nsg.Spec.DefinedTags, existing.DefinedTags); changed {
+		updateDetails.DefinedTags = desiredTags
 		updateNeeded = true
 	}
 
@@ -1295,23 +1394,30 @@ func (c *OciRouteTableServiceManager) GetRouteTableOcid(ctx context.Context, rt 
 		return nil, err
 	}
 
-	resp, err := client.ListRouteTables(ctx, ocicore.ListRouteTablesRequest{
+	req := ocicore.ListRouteTablesRequest{
 		CompartmentId: common.String(string(rt.Spec.CompartmentId)),
 		VcnId:         common.String(string(rt.Spec.VcnId)),
 		DisplayName:   common.String(rt.Spec.DisplayName),
-		Limit:         common.Int(1),
-	})
-	if err != nil {
-		c.Log.ErrorLog(err, "Error listing Route Tables")
-		return nil, err
+		Limit:         common.Int(100),
 	}
-
-	for _, item := range resp.Items {
-		state := string(item.LifecycleState)
-		if state == "AVAILABLE" || state == "PROVISIONING" || state == "UPDATING" {
-			c.Log.DebugLog(fmt.Sprintf("OciRouteTable %s exists with OCID %s", rt.Spec.DisplayName, *item.Id))
-			return (*ociv1beta1.OCID)(item.Id), nil
+	for {
+		resp, err := client.ListRouteTables(ctx, req)
+		if err != nil {
+			c.Log.ErrorLog(err, "Error listing Route Tables")
+			return nil, err
 		}
+
+		for _, item := range resp.Items {
+			if networkingLookupStateMatches(string(item.LifecycleState)) {
+				c.Log.DebugLog(fmt.Sprintf("OciRouteTable %s exists with OCID %s", rt.Spec.DisplayName, *item.Id))
+				return (*ociv1beta1.OCID)(item.Id), nil
+			}
+		}
+
+		if resp.OpcNextPage == nil || *resp.OpcNextPage == "" {
+			break
+		}
+		req.Page = resp.OpcNextPage
 	}
 
 	c.Log.DebugLog(fmt.Sprintf("OciRouteTable %s does not exist", rt.Spec.DisplayName))
@@ -1337,6 +1443,9 @@ func (c *OciRouteTableServiceManager) UpdateRouteTable(ctx context.Context, rt *
 	}
 	if len(rt.Spec.FreeFormTags) > 0 {
 		updateDetails.FreeformTags = rt.Spec.FreeFormTags
+	}
+	if rt.Spec.DefinedTags != nil {
+		updateDetails.DefinedTags = *util.ConvertToOciDefinedTags(&rt.Spec.DefinedTags)
 	}
 	// Always reconcile route rules so spec changes are applied on every update.
 	updateDetails.RouteRules = buildRouteRules(rt.Spec.RouteRules)

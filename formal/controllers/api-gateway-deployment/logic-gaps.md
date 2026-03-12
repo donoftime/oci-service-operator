@@ -3,4 +3,4 @@
 - Fixed: deployments in `CREATING`, `UPDATING`, or `DELETING` no longer report `Active`.
 - Fixed: retryable deployment states now request requeue.
 - Fixed: delete only completes after `GetDeployment` confirms deletion or not-found.
-- Residual risk: the model focuses on lifecycle/finalizer correctness, not full route-spec equivalence.
+- Fixed: route collection equivalence is now part of the shared formal contract, so differing desired route specs require update while matching route collections skip no-op writes.
