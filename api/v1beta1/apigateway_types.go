@@ -24,10 +24,12 @@ type ApiGatewaySpec struct {
 	// EndpointType is the gateway endpoint type: PUBLIC or PRIVATE
 	// +kubebuilder:validation:Enum=PUBLIC;PRIVATE
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="endpointType is immutable"
 	EndpointType string `json:"endpointType"`
 
 	// SubnetId is the OCID of the subnet in which the gateway is created
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="subnetId is immutable"
 	SubnetId OCID `json:"subnetId"`
 
 	// NetworkSecurityGroupIds is an optional list of NSG OCIDs associated with the gateway

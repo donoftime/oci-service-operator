@@ -23,6 +23,7 @@ type StreamAdminClientInterface interface {
 	CreateStream(ctx context.Context, request streaming.CreateStreamRequest) (streaming.CreateStreamResponse, error)
 	GetStream(ctx context.Context, request streaming.GetStreamRequest) (streaming.GetStreamResponse, error)
 	ListStreams(ctx context.Context, request streaming.ListStreamsRequest) (streaming.ListStreamsResponse, error)
+	ChangeStreamCompartment(ctx context.Context, request streaming.ChangeStreamCompartmentRequest) (streaming.ChangeStreamCompartmentResponse, error)
 	UpdateStream(ctx context.Context, request streaming.UpdateStreamRequest) (streaming.UpdateStreamResponse, error)
 	DeleteStream(ctx context.Context, request streaming.DeleteStreamRequest) (streaming.DeleteStreamResponse, error)
 }
@@ -147,6 +148,18 @@ func (c *StreamServiceManager) UpdateStream(ctx context.Context, stream *ociv1be
 	if err := validateImmutableStreamUpdate(stream, existingStream); err != nil {
 		return err
 	}
+	if stream.Spec.CompartmentId != "" &&
+		(existingStream.CompartmentId == nil || *existingStream.CompartmentId != string(stream.Spec.CompartmentId)) {
+		_, err = streamClient.ChangeStreamCompartment(ctx, streaming.ChangeStreamCompartmentRequest{
+			StreamId: common.String(string(streamID)),
+			ChangeStreamCompartmentDetails: streaming.ChangeStreamCompartmentDetails{
+				CompartmentId: common.String(string(stream.Spec.CompartmentId)),
+			},
+		})
+		if err != nil {
+			return err
+		}
+	}
 	updateStreamDetails, updateNeeded := buildStreamUpdateDetails(stream, existingStream)
 	if !updateNeeded {
 		return nil
@@ -235,10 +248,14 @@ func resolveStreamUpdateID(stream *ociv1beta1.Stream) (ociv1beta1.OCID, error) {
 }
 
 func validateImmutableStreamUpdate(stream *ociv1beta1.Stream, existingStream *streaming.Stream) error {
-	if stream.Spec.Partitions <= 0 || stream.Spec.Partitions != *existingStream.Partitions {
+	if stream.Spec.Name != "" && existingStream.Name != nil && *existingStream.Name != stream.Spec.Name {
+		return errors.New("name can't be updated")
+	}
+	if stream.Spec.Partitions > 0 && existingStream.Partitions != nil && stream.Spec.Partitions != *existingStream.Partitions {
 		return errors.New("Partitions can't be updated")
 	}
-	if stream.Spec.RetentionInHours <= 23 || stream.Spec.RetentionInHours != *existingStream.RetentionInHours {
+	if stream.Spec.RetentionInHours > 0 && existingStream.RetentionInHours != nil &&
+		stream.Spec.RetentionInHours != *existingStream.RetentionInHours {
 		return errors.New("RetentionsHours can't be updated")
 	}
 	return nil

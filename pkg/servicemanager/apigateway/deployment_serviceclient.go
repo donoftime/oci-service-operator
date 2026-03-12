@@ -8,11 +8,13 @@ package apigateway
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/apigateway"
 	"github.com/oracle/oci-go-sdk/v65/common"
 	ociv1beta1 "github.com/oracle/oci-service-operator/api/v1beta1"
+	"github.com/oracle/oci-service-operator/pkg/servicemanager"
 	"github.com/oracle/oci-service-operator/pkg/util"
 )
 
@@ -22,6 +24,7 @@ type DeploymentClientInterface interface {
 	CreateDeployment(ctx context.Context, request apigateway.CreateDeploymentRequest) (apigateway.CreateDeploymentResponse, error)
 	GetDeployment(ctx context.Context, request apigateway.GetDeploymentRequest) (apigateway.GetDeploymentResponse, error)
 	ListDeployments(ctx context.Context, request apigateway.ListDeploymentsRequest) (apigateway.ListDeploymentsResponse, error)
+	ChangeDeploymentCompartment(ctx context.Context, request apigateway.ChangeDeploymentCompartmentRequest) (apigateway.ChangeDeploymentCompartmentResponse, error)
 	UpdateDeployment(ctx context.Context, request apigateway.UpdateDeploymentRequest) (apigateway.UpdateDeploymentResponse, error)
 	DeleteDeployment(ctx context.Context, request apigateway.DeleteDeploymentRequest) (apigateway.DeleteDeploymentResponse, error)
 }
@@ -171,29 +174,81 @@ func (c *DeploymentServiceManager) UpdateDeployment(ctx context.Context, dep *oc
 		return err
 	}
 
-	updateDetails := apigateway.UpdateDeploymentDetails{
-		Specification: buildApiSpecification(dep.Spec.Routes),
+	targetID, err := servicemanager.ResolveResourceID(dep.Status.OsokStatus.Ocid, dep.Spec.DeploymentId)
+	if err != nil {
+		return err
 	}
 
-	if dep.Spec.DisplayName != "" {
-		updateDetails.DisplayName = common.String(dep.Spec.DisplayName)
+	existing, err := c.GetDeployment(ctx, targetID, nil)
+	if err != nil {
+		return err
 	}
 
-	if dep.Spec.FreeFormTags != nil {
-		updateDetails.FreeformTags = dep.Spec.FreeFormTags
+	if err := validateDeploymentUnsupportedChanges(dep, existing); err != nil {
+		return err
 	}
 
-	if dep.Spec.DefinedTags != nil {
-		updateDetails.DefinedTags = *util.ConvertToOciDefinedTags(&dep.Spec.DefinedTags)
+	if dep.Spec.CompartmentId != "" &&
+		(existing.CompartmentId == nil || *existing.CompartmentId != string(dep.Spec.CompartmentId)) {
+		if _, err = client.ChangeDeploymentCompartment(ctx, apigateway.ChangeDeploymentCompartmentRequest{
+			DeploymentId: common.String(string(targetID)),
+			ChangeDeploymentCompartmentDetails: apigateway.ChangeDeploymentCompartmentDetails{
+				CompartmentId: common.String(string(dep.Spec.CompartmentId)),
+			},
+		}); err != nil {
+			return err
+		}
+	}
+
+	updateDetails, updateNeeded := buildDeploymentUpdateDetails(dep, existing)
+	if !updateNeeded {
+		return nil
 	}
 
 	req := apigateway.UpdateDeploymentRequest{
-		DeploymentId:            common.String(string(dep.Status.OsokStatus.Ocid)),
+		DeploymentId:            common.String(string(targetID)),
 		UpdateDeploymentDetails: updateDetails,
 	}
-
 	_, err = client.UpdateDeployment(ctx, req)
 	return err
+}
+
+func buildDeploymentUpdateDetails(dep *ociv1beta1.ApiGatewayDeployment, existing *apigateway.Deployment) (apigateway.UpdateDeploymentDetails, bool) {
+	updateDetails := apigateway.UpdateDeploymentDetails{}
+	updateNeeded := false
+
+	desiredSpec := buildApiSpecification(dep.Spec.Routes)
+	if !reflect.DeepEqual(existing.Specification, desiredSpec) {
+		updateDetails.Specification = desiredSpec
+		updateNeeded = true
+	}
+	if dep.Spec.DisplayName != "" && safeGatewayString(existing.DisplayName) != dep.Spec.DisplayName {
+		updateDetails.DisplayName = common.String(dep.Spec.DisplayName)
+		updateNeeded = true
+	}
+	if dep.Spec.FreeFormTags != nil && !reflect.DeepEqual(existing.FreeformTags, dep.Spec.FreeFormTags) {
+		updateDetails.FreeformTags = dep.Spec.FreeFormTags
+		updateNeeded = true
+	}
+	if dep.Spec.DefinedTags != nil {
+		desiredDefinedTags := *util.ConvertToOciDefinedTags(&dep.Spec.DefinedTags)
+		if !reflect.DeepEqual(existing.DefinedTags, desiredDefinedTags) {
+			updateDetails.DefinedTags = desiredDefinedTags
+			updateNeeded = true
+		}
+	}
+
+	return updateDetails, updateNeeded
+}
+
+func validateDeploymentUnsupportedChanges(dep *ociv1beta1.ApiGatewayDeployment, existing *apigateway.Deployment) error {
+	if dep.Spec.GatewayId != "" && safeGatewayString(existing.GatewayId) != "" && safeGatewayString(existing.GatewayId) != string(dep.Spec.GatewayId) {
+		return fmt.Errorf("gatewayId cannot be updated in place")
+	}
+	if dep.Spec.PathPrefix != "" && safeGatewayString(existing.PathPrefix) != "" && safeGatewayString(existing.PathPrefix) != dep.Spec.PathPrefix {
+		return fmt.Errorf("pathPrefix cannot be updated in place")
+	}
+	return nil
 }
 
 // DeleteDeployment deletes the API Gateway Deployment for the given OCID.

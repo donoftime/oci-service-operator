@@ -123,6 +123,32 @@ func TestFunctionsApplication_CreateOrUpdate_BadType(t *testing.T) {
 	assert.False(t, resp.IsSuccessful)
 }
 
+func TestFunctionsApplication_CreateOrUpdate_StatusOcidUsesUpdatePath(t *testing.T) {
+	appID := "ocid1.fnapp.oc1..tracked"
+	var updatedID string
+	ociClient := &mockFunctionsClient{
+		getApplicationFn: func(_ context.Context, _ ocifunctions.GetApplicationRequest) (ocifunctions.GetApplicationResponse, error) {
+			app := makeActiveApplication(appID, "tracked-app")
+			app.Config = map[string]string{"mode": "old"}
+			return ocifunctions.GetApplicationResponse{Application: app}, nil
+		},
+		updateApplicationFn: func(_ context.Context, req ocifunctions.UpdateApplicationRequest) (ocifunctions.UpdateApplicationResponse, error) {
+			updatedID = *req.ApplicationId
+			return ocifunctions.UpdateApplicationResponse{}, nil
+		},
+	}
+
+	mgr := newAppMgr(t, ociClient)
+	app := &ociv1beta1.FunctionsApplication{}
+	app.Status.OsokStatus.Ocid = ociv1beta1.OCID(appID)
+	app.Spec.Config = map[string]string{"mode": "new"}
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), app, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.Equal(t, appID, updatedID)
+}
+
 // --- FunctionsFunction tests ---
 
 // TestFunctionsFunction_Delete_NoOcid verifies deletion with no OCID set is a no-op.
@@ -219,16 +245,17 @@ func TestGetFunctionCredentialMap_NilFields(t *testing.T) {
 // mockFunctionsClient implements FunctionsManagementClientInterface for testing.
 // Each method dispatches to a configurable function field; unset fields return zero values with no error.
 type mockFunctionsClient struct {
-	createApplicationFn func(ctx context.Context, req ocifunctions.CreateApplicationRequest) (ocifunctions.CreateApplicationResponse, error)
-	getApplicationFn    func(ctx context.Context, req ocifunctions.GetApplicationRequest) (ocifunctions.GetApplicationResponse, error)
-	listApplicationsFn  func(ctx context.Context, req ocifunctions.ListApplicationsRequest) (ocifunctions.ListApplicationsResponse, error)
-	updateApplicationFn func(ctx context.Context, req ocifunctions.UpdateApplicationRequest) (ocifunctions.UpdateApplicationResponse, error)
-	deleteApplicationFn func(ctx context.Context, req ocifunctions.DeleteApplicationRequest) (ocifunctions.DeleteApplicationResponse, error)
-	createFunctionFn    func(ctx context.Context, req ocifunctions.CreateFunctionRequest) (ocifunctions.CreateFunctionResponse, error)
-	getFunctionFn       func(ctx context.Context, req ocifunctions.GetFunctionRequest) (ocifunctions.GetFunctionResponse, error)
-	listFunctionsFn     func(ctx context.Context, req ocifunctions.ListFunctionsRequest) (ocifunctions.ListFunctionsResponse, error)
-	updateFunctionFn    func(ctx context.Context, req ocifunctions.UpdateFunctionRequest) (ocifunctions.UpdateFunctionResponse, error)
-	deleteFunctionFn    func(ctx context.Context, req ocifunctions.DeleteFunctionRequest) (ocifunctions.DeleteFunctionResponse, error)
+	createApplicationFn            func(ctx context.Context, req ocifunctions.CreateApplicationRequest) (ocifunctions.CreateApplicationResponse, error)
+	getApplicationFn               func(ctx context.Context, req ocifunctions.GetApplicationRequest) (ocifunctions.GetApplicationResponse, error)
+	listApplicationsFn             func(ctx context.Context, req ocifunctions.ListApplicationsRequest) (ocifunctions.ListApplicationsResponse, error)
+	changeApplicationCompartmentFn func(ctx context.Context, req ocifunctions.ChangeApplicationCompartmentRequest) (ocifunctions.ChangeApplicationCompartmentResponse, error)
+	updateApplicationFn            func(ctx context.Context, req ocifunctions.UpdateApplicationRequest) (ocifunctions.UpdateApplicationResponse, error)
+	deleteApplicationFn            func(ctx context.Context, req ocifunctions.DeleteApplicationRequest) (ocifunctions.DeleteApplicationResponse, error)
+	createFunctionFn               func(ctx context.Context, req ocifunctions.CreateFunctionRequest) (ocifunctions.CreateFunctionResponse, error)
+	getFunctionFn                  func(ctx context.Context, req ocifunctions.GetFunctionRequest) (ocifunctions.GetFunctionResponse, error)
+	listFunctionsFn                func(ctx context.Context, req ocifunctions.ListFunctionsRequest) (ocifunctions.ListFunctionsResponse, error)
+	updateFunctionFn               func(ctx context.Context, req ocifunctions.UpdateFunctionRequest) (ocifunctions.UpdateFunctionResponse, error)
+	deleteFunctionFn               func(ctx context.Context, req ocifunctions.DeleteFunctionRequest) (ocifunctions.DeleteFunctionResponse, error)
 }
 
 func (m *mockFunctionsClient) CreateApplication(ctx context.Context, req ocifunctions.CreateApplicationRequest) (ocifunctions.CreateApplicationResponse, error) {
@@ -250,6 +277,13 @@ func (m *mockFunctionsClient) ListApplications(ctx context.Context, req ocifunct
 		return m.listApplicationsFn(ctx, req)
 	}
 	return ocifunctions.ListApplicationsResponse{}, nil
+}
+
+func (m *mockFunctionsClient) ChangeApplicationCompartment(ctx context.Context, req ocifunctions.ChangeApplicationCompartmentRequest) (ocifunctions.ChangeApplicationCompartmentResponse, error) {
+	if m.changeApplicationCompartmentFn != nil {
+		return m.changeApplicationCompartmentFn(ctx, req)
+	}
+	return ocifunctions.ChangeApplicationCompartmentResponse{}, nil
 }
 
 func (m *mockFunctionsClient) UpdateApplication(ctx context.Context, req ocifunctions.UpdateApplicationRequest) (ocifunctions.UpdateApplicationResponse, error) {
@@ -585,6 +619,32 @@ func TestFunctionsApplication_GetApplicationOcid_Found(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, resp.IsSuccessful)
 	assert.Equal(t, ociv1beta1.OCID(appId), app.Status.OsokStatus.Ocid)
+}
+
+func TestFunctionsApplication_UpdateApplicationSendsCompartmentMove(t *testing.T) {
+	appID := "ocid1.fnapp.oc1..move"
+	var moved ocifunctions.ChangeApplicationCompartmentRequest
+	ociClient := &mockFunctionsClient{
+		getApplicationFn: func(_ context.Context, _ ocifunctions.GetApplicationRequest) (ocifunctions.GetApplicationResponse, error) {
+			app := makeActiveApplication(appID, "move-app")
+			app.CompartmentId = common.String("ocid1.compartment.oc1..old")
+			return ocifunctions.GetApplicationResponse{Application: app}, nil
+		},
+		changeApplicationCompartmentFn: func(_ context.Context, req ocifunctions.ChangeApplicationCompartmentRequest) (ocifunctions.ChangeApplicationCompartmentResponse, error) {
+			moved = req
+			return ocifunctions.ChangeApplicationCompartmentResponse{}, nil
+		},
+	}
+
+	mgr := newAppMgr(t, ociClient)
+	app := &ociv1beta1.FunctionsApplication{}
+	app.Status.OsokStatus.Ocid = ociv1beta1.OCID(appID)
+	app.Spec.CompartmentId = "ocid1.compartment.oc1..new"
+
+	err := mgr.UpdateApplication(context.Background(), app)
+	assert.NoError(t, err)
+	assert.Equal(t, appID, *moved.ApplicationId)
+	assert.Equal(t, string(app.Spec.CompartmentId), *moved.CompartmentId)
 }
 
 // TestFunctionsApplication_GetApplicationOcid_ListError verifies that a ListApplications

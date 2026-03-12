@@ -64,6 +64,9 @@ spec:
                         type: string
                     type: object
                 type: object
+                x-kubernetes-validations:
+                - message: adminPassword is immutable
+                  rule: self == oldSelf
               adminUsername:
                 properties:
                   secret:
@@ -72,8 +75,14 @@ spec:
                         type: string
                     type: object
                 type: object
+                x-kubernetes-validations:
+                - message: adminUsername is immutable
+                  rule: self == oldSelf
               availabilityDomain:
                 type: string
+                x-kubernetes-validations:
+                - message: availabilityDomain is immutable
+                  rule: self == oldSelf
               backupPolicy:
                 properties:
                   definedTags:
@@ -103,6 +112,9 @@ spec:
                 maxLength: 255
                 minLength: 1
                 type: string
+                x-kubernetes-validations:
+                - message: compartmentId is immutable
+                  rule: self == oldSelf
               configuration:
                 description: CreateConfigurationDetails The Configuration for the
                   DB System.
@@ -132,6 +144,9 @@ spec:
               faultDomain:
                 default: FAULT-DOMAIN-1
                 type: string
+                x-kubernetes-validations:
+                - message: faultDomain is immutable
+                  rule: self == oldSelf
               freeformTags:
                 additionalProperties:
                   type: string
@@ -144,6 +159,9 @@ spec:
                 type: string
               ipAddress:
                 type: string
+                x-kubernetes-validations:
+                - message: ipAddress is immutable
+                  rule: self == oldSelf
               isHighlyAvailable:
                 type: boolean
               maintenance:
@@ -160,14 +178,23 @@ spec:
                 type: object
               mysqlVersion:
                 type: string
+                x-kubernetes-validations:
+                - message: mysqlVersion is immutable
+                  rule: self == oldSelf
               port:
                 maximum: 65535
                 minimum: 1024
                 type: integer
+                x-kubernetes-validations:
+                - message: port is immutable
+                  rule: self == oldSelf
               portX:
                 maximum: 65535
                 minimum: 1024
                 type: integer
+                x-kubernetes-validations:
+                - message: portX is immutable
+                  rule: self == oldSelf
               shapeName:
                 type: string
               source:
@@ -178,11 +205,17 @@ spec:
                     type: string
                   sourceType:
                     type: string
+                    x-kubernetes-validations:
+                    - message: source.sourceType is immutable
+                      rule: self == oldSelf
                 type: object
               subnetId:
                 maxLength: 255
                 minLength: 1
                 type: string
+                x-kubernetes-validations:
+                - message: subnetId is immutable
+                  rule: self == oldSelf
             type: object
           status:
             description: MySqlDbSystemStatus defines the observed state of MySqlDbSystem

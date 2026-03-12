@@ -66,11 +66,12 @@ func (f *fakeCredentialClient) UpdateSecret(ctx context.Context, name, ns string
 
 // mockStreamAdminClient implements StreamAdminClientInterface for testing.
 type mockStreamAdminClient struct {
-	createStreamFn func(ctx context.Context, req streaming.CreateStreamRequest) (streaming.CreateStreamResponse, error)
-	listStreamsFn  func(ctx context.Context, req streaming.ListStreamsRequest) (streaming.ListStreamsResponse, error)
-	deleteStreamFn func(ctx context.Context, req streaming.DeleteStreamRequest) (streaming.DeleteStreamResponse, error)
-	getStreamFn    func(ctx context.Context, req streaming.GetStreamRequest) (streaming.GetStreamResponse, error)
-	updateStreamFn func(ctx context.Context, req streaming.UpdateStreamRequest) (streaming.UpdateStreamResponse, error)
+	createStreamFn            func(ctx context.Context, req streaming.CreateStreamRequest) (streaming.CreateStreamResponse, error)
+	listStreamsFn             func(ctx context.Context, req streaming.ListStreamsRequest) (streaming.ListStreamsResponse, error)
+	deleteStreamFn            func(ctx context.Context, req streaming.DeleteStreamRequest) (streaming.DeleteStreamResponse, error)
+	getStreamFn               func(ctx context.Context, req streaming.GetStreamRequest) (streaming.GetStreamResponse, error)
+	changeStreamCompartmentFn func(ctx context.Context, req streaming.ChangeStreamCompartmentRequest) (streaming.ChangeStreamCompartmentResponse, error)
+	updateStreamFn            func(ctx context.Context, req streaming.UpdateStreamRequest) (streaming.UpdateStreamResponse, error)
 }
 
 func (m *mockStreamAdminClient) CreateStream(ctx context.Context, req streaming.CreateStreamRequest) (streaming.CreateStreamResponse, error) {
@@ -99,6 +100,13 @@ func (m *mockStreamAdminClient) GetStream(ctx context.Context, req streaming.Get
 		return m.getStreamFn(ctx, req)
 	}
 	return streaming.GetStreamResponse{}, nil
+}
+
+func (m *mockStreamAdminClient) ChangeStreamCompartment(ctx context.Context, req streaming.ChangeStreamCompartmentRequest) (streaming.ChangeStreamCompartmentResponse, error) {
+	if m.changeStreamCompartmentFn != nil {
+		return m.changeStreamCompartmentFn(ctx, req)
+	}
+	return streaming.ChangeStreamCompartmentResponse{}, nil
 }
 
 func (m *mockStreamAdminClient) UpdateStream(ctx context.Context, req streaming.UpdateStreamRequest) (streaming.UpdateStreamResponse, error) {
@@ -200,6 +208,60 @@ func TestDelete_NoOcid(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, done)
 	assert.True(t, credClient.deleteCalled, "DeleteSecret should be called once the stream is deleted")
+}
+
+func TestCreateOrUpdate_StatusOcidUsesTrackedResource(t *testing.T) {
+	streamID := "ocid1.stream.oc1..tracked"
+	var updatedID string
+	mockClient := &mockStreamAdminClient{
+		getStreamFn: func(_ context.Context, _ streaming.GetStreamRequest) (streaming.GetStreamResponse, error) {
+			return streaming.GetStreamResponse{Stream: makeActiveStream(streamID, "tracked-stream")}, nil
+		},
+		updateStreamFn: func(_ context.Context, req streaming.UpdateStreamRequest) (streaming.UpdateStreamResponse, error) {
+			updatedID = *req.StreamId
+			return streaming.UpdateStreamResponse{}, nil
+		},
+	}
+	mgr := makeTestManager(&fakeCredentialClient{}, mockClient)
+	stream := &ociv1beta1.Stream{}
+	stream.Name = "tracked-stream"
+	stream.Namespace = "default"
+	stream.Status.OsokStatus.Ocid = ociv1beta1.OCID(streamID)
+	stream.Spec.Partitions = 1
+	stream.Spec.RetentionInHours = 24
+	stream.Spec.FreeFormTags = map[string]string{"env": "prop"}
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), stream, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.Equal(t, streamID, updatedID)
+}
+
+func TestUpdateStream_SendsCompartmentMove(t *testing.T) {
+	streamID := "ocid1.stream.oc1..move"
+	var moved streaming.ChangeStreamCompartmentRequest
+	mockClient := &mockStreamAdminClient{
+		getStreamFn: func(_ context.Context, _ streaming.GetStreamRequest) (streaming.GetStreamResponse, error) {
+			stream := makeActiveStream(streamID, "stream")
+			stream.CompartmentId = common.String("ocid1.compartment.oc1..old")
+			return streaming.GetStreamResponse{Stream: stream}, nil
+		},
+		changeStreamCompartmentFn: func(_ context.Context, req streaming.ChangeStreamCompartmentRequest) (streaming.ChangeStreamCompartmentResponse, error) {
+			moved = req
+			return streaming.ChangeStreamCompartmentResponse{}, nil
+		},
+	}
+	mgr := makeTestManager(&fakeCredentialClient{}, mockClient)
+	stream := &ociv1beta1.Stream{}
+	stream.Status.OsokStatus.Ocid = ociv1beta1.OCID(streamID)
+	stream.Spec.Partitions = 1
+	stream.Spec.RetentionInHours = 24
+	stream.Spec.CompartmentId = "ocid1.compartment.oc1..new"
+
+	err := mgr.UpdateStream(context.Background(), stream)
+	assert.NoError(t, err)
+	assert.Equal(t, streamID, *moved.StreamId)
+	assert.Equal(t, string(stream.Spec.CompartmentId), *moved.CompartmentId)
 }
 
 // TestDelete_WrongType verifies Delete returns an error for non-Stream objects.

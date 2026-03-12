@@ -8,7 +8,6 @@ package networking
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	ocicore "github.com/oracle/oci-go-sdk/v65/core"
@@ -53,43 +52,34 @@ func (c *OciVcnServiceManager) CreateOrUpdate(ctx context.Context, obj runtime.O
 		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
-	var vcnInstance *ocicore.Vcn
-
-	if strings.TrimSpace(string(vcn.Spec.VcnId)) == "" {
-		// No explicit ID — look up by display name or create.
-		vcnOcid, err := c.GetVcnOcid(ctx, *vcn)
-		if err != nil {
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		if vcnOcid == nil {
-			vcnInstance, err = c.CreateVcn(ctx, *vcn)
-			if err != nil {
-				vcn.Status.OsokStatus = util.UpdateOSOKStatusCondition(vcn.Status.OsokStatus,
-					ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), c.Log)
-				c.Log.ErrorLog(err, "Create OciVcn failed")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		} else {
-			vcnInstance, err = c.GetVcn(ctx, *vcnOcid)
-			if err != nil {
-				c.Log.ErrorLog(err, "Error while getting OciVcn by OCID")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		}
-	} else {
-		// Bind to an existing VCN by ID.
-		vcnInstance, err = c.GetVcn(ctx, vcn.Spec.VcnId)
-		if err != nil {
-			c.Log.ErrorLog(err, "Error while getting existing OciVcn")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		vcn.Status.OsokStatus.Ocid = vcn.Spec.VcnId
-		if err = c.UpdateVcn(ctx, vcn); err != nil {
-			c.Log.ErrorLog(err, "Error while updating OciVcn")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
+	vcnInstance, err := reconcileNetworkingResource(networkingCreateOrUpdateOps[ocicore.Vcn]{
+		SpecID: vcn.Spec.VcnId,
+		Status: &vcn.Status.OsokStatus,
+		Get: func(id ociv1beta1.OCID) (*ocicore.Vcn, error) {
+			return c.GetVcn(ctx, id)
+		},
+		Update: func() error {
+			return c.UpdateVcn(ctx, vcn)
+		},
+		Lookup: func() (*ociv1beta1.OCID, error) {
+			return c.GetVcnOcid(ctx, *vcn)
+		},
+		Create: func() (*ocicore.Vcn, error) {
+			return c.CreateVcn(ctx, *vcn)
+		},
+		OnCreateError: func(err error) {
+			vcn.Status.OsokStatus = util.UpdateOSOKStatusCondition(vcn.Status.OsokStatus,
+				ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), c.Log)
+			c.Log.ErrorLog(err, "Create OciVcn failed")
+		},
+		Log:            c.Log,
+		GetExistingMsg: "Error while getting existing OciVcn",
+		GetStatusMsg:   "Error while getting existing OciVcn from status OCID",
+		GetByOCIDMsg:   "Error while getting OciVcn by OCID",
+		UpdateMsg:      "Error while updating OciVcn",
+	})
+	if err != nil {
+		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
 	return reconcileLifecycleStatus(&vcn.Status.OsokStatus, "OciVcn", safeString(vcnInstance.DisplayName),

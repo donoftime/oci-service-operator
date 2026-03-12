@@ -377,7 +377,13 @@ func (c *DbSystemServiceManager) markDbSystemProvisioning(mysqlDbSystem *ociv1be
 func mySQLFieldUpdates(dbSystem ociv1beta1.MySqlDbSystem, mySqlDbInstance mysql.DbSystem) bool {
 	return mySQLDisplayNameUpdated(dbSystem, mySqlDbInstance) ||
 		mySQLDescriptionUpdated(dbSystem, mySqlDbInstance) ||
-		mySQLConfigurationUpdated(dbSystem, mySqlDbInstance)
+		mySQLConfigurationUpdated(dbSystem, mySqlDbInstance) ||
+		mySQLShapeNameUpdated(dbSystem, mySqlDbInstance) ||
+		mySQLStorageUpdated(dbSystem, mySqlDbInstance) ||
+		mySQLHostnameUpdated(dbSystem, mySqlDbInstance) ||
+		mySQLHighlyAvailableUpdated(dbSystem, mySqlDbInstance) ||
+		mySQLBackupPolicyUpdated(dbSystem, mySqlDbInstance) ||
+		mySQLMaintenanceUpdated(dbSystem, mySqlDbInstance)
 }
 
 func mySQLTagUpdates(dbSystem ociv1beta1.MySqlDbSystem, mySqlDbInstance mysql.DbSystem) bool {
@@ -402,6 +408,44 @@ func mySQLDescriptionUpdated(dbSystem ociv1beta1.MySqlDbSystem, mySqlDbInstance 
 
 func mySQLConfigurationUpdated(dbSystem ociv1beta1.MySqlDbSystem, mySqlDbInstance mysql.DbSystem) bool {
 	return dbSystem.Spec.ConfigurationId.Id != "" && string(dbSystem.Spec.ConfigurationId.Id) != *mySqlDbInstance.ConfigurationId
+}
+
+func mySQLShapeNameUpdated(dbSystem ociv1beta1.MySqlDbSystem, mySqlDbInstance mysql.DbSystem) bool {
+	return dbSystem.Spec.ShapeName != "" && dbSystem.Spec.ShapeName != safeMySQLString(mySqlDbInstance.ShapeName)
+}
+
+func mySQLStorageUpdated(dbSystem ociv1beta1.MySqlDbSystem, mySqlDbInstance mysql.DbSystem) bool {
+	return dbSystem.Spec.DataStorageSizeInGBs != 0 &&
+		mySqlDbInstance.DataStorageSizeInGBs != nil &&
+		dbSystem.Spec.DataStorageSizeInGBs != *mySqlDbInstance.DataStorageSizeInGBs
+}
+
+func mySQLHostnameUpdated(dbSystem ociv1beta1.MySqlDbSystem, mySqlDbInstance mysql.DbSystem) bool {
+	return dbSystem.Spec.HostnameLabel != "" && dbSystem.Spec.HostnameLabel != safeMySQLString(mySqlDbInstance.HostnameLabel)
+}
+
+func mySQLHighlyAvailableUpdated(dbSystem ociv1beta1.MySqlDbSystem, mySqlDbInstance mysql.DbSystem) bool {
+	return mySqlDbInstance.IsHighlyAvailable == nil || dbSystem.Spec.IsHighlyAvailable != *mySqlDbInstance.IsHighlyAvailable
+}
+
+func mySQLBackupPolicyUpdated(dbSystem ociv1beta1.MySqlDbSystem, mySqlDbInstance mysql.DbSystem) bool {
+	if mySqlDbInstance.BackupPolicy == nil {
+		return false
+	}
+	if mySqlDbInstance.BackupPolicy.IsEnabled == nil || dbSystem.Spec.BackupPolicy.IsEnabled != *mySqlDbInstance.BackupPolicy.IsEnabled {
+		return true
+	}
+	if dbSystem.Spec.BackupPolicy.WindowStartTime != "" && dbSystem.Spec.BackupPolicy.WindowStartTime != safeMySQLString(mySqlDbInstance.BackupPolicy.WindowStartTime) {
+		return true
+	}
+	return dbSystem.Spec.BackupPolicy.RetentionInDays != 0 &&
+		(mySqlDbInstance.BackupPolicy.RetentionInDays == nil || dbSystem.Spec.BackupPolicy.RetentionInDays != *mySqlDbInstance.BackupPolicy.RetentionInDays)
+}
+
+func mySQLMaintenanceUpdated(dbSystem ociv1beta1.MySqlDbSystem, mySqlDbInstance mysql.DbSystem) bool {
+	return dbSystem.Spec.Maintenance.WindowStartTime != "" &&
+		mySqlDbInstance.Maintenance != nil &&
+		dbSystem.Spec.Maintenance.WindowStartTime != safeMySQLString(mySqlDbInstance.Maintenance.WindowStartTime)
 }
 
 func (c *DbSystemServiceManager) handleDeleteMySQLWorkRequest(ctx context.Context, workRequestID string) (bool, bool, error) {

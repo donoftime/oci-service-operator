@@ -8,7 +8,6 @@ package opensearch
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"strings"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
@@ -61,19 +60,24 @@ func (c *OpenSearchClusterServiceManager) CreateOrUpdate(ctx context.Context, ob
 }
 
 func isValidUpdate(clusterObj ociv1beta1.OpenSearchCluster, clusterInstance opensearch.OpensearchCluster) bool {
-	definedTagUpdated := false
-	if clusterObj.Spec.DefinedTags != nil {
-		if defTag := *util.ConvertToOciDefinedTags(&clusterObj.Spec.DefinedTags); !reflect.DeepEqual(clusterInstance.DefinedTags, defTag) {
-			definedTagUpdated = true
-		}
+	_, horizontalUpdateNeeded := buildHorizontalResizeDetails(&clusterObj, &clusterInstance)
+	if horizontalUpdateNeeded {
+		return true
 	}
-
-	displayNameUpdated := clusterObj.Spec.DisplayName != "" && clusterInstance.DisplayName != nil &&
-		clusterObj.Spec.DisplayName != *clusterInstance.DisplayName
-
-	return displayNameUpdated ||
-		clusterObj.Spec.FreeFormTags != nil && !reflect.DeepEqual(clusterObj.Spec.FreeFormTags, clusterInstance.FreeformTags) ||
-		definedTagUpdated
+	_, verticalUpdateNeeded := buildVerticalResizeDetails(&clusterObj, &clusterInstance)
+	if verticalUpdateNeeded {
+		return true
+	}
+	displayName := clusterObj.Spec.DisplayName
+	if strings.TrimSpace(displayName) == "" {
+		displayName = safeString(clusterInstance.DisplayName)
+	}
+	_, softwareUpdateNeeded := buildSoftwareOnlyUpdateDetails(&clusterObj, &clusterInstance, displayName)
+	if softwareUpdateNeeded {
+		return true
+	}
+	_, generalUpdateNeeded := buildGeneralUpdateDetails(&clusterObj, &clusterInstance, displayName)
+	return generalUpdateNeeded
 }
 
 func (c *OpenSearchClusterServiceManager) prepareClusterForReconcile(ctx context.Context, clusterObj *ociv1beta1.OpenSearchCluster,

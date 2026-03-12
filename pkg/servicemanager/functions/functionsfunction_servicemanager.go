@@ -178,6 +178,22 @@ func (m *FunctionsFunctionServiceManager) resolveFunctionInstance(ctx context.Co
 	if strings.TrimSpace(string(fn.Spec.FunctionsFunctionId)) != "" {
 		return m.bindFunction(ctx, fn)
 	}
+	if strings.TrimSpace(string(fn.Status.OsokStatus.Ocid)) != "" {
+		fnInstance, err := m.GetFunction(ctx, fn.Status.OsokStatus.Ocid, nil)
+		if err != nil {
+			if !isFunctionsNotFound(err) {
+				m.Log.ErrorLog(err, "Error while getting existing FunctionsFunction from status OCID")
+				return nil, err
+			}
+			fn.Status.OsokStatus.Ocid = ""
+		} else {
+			if err := m.UpdateFunction(ctx, fn); err != nil {
+				m.Log.ErrorLog(err, "Error while updating FunctionsFunction from status OCID")
+				return nil, err
+			}
+			return fnInstance, nil
+		}
+	}
 	return m.lookupOrCreateFunction(ctx, fn)
 }
 
@@ -237,6 +253,10 @@ func (m *FunctionsFunctionServiceManager) loadResolvedFunction(ctx context.Conte
 		return nil, err
 	}
 	fn.Status.OsokStatus.Ocid = ociv1beta1.OCID(*fnInstance.Id)
+	if err := m.UpdateFunction(ctx, fn); err != nil {
+		m.Log.ErrorLog(err, "Error while updating FunctionsFunction by resolved OCID")
+		return nil, err
+	}
 	m.Log.InfoLog(fmt.Sprintf("FunctionsFunction %s is %s", safeFunctionsString(fnInstance.DisplayName), fnInstance.LifecycleState))
 	return fnInstance, nil
 }

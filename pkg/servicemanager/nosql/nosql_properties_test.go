@@ -85,6 +85,32 @@ func TestPropertyBindByIDUsesExplicitSpecID(t *testing.T) {
 	assert.Equal(t, ociv1beta1.OCID(testTableOcid), db.Status.OsokStatus.Ocid)
 }
 
+func TestPropertyStatusIDUsesTrackedResourceForUpdate(t *testing.T) {
+	updateCalled := false
+	mock := &mockNosqlClient{
+		getFn: func(_ context.Context, req nosql.GetTableRequest) (nosql.GetTableResponse, error) {
+			assert.Equal(t, testTableOcid, *req.TableNameOrId)
+			return nosql.GetTableResponse{Table: makeActiveTable(testTableOcid, "my-table")}, nil
+		},
+		updateFn: func(_ context.Context, req nosql.UpdateTableRequest) (nosql.UpdateTableResponse, error) {
+			updateCalled = true
+			assert.Equal(t, testTableOcid, *req.TableNameOrId)
+			return nosql.UpdateTableResponse{}, nil
+		},
+	}
+	mgr := newTestManager(mock)
+
+	db := &ociv1beta1.NoSQLDatabase{}
+	db.Status.OsokStatus.Ocid = ociv1beta1.OCID(testTableOcid)
+	db.Spec.DdlStatement = "ALTER TABLE my-table ADD COLUMN col1 STRING"
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), db, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.True(t, updateCalled)
+	assert.Equal(t, ociv1beta1.OCID(testTableOcid), db.Status.OsokStatus.Ocid)
+}
+
 func TestPropertyDeleteWaitsForNotFound(t *testing.T) {
 	t.Run("existing table returns not done", func(t *testing.T) {
 		deleteCalled := false
@@ -277,6 +303,7 @@ func TestPropertyUpdateSkipsNoSQLNoOpChanges(t *testing.T) {
 		getFn: func(_ context.Context, req nosql.GetTableRequest) (nosql.GetTableResponse, error) {
 			assert.Equal(t, testTableOcid, *req.TableNameOrId)
 			table := makeActiveTable(testTableOcid, "my-table")
+			table.CompartmentId = common.String("ocid1.compartment.oc1..nosql")
 			table.DdlStatement = common.String("CREATE TABLE my-table (id STRING, PRIMARY KEY(id))")
 			table.TableLimits = &nosql.TableLimits{
 				MaxReadUnits:    common.Int(10),
@@ -343,6 +370,33 @@ func TestPropertyUpdateCapturesNoSQLTagDrift(t *testing.T) {
 	db.Spec.DefinedTags = map[string]ociv1beta1.MapValue{
 		"ops": {"env": "prod"},
 	}
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), db, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.True(t, updateCalled)
+}
+
+func TestPropertyUpdateCapturesNoSQLCompartmentDrift(t *testing.T) {
+	updateCalled := false
+	mock := &mockNosqlClient{
+		getFn: func(_ context.Context, req nosql.GetTableRequest) (nosql.GetTableResponse, error) {
+			assert.Equal(t, testTableOcid, *req.TableNameOrId)
+			table := makeActiveTable(testTableOcid, "my-table")
+			table.CompartmentId = common.String("ocid1.compartment.oc1..old")
+			return nosql.GetTableResponse{Table: table}, nil
+		},
+		updateFn: func(_ context.Context, req nosql.UpdateTableRequest) (nosql.UpdateTableResponse, error) {
+			updateCalled = true
+			assert.Equal(t, "ocid1.compartment.oc1..new", *req.CompartmentId)
+			return nosql.UpdateTableResponse{}, nil
+		},
+	}
+	mgr := newTestManager(mock)
+
+	db := &ociv1beta1.NoSQLDatabase{}
+	db.Status.OsokStatus.Ocid = ociv1beta1.OCID(testTableOcid)
+	db.Spec.CompartmentId = "ocid1.compartment.oc1..new"
 
 	resp, err := mgr.CreateOrUpdate(context.Background(), db, ctrl.Request{})
 	assert.NoError(t, err)

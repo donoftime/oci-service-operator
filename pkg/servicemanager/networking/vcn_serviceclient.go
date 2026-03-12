@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sort"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	ocicore "github.com/oracle/oci-go-sdk/v65/core"
@@ -29,58 +30,147 @@ func networkingLookupStateMatches(state string) bool {
 	return state == "AVAILABLE" || state == "PROVISIONING" || state == "UPDATING"
 }
 
+func networkingFreeformTagsChanged(desired map[string]string, existing map[string]string) bool {
+	if desired == nil {
+		return false
+	}
+
+	return !reflect.DeepEqual(existing, desired)
+}
+
+func rejectImmutableNetworkingField(field string) error {
+	return fmt.Errorf("%s cannot be updated in place", field)
+}
+
+func rejectUnsupportedOCIDChange(field string, existing *string, desired ociv1beta1.OCID) error {
+	if desired == "" || existing == nil {
+		return nil
+	}
+	if *existing == string(desired) {
+		return nil
+	}
+	return rejectImmutableNetworkingField(field)
+}
+
+func rejectUnsupportedStringChange(field string, existing *string, desired string) error {
+	if desired == "" || existing == nil {
+		return nil
+	}
+	if *existing == desired {
+		return nil
+	}
+	return rejectImmutableNetworkingField(field)
+}
+
+func rejectUnsupportedBoolChange(field string, existing *bool, desired bool) error {
+	if existing == nil {
+		return nil
+	}
+	if *existing == desired {
+		return nil
+	}
+	return rejectImmutableNetworkingField(field)
+}
+
+func slicesEqualIgnoringOrder(existing []string, desired []string) bool {
+	if len(existing) != len(desired) {
+		return false
+	}
+
+	existingCopy := append([]string(nil), existing...)
+	desiredCopy := append([]string(nil), desired...)
+	sort.Strings(existingCopy)
+	sort.Strings(desiredCopy)
+	return reflect.DeepEqual(existingCopy, desiredCopy)
+}
+
+func buildServiceGatewayServices(serviceIDs []string) []ocicore.ServiceIdRequestDetails {
+	services := make([]ocicore.ServiceIdRequestDetails, len(serviceIDs))
+	for i, serviceID := range serviceIDs {
+		services[i] = ocicore.ServiceIdRequestDetails{ServiceId: common.String(serviceID)}
+	}
+	return services
+}
+
+func serviceGatewayServiceIDs(services []ocicore.ServiceIdResponseDetails) []string {
+	serviceIDs := make([]string, 0, len(services))
+	for _, service := range services {
+		if service.ServiceId != nil {
+			serviceIDs = append(serviceIDs, *service.ServiceId)
+		}
+	}
+	return serviceIDs
+}
+
+func convertNetworkingOCIDsToStrings(ids []ociv1beta1.OCID) []string {
+	result := make([]string, len(ids))
+	for i, id := range ids {
+		result[i] = string(id)
+	}
+	return result
+}
+
 // VirtualNetworkClientInterface defines the OCI operations used by the VCN and Subnet service managers.
 type VirtualNetworkClientInterface interface {
 	CreateVcn(ctx context.Context, request ocicore.CreateVcnRequest) (ocicore.CreateVcnResponse, error)
 	GetVcn(ctx context.Context, request ocicore.GetVcnRequest) (ocicore.GetVcnResponse, error)
 	ListVcns(ctx context.Context, request ocicore.ListVcnsRequest) (ocicore.ListVcnsResponse, error)
+	ChangeVcnCompartment(ctx context.Context, request ocicore.ChangeVcnCompartmentRequest) (ocicore.ChangeVcnCompartmentResponse, error)
 	UpdateVcn(ctx context.Context, request ocicore.UpdateVcnRequest) (ocicore.UpdateVcnResponse, error)
 	DeleteVcn(ctx context.Context, request ocicore.DeleteVcnRequest) (ocicore.DeleteVcnResponse, error)
 	CreateSubnet(ctx context.Context, request ocicore.CreateSubnetRequest) (ocicore.CreateSubnetResponse, error)
 	GetSubnet(ctx context.Context, request ocicore.GetSubnetRequest) (ocicore.GetSubnetResponse, error)
 	ListSubnets(ctx context.Context, request ocicore.ListSubnetsRequest) (ocicore.ListSubnetsResponse, error)
+	ChangeSubnetCompartment(ctx context.Context, request ocicore.ChangeSubnetCompartmentRequest) (ocicore.ChangeSubnetCompartmentResponse, error)
 	UpdateSubnet(ctx context.Context, request ocicore.UpdateSubnetRequest) (ocicore.UpdateSubnetResponse, error)
 	DeleteSubnet(ctx context.Context, request ocicore.DeleteSubnetRequest) (ocicore.DeleteSubnetResponse, error)
 	// Internet Gateway
 	CreateInternetGateway(ctx context.Context, request ocicore.CreateInternetGatewayRequest) (ocicore.CreateInternetGatewayResponse, error)
 	GetInternetGateway(ctx context.Context, request ocicore.GetInternetGatewayRequest) (ocicore.GetInternetGatewayResponse, error)
 	ListInternetGateways(ctx context.Context, request ocicore.ListInternetGatewaysRequest) (ocicore.ListInternetGatewaysResponse, error)
+	ChangeInternetGatewayCompartment(ctx context.Context, request ocicore.ChangeInternetGatewayCompartmentRequest) (ocicore.ChangeInternetGatewayCompartmentResponse, error)
 	UpdateInternetGateway(ctx context.Context, request ocicore.UpdateInternetGatewayRequest) (ocicore.UpdateInternetGatewayResponse, error)
 	DeleteInternetGateway(ctx context.Context, request ocicore.DeleteInternetGatewayRequest) (ocicore.DeleteInternetGatewayResponse, error)
 	// NAT Gateway
 	CreateNatGateway(ctx context.Context, request ocicore.CreateNatGatewayRequest) (ocicore.CreateNatGatewayResponse, error)
 	GetNatGateway(ctx context.Context, request ocicore.GetNatGatewayRequest) (ocicore.GetNatGatewayResponse, error)
 	ListNatGateways(ctx context.Context, request ocicore.ListNatGatewaysRequest) (ocicore.ListNatGatewaysResponse, error)
+	ChangeNatGatewayCompartment(ctx context.Context, request ocicore.ChangeNatGatewayCompartmentRequest) (ocicore.ChangeNatGatewayCompartmentResponse, error)
 	UpdateNatGateway(ctx context.Context, request ocicore.UpdateNatGatewayRequest) (ocicore.UpdateNatGatewayResponse, error)
 	DeleteNatGateway(ctx context.Context, request ocicore.DeleteNatGatewayRequest) (ocicore.DeleteNatGatewayResponse, error)
 	// Service Gateway
 	CreateServiceGateway(ctx context.Context, request ocicore.CreateServiceGatewayRequest) (ocicore.CreateServiceGatewayResponse, error)
 	GetServiceGateway(ctx context.Context, request ocicore.GetServiceGatewayRequest) (ocicore.GetServiceGatewayResponse, error)
 	ListServiceGateways(ctx context.Context, request ocicore.ListServiceGatewaysRequest) (ocicore.ListServiceGatewaysResponse, error)
+	ChangeServiceGatewayCompartment(ctx context.Context, request ocicore.ChangeServiceGatewayCompartmentRequest) (ocicore.ChangeServiceGatewayCompartmentResponse, error)
 	UpdateServiceGateway(ctx context.Context, request ocicore.UpdateServiceGatewayRequest) (ocicore.UpdateServiceGatewayResponse, error)
 	DeleteServiceGateway(ctx context.Context, request ocicore.DeleteServiceGatewayRequest) (ocicore.DeleteServiceGatewayResponse, error)
 	// DRG
 	CreateDrg(ctx context.Context, request ocicore.CreateDrgRequest) (ocicore.CreateDrgResponse, error)
 	GetDrg(ctx context.Context, request ocicore.GetDrgRequest) (ocicore.GetDrgResponse, error)
 	ListDrgs(ctx context.Context, request ocicore.ListDrgsRequest) (ocicore.ListDrgsResponse, error)
+	ChangeDrgCompartment(ctx context.Context, request ocicore.ChangeDrgCompartmentRequest) (ocicore.ChangeDrgCompartmentResponse, error)
 	UpdateDrg(ctx context.Context, request ocicore.UpdateDrgRequest) (ocicore.UpdateDrgResponse, error)
 	DeleteDrg(ctx context.Context, request ocicore.DeleteDrgRequest) (ocicore.DeleteDrgResponse, error)
 	// Security List
 	CreateSecurityList(ctx context.Context, request ocicore.CreateSecurityListRequest) (ocicore.CreateSecurityListResponse, error)
 	GetSecurityList(ctx context.Context, request ocicore.GetSecurityListRequest) (ocicore.GetSecurityListResponse, error)
 	ListSecurityLists(ctx context.Context, request ocicore.ListSecurityListsRequest) (ocicore.ListSecurityListsResponse, error)
+	ChangeSecurityListCompartment(ctx context.Context, request ocicore.ChangeSecurityListCompartmentRequest) (ocicore.ChangeSecurityListCompartmentResponse, error)
 	UpdateSecurityList(ctx context.Context, request ocicore.UpdateSecurityListRequest) (ocicore.UpdateSecurityListResponse, error)
 	DeleteSecurityList(ctx context.Context, request ocicore.DeleteSecurityListRequest) (ocicore.DeleteSecurityListResponse, error)
 	// Network Security Group
 	CreateNetworkSecurityGroup(ctx context.Context, request ocicore.CreateNetworkSecurityGroupRequest) (ocicore.CreateNetworkSecurityGroupResponse, error)
 	GetNetworkSecurityGroup(ctx context.Context, request ocicore.GetNetworkSecurityGroupRequest) (ocicore.GetNetworkSecurityGroupResponse, error)
 	ListNetworkSecurityGroups(ctx context.Context, request ocicore.ListNetworkSecurityGroupsRequest) (ocicore.ListNetworkSecurityGroupsResponse, error)
+	ChangeNetworkSecurityGroupCompartment(ctx context.Context, request ocicore.ChangeNetworkSecurityGroupCompartmentRequest) (ocicore.ChangeNetworkSecurityGroupCompartmentResponse, error)
 	UpdateNetworkSecurityGroup(ctx context.Context, request ocicore.UpdateNetworkSecurityGroupRequest) (ocicore.UpdateNetworkSecurityGroupResponse, error)
 	DeleteNetworkSecurityGroup(ctx context.Context, request ocicore.DeleteNetworkSecurityGroupRequest) (ocicore.DeleteNetworkSecurityGroupResponse, error)
 	// Route Table
 	CreateRouteTable(ctx context.Context, request ocicore.CreateRouteTableRequest) (ocicore.CreateRouteTableResponse, error)
 	GetRouteTable(ctx context.Context, request ocicore.GetRouteTableRequest) (ocicore.GetRouteTableResponse, error)
 	ListRouteTables(ctx context.Context, request ocicore.ListRouteTablesRequest) (ocicore.ListRouteTablesResponse, error)
+	ChangeRouteTableCompartment(ctx context.Context, request ocicore.ChangeRouteTableCompartmentRequest) (ocicore.ChangeRouteTableCompartmentResponse, error)
 	UpdateRouteTable(ctx context.Context, request ocicore.UpdateRouteTableRequest) (ocicore.UpdateRouteTableResponse, error)
 	DeleteRouteTable(ctx context.Context, request ocicore.DeleteRouteTableRequest) (ocicore.DeleteRouteTableResponse, error)
 }
@@ -223,16 +313,42 @@ func (c *OciVcnServiceManager) UpdateVcn(ctx context.Context, vcn *ociv1beta1.Oc
 		return err
 	}
 
-	targetID, err := resolveResourceID(vcn.Status.OsokStatus.Ocid, vcn.Spec.VcnId)
-	if err != nil {
-		return err
-	}
+	return updateSimpleNetworkingResource(networkingUpdateOps[ocicore.Vcn, ocicore.UpdateVcnDetails]{
+		StatusID:             vcn.Status.OsokStatus.Ocid,
+		SpecID:               vcn.Spec.VcnId,
+		DesiredCompartmentID: vcn.Spec.CompartmentId,
+		Get: func(id ociv1beta1.OCID) (*ocicore.Vcn, error) {
+			return c.GetVcn(ctx, id)
+		},
+		ExistingCompartment: func(existing *ocicore.Vcn) *string {
+			return existing.CompartmentId
+		},
+		ValidateUnsupported: func(existing *ocicore.Vcn) error {
+			return validateVcnUnsupportedChanges(vcn, existing)
+		},
+		ChangeCompartment: func(targetID, compartmentID ociv1beta1.OCID) error {
+			_, err := client.ChangeVcnCompartment(ctx, ocicore.ChangeVcnCompartmentRequest{
+				VcnId: common.String(string(targetID)),
+				ChangeVcnCompartmentDetails: ocicore.ChangeVcnCompartmentDetails{
+					CompartmentId: common.String(string(compartmentID)),
+				},
+			})
+			return err
+		},
+		BuildDetails: func(existing *ocicore.Vcn) (ocicore.UpdateVcnDetails, bool) {
+			return buildVcnUpdateDetails(vcn, existing)
+		},
+		Update: func(targetID ociv1beta1.OCID, updateDetails ocicore.UpdateVcnDetails) error {
+			_, err := client.UpdateVcn(ctx, ocicore.UpdateVcnRequest{
+				VcnId:            common.String(string(targetID)),
+				UpdateVcnDetails: updateDetails,
+			})
+			return err
+		},
+	})
+}
 
-	existing, err := c.GetVcn(ctx, targetID)
-	if err != nil {
-		return err
-	}
-
+func buildVcnUpdateDetails(vcn *ociv1beta1.OciVcn, existing *ocicore.Vcn) (ocicore.UpdateVcnDetails, bool) {
 	updateDetails := ocicore.UpdateVcnDetails{}
 	updateNeeded := false
 
@@ -240,7 +356,7 @@ func (c *OciVcnServiceManager) UpdateVcn(ctx context.Context, vcn *ociv1beta1.Oc
 		updateDetails.DisplayName = common.String(vcn.Spec.DisplayName)
 		updateNeeded = true
 	}
-	if len(vcn.Spec.FreeFormTags) > 0 {
+	if networkingFreeformTagsChanged(vcn.Spec.FreeFormTags, existing.FreeformTags) {
 		updateDetails.FreeformTags = vcn.Spec.FreeFormTags
 		updateNeeded = true
 	}
@@ -249,15 +365,14 @@ func (c *OciVcnServiceManager) UpdateVcn(ctx context.Context, vcn *ociv1beta1.Oc
 		updateNeeded = true
 	}
 
-	if !updateNeeded {
-		return nil
-	}
+	return updateDetails, updateNeeded
+}
 
-	_, err = client.UpdateVcn(ctx, ocicore.UpdateVcnRequest{
-		VcnId:            common.String(string(targetID)),
-		UpdateVcnDetails: updateDetails,
-	})
-	return err
+func validateVcnUnsupportedChanges(vcn *ociv1beta1.OciVcn, existing *ocicore.Vcn) error {
+	if err := rejectUnsupportedStringChange("cidrBlock", existing.CidrBlock, vcn.Spec.CidrBlock); err != nil {
+		return err
+	}
+	return rejectUnsupportedStringChange("dnsLabel", existing.DnsLabel, vcn.Spec.DnsLabel)
 }
 
 // DeleteVcn deletes the VCN for the given OCID.
@@ -375,41 +490,127 @@ func (c *OciSubnetServiceManager) UpdateSubnet(ctx context.Context, subnet *ociv
 		return err
 	}
 
-	targetID, err := resolveResourceID(subnet.Status.OsokStatus.Ocid, subnet.Spec.SubnetId)
-	if err != nil {
-		return err
-	}
-
-	existing, err := c.GetSubnet(ctx, targetID)
-	if err != nil {
-		return err
-	}
-
-	updateDetails := ocicore.UpdateSubnetDetails{}
-	updateNeeded := false
-
-	if subnet.Spec.DisplayName != "" && (existing.DisplayName == nil || *existing.DisplayName != subnet.Spec.DisplayName) {
-		updateDetails.DisplayName = common.String(subnet.Spec.DisplayName)
-		updateNeeded = true
-	}
-	if len(subnet.Spec.FreeFormTags) > 0 {
-		updateDetails.FreeformTags = subnet.Spec.FreeFormTags
-		updateNeeded = true
-	}
-	if desiredTags, changed := networkingDefinedTagsChanged(subnet.Spec.DefinedTags, existing.DefinedTags); changed {
-		updateDetails.DefinedTags = desiredTags
-		updateNeeded = true
-	}
-
-	if !updateNeeded {
-		return nil
-	}
-
-	_, err = client.UpdateSubnet(ctx, ocicore.UpdateSubnetRequest{
-		SubnetId:            common.String(string(targetID)),
-		UpdateSubnetDetails: updateDetails,
+	return updateSimpleNetworkingResource(networkingUpdateOps[ocicore.Subnet, ocicore.UpdateSubnetDetails]{
+		StatusID:             subnet.Status.OsokStatus.Ocid,
+		SpecID:               subnet.Spec.SubnetId,
+		DesiredCompartmentID: subnet.Spec.CompartmentId,
+		Get: func(id ociv1beta1.OCID) (*ocicore.Subnet, error) {
+			return c.GetSubnet(ctx, id)
+		},
+		ExistingCompartment: func(existing *ocicore.Subnet) *string {
+			return existing.CompartmentId
+		},
+		ValidateUnsupported: func(existing *ocicore.Subnet) error {
+			return validateSubnetUnsupportedChanges(subnet, existing)
+		},
+		ChangeCompartment: func(targetID, compartmentID ociv1beta1.OCID) error {
+			_, err := client.ChangeSubnetCompartment(ctx, ocicore.ChangeSubnetCompartmentRequest{
+				SubnetId: common.String(string(targetID)),
+				ChangeSubnetCompartmentDetails: ocicore.ChangeSubnetCompartmentDetails{
+					CompartmentId: common.String(string(compartmentID)),
+				},
+			})
+			return err
+		},
+		BuildDetails: func(existing *ocicore.Subnet) (ocicore.UpdateSubnetDetails, bool) {
+			return buildSubnetUpdateDetails(subnet, existing)
+		},
+		Update: func(targetID ociv1beta1.OCID, updateDetails ocicore.UpdateSubnetDetails) error {
+			_, err := client.UpdateSubnet(ctx, ocicore.UpdateSubnetRequest{
+				SubnetId:            common.String(string(targetID)),
+				UpdateSubnetDetails: updateDetails,
+			})
+			return err
+		},
 	})
-	return err
+}
+
+func buildSubnetUpdateDetails(subnet *ociv1beta1.OciSubnet, existing *ocicore.Subnet) (ocicore.UpdateSubnetDetails, bool) {
+	updateDetails := ocicore.UpdateSubnetDetails{}
+	updateNeeded := applySubnetDisplayNameUpdate(&updateDetails, subnet, existing)
+	if applySubnetFreeformTagUpdate(&updateDetails, subnet, existing) {
+		updateNeeded = true
+	}
+	if applySubnetDefinedTagUpdate(&updateDetails, subnet, existing) {
+		updateNeeded = true
+	}
+	if applySubnetCIDRUpdate(&updateDetails, subnet, existing) {
+		updateNeeded = true
+	}
+	if applySubnetRouteTableUpdate(&updateDetails, subnet, existing) {
+		updateNeeded = true
+	}
+	if applySubnetSecurityListsUpdate(&updateDetails, subnet, existing) {
+		updateNeeded = true
+	}
+
+	return updateDetails, updateNeeded
+}
+
+func applySubnetDisplayNameUpdate(updateDetails *ocicore.UpdateSubnetDetails, subnet *ociv1beta1.OciSubnet, existing *ocicore.Subnet) bool {
+	if subnet.Spec.DisplayName == "" || (existing.DisplayName != nil && *existing.DisplayName == subnet.Spec.DisplayName) {
+		return false
+	}
+	updateDetails.DisplayName = common.String(subnet.Spec.DisplayName)
+	return true
+}
+
+func applySubnetFreeformTagUpdate(updateDetails *ocicore.UpdateSubnetDetails, subnet *ociv1beta1.OciSubnet, existing *ocicore.Subnet) bool {
+	if !networkingFreeformTagsChanged(subnet.Spec.FreeFormTags, existing.FreeformTags) {
+		return false
+	}
+	updateDetails.FreeformTags = subnet.Spec.FreeFormTags
+	return true
+}
+
+func applySubnetDefinedTagUpdate(updateDetails *ocicore.UpdateSubnetDetails, subnet *ociv1beta1.OciSubnet, existing *ocicore.Subnet) bool {
+	desiredTags, changed := networkingDefinedTagsChanged(subnet.Spec.DefinedTags, existing.DefinedTags)
+	if !changed {
+		return false
+	}
+	updateDetails.DefinedTags = desiredTags
+	return true
+}
+
+func applySubnetCIDRUpdate(updateDetails *ocicore.UpdateSubnetDetails, subnet *ociv1beta1.OciSubnet, existing *ocicore.Subnet) bool {
+	if subnet.Spec.CidrBlock == "" || (existing.CidrBlock != nil && *existing.CidrBlock == subnet.Spec.CidrBlock) {
+		return false
+	}
+	updateDetails.CidrBlock = common.String(subnet.Spec.CidrBlock)
+	return true
+}
+
+func applySubnetRouteTableUpdate(updateDetails *ocicore.UpdateSubnetDetails, subnet *ociv1beta1.OciSubnet, existing *ocicore.Subnet) bool {
+	if subnet.Spec.RouteTableId == "" || (existing.RouteTableId != nil && *existing.RouteTableId == string(subnet.Spec.RouteTableId)) {
+		return false
+	}
+	updateDetails.RouteTableId = common.String(string(subnet.Spec.RouteTableId))
+	return true
+}
+
+func applySubnetSecurityListsUpdate(updateDetails *ocicore.UpdateSubnetDetails, subnet *ociv1beta1.OciSubnet, existing *ocicore.Subnet) bool {
+	if len(subnet.Spec.SecurityListIds) == 0 {
+		return false
+	}
+	desiredSecurityLists := convertNetworkingOCIDsToStrings(subnet.Spec.SecurityListIds)
+	if slicesEqualIgnoringOrder(existing.SecurityListIds, desiredSecurityLists) {
+		return false
+	}
+	updateDetails.SecurityListIds = desiredSecurityLists
+	return true
+}
+
+func validateSubnetUnsupportedChanges(subnet *ociv1beta1.OciSubnet, existing *ocicore.Subnet) error {
+	if err := rejectUnsupportedStringChange("availabilityDomain", existing.AvailabilityDomain, subnet.Spec.AvailabilityDomain); err != nil {
+		return err
+	}
+	if err := rejectUnsupportedStringChange("dnsLabel", existing.DnsLabel, subnet.Spec.DnsLabel); err != nil {
+		return err
+	}
+	if err := rejectUnsupportedBoolChange("prohibitPublicIpOnVnic", existing.ProhibitPublicIpOnVnic, subnet.Spec.ProhibitPublicIpOnVnic); err != nil {
+		return err
+	}
+	return rejectUnsupportedOCIDChange("vcnId", existing.VcnId, subnet.Spec.VcnId)
 }
 
 // DeleteSubnet deletes the Subnet for the given OCID.
@@ -511,16 +712,42 @@ func (c *OciInternetGatewayServiceManager) UpdateInternetGateway(ctx context.Con
 		return err
 	}
 
-	targetID, err := resolveResourceID(igw.Status.OsokStatus.Ocid, igw.Spec.InternetGatewayId)
-	if err != nil {
-		return err
-	}
+	return updateSimpleNetworkingResource(networkingUpdateOps[ocicore.InternetGateway, ocicore.UpdateInternetGatewayDetails]{
+		StatusID:             igw.Status.OsokStatus.Ocid,
+		SpecID:               igw.Spec.InternetGatewayId,
+		DesiredCompartmentID: igw.Spec.CompartmentId,
+		Get: func(id ociv1beta1.OCID) (*ocicore.InternetGateway, error) {
+			return c.GetInternetGateway(ctx, id)
+		},
+		ExistingCompartment: func(existing *ocicore.InternetGateway) *string {
+			return existing.CompartmentId
+		},
+		ValidateUnsupported: func(existing *ocicore.InternetGateway) error {
+			return rejectUnsupportedOCIDChange("vcnId", existing.VcnId, igw.Spec.VcnId)
+		},
+		ChangeCompartment: func(targetID, compartmentID ociv1beta1.OCID) error {
+			_, err := client.ChangeInternetGatewayCompartment(ctx, ocicore.ChangeInternetGatewayCompartmentRequest{
+				IgId: common.String(string(targetID)),
+				ChangeInternetGatewayCompartmentDetails: ocicore.ChangeInternetGatewayCompartmentDetails{
+					CompartmentId: common.String(string(compartmentID)),
+				},
+			})
+			return err
+		},
+		BuildDetails: func(existing *ocicore.InternetGateway) (ocicore.UpdateInternetGatewayDetails, bool) {
+			return buildInternetGatewayUpdateDetails(igw, existing)
+		},
+		Update: func(targetID ociv1beta1.OCID, updateDetails ocicore.UpdateInternetGatewayDetails) error {
+			_, err := client.UpdateInternetGateway(ctx, ocicore.UpdateInternetGatewayRequest{
+				IgId:                         common.String(string(targetID)),
+				UpdateInternetGatewayDetails: updateDetails,
+			})
+			return err
+		},
+	})
+}
 
-	existing, err := c.GetInternetGateway(ctx, targetID)
-	if err != nil {
-		return err
-	}
-
+func buildInternetGatewayUpdateDetails(igw *ociv1beta1.OciInternetGateway, existing *ocicore.InternetGateway) (ocicore.UpdateInternetGatewayDetails, bool) {
 	updateDetails := ocicore.UpdateInternetGatewayDetails{}
 	updateNeeded := false
 
@@ -528,7 +755,7 @@ func (c *OciInternetGatewayServiceManager) UpdateInternetGateway(ctx context.Con
 		updateDetails.DisplayName = common.String(igw.Spec.DisplayName)
 		updateNeeded = true
 	}
-	if len(igw.Spec.FreeFormTags) > 0 {
+	if networkingFreeformTagsChanged(igw.Spec.FreeFormTags, existing.FreeformTags) {
 		updateDetails.FreeformTags = igw.Spec.FreeFormTags
 		updateNeeded = true
 	}
@@ -537,15 +764,7 @@ func (c *OciInternetGatewayServiceManager) UpdateInternetGateway(ctx context.Con
 		updateNeeded = true
 	}
 
-	if !updateNeeded {
-		return nil
-	}
-
-	_, err = client.UpdateInternetGateway(ctx, ocicore.UpdateInternetGatewayRequest{
-		IgId:                         common.String(string(targetID)),
-		UpdateInternetGatewayDetails: updateDetails,
-	})
-	return err
+	return updateDetails, updateNeeded
 }
 
 // DeleteInternetGateway deletes the Internet Gateway for the given OCID.
@@ -648,16 +867,42 @@ func (c *OciNatGatewayServiceManager) UpdateNatGateway(ctx context.Context, nat 
 		return err
 	}
 
-	targetID, err := resolveResourceID(nat.Status.OsokStatus.Ocid, nat.Spec.NatGatewayId)
-	if err != nil {
-		return err
-	}
+	return updateSimpleNetworkingResource(networkingUpdateOps[ocicore.NatGateway, ocicore.UpdateNatGatewayDetails]{
+		StatusID:             nat.Status.OsokStatus.Ocid,
+		SpecID:               nat.Spec.NatGatewayId,
+		DesiredCompartmentID: nat.Spec.CompartmentId,
+		Get: func(id ociv1beta1.OCID) (*ocicore.NatGateway, error) {
+			return c.GetNatGateway(ctx, id)
+		},
+		ExistingCompartment: func(existing *ocicore.NatGateway) *string {
+			return existing.CompartmentId
+		},
+		ValidateUnsupported: func(existing *ocicore.NatGateway) error {
+			return rejectUnsupportedOCIDChange("vcnId", existing.VcnId, nat.Spec.VcnId)
+		},
+		ChangeCompartment: func(targetID, compartmentID ociv1beta1.OCID) error {
+			_, err := client.ChangeNatGatewayCompartment(ctx, ocicore.ChangeNatGatewayCompartmentRequest{
+				NatGatewayId: common.String(string(targetID)),
+				ChangeNatGatewayCompartmentDetails: ocicore.ChangeNatGatewayCompartmentDetails{
+					CompartmentId: common.String(string(compartmentID)),
+				},
+			})
+			return err
+		},
+		BuildDetails: func(existing *ocicore.NatGateway) (ocicore.UpdateNatGatewayDetails, bool) {
+			return buildNatGatewayUpdateDetails(nat, existing)
+		},
+		Update: func(targetID ociv1beta1.OCID, updateDetails ocicore.UpdateNatGatewayDetails) error {
+			_, err := client.UpdateNatGateway(ctx, ocicore.UpdateNatGatewayRequest{
+				NatGatewayId:            common.String(string(targetID)),
+				UpdateNatGatewayDetails: updateDetails,
+			})
+			return err
+		},
+	})
+}
 
-	existing, err := c.GetNatGateway(ctx, targetID)
-	if err != nil {
-		return err
-	}
-
+func buildNatGatewayUpdateDetails(nat *ociv1beta1.OciNatGateway, existing *ocicore.NatGateway) (ocicore.UpdateNatGatewayDetails, bool) {
 	updateDetails := ocicore.UpdateNatGatewayDetails{}
 	updateNeeded := false
 
@@ -665,7 +910,7 @@ func (c *OciNatGatewayServiceManager) UpdateNatGateway(ctx context.Context, nat 
 		updateDetails.DisplayName = common.String(nat.Spec.DisplayName)
 		updateNeeded = true
 	}
-	if len(nat.Spec.FreeFormTags) > 0 {
+	if networkingFreeformTagsChanged(nat.Spec.FreeFormTags, existing.FreeformTags) {
 		updateDetails.FreeformTags = nat.Spec.FreeFormTags
 		updateNeeded = true
 	}
@@ -673,16 +918,12 @@ func (c *OciNatGatewayServiceManager) UpdateNatGateway(ctx context.Context, nat 
 		updateDetails.DefinedTags = desiredTags
 		updateNeeded = true
 	}
-
-	if !updateNeeded {
-		return nil
+	if existing.BlockTraffic != nil && *existing.BlockTraffic != nat.Spec.BlockTraffic {
+		updateDetails.BlockTraffic = common.Bool(nat.Spec.BlockTraffic)
+		updateNeeded = true
 	}
 
-	_, err = client.UpdateNatGateway(ctx, ocicore.UpdateNatGatewayRequest{
-		NatGatewayId:            common.String(string(targetID)),
-		UpdateNatGatewayDetails: updateDetails,
-	})
-	return err
+	return updateDetails, updateNeeded
 }
 
 // DeleteNatGateway deletes the NAT Gateway for the given OCID.
@@ -707,16 +948,11 @@ func (c *OciServiceGatewayServiceManager) CreateServiceGateway(ctx context.Conte
 
 	c.Log.DebugLog("Creating OciServiceGateway", "name", sgw.Spec.DisplayName)
 
-	services := make([]ocicore.ServiceIdRequestDetails, len(sgw.Spec.Services))
-	for i, svcId := range sgw.Spec.Services {
-		services[i] = ocicore.ServiceIdRequestDetails{ServiceId: common.String(svcId)}
-	}
-
 	details := ocicore.CreateServiceGatewayDetails{
 		CompartmentId: common.String(string(sgw.Spec.CompartmentId)),
 		VcnId:         common.String(string(sgw.Spec.VcnId)),
 		DisplayName:   common.String(sgw.Spec.DisplayName),
-		Services:      services,
+		Services:      buildServiceGatewayServices(sgw.Spec.Services),
 		FreeformTags:  sgw.Spec.FreeFormTags,
 	}
 	if sgw.Spec.DefinedTags != nil {
@@ -788,16 +1024,42 @@ func (c *OciServiceGatewayServiceManager) UpdateServiceGateway(ctx context.Conte
 		return err
 	}
 
-	targetID, err := resolveResourceID(sgw.Status.OsokStatus.Ocid, sgw.Spec.ServiceGatewayId)
-	if err != nil {
-		return err
-	}
+	return updateSimpleNetworkingResource(networkingUpdateOps[ocicore.ServiceGateway, ocicore.UpdateServiceGatewayDetails]{
+		StatusID:             sgw.Status.OsokStatus.Ocid,
+		SpecID:               sgw.Spec.ServiceGatewayId,
+		DesiredCompartmentID: sgw.Spec.CompartmentId,
+		Get: func(id ociv1beta1.OCID) (*ocicore.ServiceGateway, error) {
+			return c.GetServiceGateway(ctx, id)
+		},
+		ExistingCompartment: func(existing *ocicore.ServiceGateway) *string {
+			return existing.CompartmentId
+		},
+		ValidateUnsupported: func(existing *ocicore.ServiceGateway) error {
+			return rejectUnsupportedOCIDChange("vcnId", existing.VcnId, sgw.Spec.VcnId)
+		},
+		ChangeCompartment: func(targetID, compartmentID ociv1beta1.OCID) error {
+			_, err := client.ChangeServiceGatewayCompartment(ctx, ocicore.ChangeServiceGatewayCompartmentRequest{
+				ServiceGatewayId: common.String(string(targetID)),
+				ChangeServiceGatewayCompartmentDetails: ocicore.ChangeServiceGatewayCompartmentDetails{
+					CompartmentId: common.String(string(compartmentID)),
+				},
+			})
+			return err
+		},
+		BuildDetails: func(existing *ocicore.ServiceGateway) (ocicore.UpdateServiceGatewayDetails, bool) {
+			return buildServiceGatewayUpdateDetails(sgw, existing)
+		},
+		Update: func(targetID ociv1beta1.OCID, updateDetails ocicore.UpdateServiceGatewayDetails) error {
+			_, err := client.UpdateServiceGateway(ctx, ocicore.UpdateServiceGatewayRequest{
+				ServiceGatewayId:            common.String(string(targetID)),
+				UpdateServiceGatewayDetails: updateDetails,
+			})
+			return err
+		},
+	})
+}
 
-	existing, err := c.GetServiceGateway(ctx, targetID)
-	if err != nil {
-		return err
-	}
-
+func buildServiceGatewayUpdateDetails(sgw *ociv1beta1.OciServiceGateway, existing *ocicore.ServiceGateway) (ocicore.UpdateServiceGatewayDetails, bool) {
 	updateDetails := ocicore.UpdateServiceGatewayDetails{}
 	updateNeeded := false
 
@@ -805,7 +1067,7 @@ func (c *OciServiceGatewayServiceManager) UpdateServiceGateway(ctx context.Conte
 		updateDetails.DisplayName = common.String(sgw.Spec.DisplayName)
 		updateNeeded = true
 	}
-	if len(sgw.Spec.FreeFormTags) > 0 {
+	if networkingFreeformTagsChanged(sgw.Spec.FreeFormTags, existing.FreeformTags) {
 		updateDetails.FreeformTags = sgw.Spec.FreeFormTags
 		updateNeeded = true
 	}
@@ -813,16 +1075,12 @@ func (c *OciServiceGatewayServiceManager) UpdateServiceGateway(ctx context.Conte
 		updateDetails.DefinedTags = desiredTags
 		updateNeeded = true
 	}
-
-	if !updateNeeded {
-		return nil
+	if len(sgw.Spec.Services) > 0 && !slicesEqualIgnoringOrder(serviceGatewayServiceIDs(existing.Services), sgw.Spec.Services) {
+		updateDetails.Services = buildServiceGatewayServices(sgw.Spec.Services)
+		updateNeeded = true
 	}
 
-	_, err = client.UpdateServiceGateway(ctx, ocicore.UpdateServiceGatewayRequest{
-		ServiceGatewayId:            common.String(string(targetID)),
-		UpdateServiceGatewayDetails: updateDetails,
-	})
-	return err
+	return updateDetails, updateNeeded
 }
 
 // DeleteServiceGateway deletes the Service Gateway for the given OCID.
@@ -920,16 +1178,39 @@ func (c *OciDrgServiceManager) UpdateDrg(ctx context.Context, drg *ociv1beta1.Oc
 		return err
 	}
 
-	targetID, err := resolveResourceID(drg.Status.OsokStatus.Ocid, drg.Spec.DrgId)
-	if err != nil {
-		return err
-	}
+	return updateSimpleNetworkingResource(networkingUpdateOps[ocicore.Drg, ocicore.UpdateDrgDetails]{
+		StatusID:             drg.Status.OsokStatus.Ocid,
+		SpecID:               drg.Spec.DrgId,
+		DesiredCompartmentID: drg.Spec.CompartmentId,
+		Get: func(id ociv1beta1.OCID) (*ocicore.Drg, error) {
+			return c.GetDrg(ctx, id)
+		},
+		ExistingCompartment: func(existing *ocicore.Drg) *string {
+			return existing.CompartmentId
+		},
+		ChangeCompartment: func(targetID, compartmentID ociv1beta1.OCID) error {
+			_, err := client.ChangeDrgCompartment(ctx, ocicore.ChangeDrgCompartmentRequest{
+				DrgId: common.String(string(targetID)),
+				ChangeDrgCompartmentDetails: ocicore.ChangeDrgCompartmentDetails{
+					CompartmentId: common.String(string(compartmentID)),
+				},
+			})
+			return err
+		},
+		BuildDetails: func(existing *ocicore.Drg) (ocicore.UpdateDrgDetails, bool) {
+			return buildDrgUpdateDetails(drg, existing)
+		},
+		Update: func(targetID ociv1beta1.OCID, updateDetails ocicore.UpdateDrgDetails) error {
+			_, err := client.UpdateDrg(ctx, ocicore.UpdateDrgRequest{
+				DrgId:            common.String(string(targetID)),
+				UpdateDrgDetails: updateDetails,
+			})
+			return err
+		},
+	})
+}
 
-	existing, err := c.GetDrg(ctx, targetID)
-	if err != nil {
-		return err
-	}
-
+func buildDrgUpdateDetails(drg *ociv1beta1.OciDrg, existing *ocicore.Drg) (ocicore.UpdateDrgDetails, bool) {
 	updateDetails := ocicore.UpdateDrgDetails{}
 	updateNeeded := false
 
@@ -937,7 +1218,7 @@ func (c *OciDrgServiceManager) UpdateDrg(ctx context.Context, drg *ociv1beta1.Oc
 		updateDetails.DisplayName = common.String(drg.Spec.DisplayName)
 		updateNeeded = true
 	}
-	if len(drg.Spec.FreeFormTags) > 0 {
+	if networkingFreeformTagsChanged(drg.Spec.FreeFormTags, existing.FreeformTags) {
 		updateDetails.FreeformTags = drg.Spec.FreeFormTags
 		updateNeeded = true
 	}
@@ -946,15 +1227,7 @@ func (c *OciDrgServiceManager) UpdateDrg(ctx context.Context, drg *ociv1beta1.Oc
 		updateNeeded = true
 	}
 
-	if !updateNeeded {
-		return nil
-	}
-
-	_, err = client.UpdateDrg(ctx, ocicore.UpdateDrgRequest{
-		DrgId:            common.String(string(targetID)),
-		UpdateDrgDetails: updateDetails,
-	})
-	return err
+	return updateDetails, updateNeeded
 }
 
 // DeleteDrg deletes the DRG for the given OCID.
@@ -1157,6 +1430,27 @@ func (c *OciSecurityListServiceManager) UpdateSecurityList(ctx context.Context, 
 		return err
 	}
 
+	existing, err := c.GetSecurityList(ctx, targetID)
+	if err != nil {
+		return err
+	}
+
+	if err := rejectUnsupportedOCIDChange("vcnId", existing.VcnId, sl.Spec.VcnId); err != nil {
+		return err
+	}
+
+	if err := changeCompartmentIfNeeded(existing.CompartmentId, sl.Spec.CompartmentId, func(compartmentID ociv1beta1.OCID) error {
+		_, err := client.ChangeSecurityListCompartment(ctx, ocicore.ChangeSecurityListCompartmentRequest{
+			SecurityListId: common.String(string(targetID)),
+			ChangeSecurityListCompartmentDetails: ocicore.ChangeSecurityListCompartmentDetails{
+				CompartmentId: common.String(string(compartmentID)),
+			},
+		})
+		return err
+	}); err != nil {
+		return err
+	}
+
 	updateDetails := ocicore.UpdateSecurityListDetails{}
 
 	if sl.Spec.DisplayName != "" {
@@ -1276,16 +1570,42 @@ func (c *OciNetworkSecurityGroupServiceManager) UpdateNetworkSecurityGroup(ctx c
 		return err
 	}
 
-	targetID, err := resolveResourceID(nsg.Status.OsokStatus.Ocid, nsg.Spec.NetworkSecurityGroupId)
-	if err != nil {
-		return err
-	}
+	return updateSimpleNetworkingResource(networkingUpdateOps[ocicore.NetworkSecurityGroup, ocicore.UpdateNetworkSecurityGroupDetails]{
+		StatusID:             nsg.Status.OsokStatus.Ocid,
+		SpecID:               nsg.Spec.NetworkSecurityGroupId,
+		DesiredCompartmentID: nsg.Spec.CompartmentId,
+		Get: func(id ociv1beta1.OCID) (*ocicore.NetworkSecurityGroup, error) {
+			return c.GetNetworkSecurityGroup(ctx, id)
+		},
+		ExistingCompartment: func(existing *ocicore.NetworkSecurityGroup) *string {
+			return existing.CompartmentId
+		},
+		ValidateUnsupported: func(existing *ocicore.NetworkSecurityGroup) error {
+			return rejectUnsupportedOCIDChange("vcnId", existing.VcnId, nsg.Spec.VcnId)
+		},
+		ChangeCompartment: func(targetID, compartmentID ociv1beta1.OCID) error {
+			_, err := client.ChangeNetworkSecurityGroupCompartment(ctx, ocicore.ChangeNetworkSecurityGroupCompartmentRequest{
+				NetworkSecurityGroupId: common.String(string(targetID)),
+				ChangeNetworkSecurityGroupCompartmentDetails: ocicore.ChangeNetworkSecurityGroupCompartmentDetails{
+					CompartmentId: common.String(string(compartmentID)),
+				},
+			})
+			return err
+		},
+		BuildDetails: func(existing *ocicore.NetworkSecurityGroup) (ocicore.UpdateNetworkSecurityGroupDetails, bool) {
+			return buildNetworkSecurityGroupUpdateDetails(nsg, existing)
+		},
+		Update: func(targetID ociv1beta1.OCID, updateDetails ocicore.UpdateNetworkSecurityGroupDetails) error {
+			_, err := client.UpdateNetworkSecurityGroup(ctx, ocicore.UpdateNetworkSecurityGroupRequest{
+				NetworkSecurityGroupId:            common.String(string(targetID)),
+				UpdateNetworkSecurityGroupDetails: updateDetails,
+			})
+			return err
+		},
+	})
+}
 
-	existing, err := c.GetNetworkSecurityGroup(ctx, targetID)
-	if err != nil {
-		return err
-	}
-
+func buildNetworkSecurityGroupUpdateDetails(nsg *ociv1beta1.OciNetworkSecurityGroup, existing *ocicore.NetworkSecurityGroup) (ocicore.UpdateNetworkSecurityGroupDetails, bool) {
 	updateDetails := ocicore.UpdateNetworkSecurityGroupDetails{}
 	updateNeeded := false
 
@@ -1293,7 +1613,7 @@ func (c *OciNetworkSecurityGroupServiceManager) UpdateNetworkSecurityGroup(ctx c
 		updateDetails.DisplayName = common.String(nsg.Spec.DisplayName)
 		updateNeeded = true
 	}
-	if len(nsg.Spec.FreeFormTags) > 0 {
+	if networkingFreeformTagsChanged(nsg.Spec.FreeFormTags, existing.FreeformTags) {
 		updateDetails.FreeformTags = nsg.Spec.FreeFormTags
 		updateNeeded = true
 	}
@@ -1302,15 +1622,7 @@ func (c *OciNetworkSecurityGroupServiceManager) UpdateNetworkSecurityGroup(ctx c
 		updateNeeded = true
 	}
 
-	if !updateNeeded {
-		return nil
-	}
-
-	_, err = client.UpdateNetworkSecurityGroup(ctx, ocicore.UpdateNetworkSecurityGroupRequest{
-		NetworkSecurityGroupId:            common.String(string(targetID)),
-		UpdateNetworkSecurityGroupDetails: updateDetails,
-	})
-	return err
+	return updateDetails, updateNeeded
 }
 
 // DeleteNetworkSecurityGroup deletes the NSG for the given OCID.
@@ -1433,6 +1745,27 @@ func (c *OciRouteTableServiceManager) UpdateRouteTable(ctx context.Context, rt *
 
 	targetID, err := resolveResourceID(rt.Status.OsokStatus.Ocid, rt.Spec.RouteTableId)
 	if err != nil {
+		return err
+	}
+
+	existing, err := c.GetRouteTable(ctx, targetID)
+	if err != nil {
+		return err
+	}
+
+	if err := rejectUnsupportedOCIDChange("vcnId", existing.VcnId, rt.Spec.VcnId); err != nil {
+		return err
+	}
+
+	if err := changeCompartmentIfNeeded(existing.CompartmentId, rt.Spec.CompartmentId, func(compartmentID ociv1beta1.OCID) error {
+		_, err := client.ChangeRouteTableCompartment(ctx, ocicore.ChangeRouteTableCompartmentRequest{
+			RtId: common.String(string(targetID)),
+			ChangeRouteTableCompartmentDetails: ocicore.ChangeRouteTableCompartmentDetails{
+				CompartmentId: common.String(string(compartmentID)),
+			},
+		})
+		return err
+	}); err != nil {
 		return err
 	}
 

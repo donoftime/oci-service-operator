@@ -379,6 +379,37 @@ func TestCreateOrUpdate_Update(t *testing.T) {
 	assert.True(t, updateCalled, "UpdateBucket should have been called")
 }
 
+func TestCreateOrUpdate_UpdateSendsCompartmentMove(t *testing.T) {
+	var updatedReq ociobjectstorage.UpdateBucketRequest
+	fake := &fakeObjectStorageClient{
+		getBucketFn: func(_ context.Context, _ ociobjectstorage.GetBucketRequest) (ociobjectstorage.GetBucketResponse, error) {
+			return ociobjectstorage.GetBucketResponse{
+				Bucket: ociobjectstorage.Bucket{
+					Name:          common.String("mybucket"),
+					CompartmentId: common.String("ocid1.compartment.oc1..old"),
+				},
+			}, nil
+		},
+		updateBucketFn: func(_ context.Context, req ociobjectstorage.UpdateBucketRequest) (ociobjectstorage.UpdateBucketResponse, error) {
+			updatedReq = req
+			return ociobjectstorage.UpdateBucketResponse{}, nil
+		},
+	}
+	mgr := mgrWithFake(&fakeCredentialClient{}, fake)
+
+	b := &ociv1beta1.ObjectStorageBucket{}
+	b.Name = "my-bucket-cr"
+	b.Namespace = "default"
+	b.Spec.CompartmentId = "ocid1.compartment.oc1..new"
+	b.Status.OsokStatus.Ocid = "mynamespace/mybucket"
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), b, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.NotNil(t, updatedReq.CompartmentId)
+	assert.Equal(t, string(b.Spec.CompartmentId), *updatedReq.CompartmentId)
+}
+
 // ---------------------------------------------------------------------------
 // TestCreateOrUpdate — secret already exists
 // ---------------------------------------------------------------------------

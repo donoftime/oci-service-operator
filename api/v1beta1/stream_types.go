@@ -15,13 +15,16 @@ import (
 type StreamSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
-	StreamId      OCID   `json:"Id,omitempty"`
-	CompartmentId OCID   `json:"compartmentId,omitempty"`
-	Name          string `json:"name,omitempty"`
+	StreamId      OCID `json:"Id,omitempty"`
+	CompartmentId OCID `json:"compartmentId,omitempty"`
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="name is immutable"
+	Name string `json:"name,omitempty"`
 	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="partitions is immutable"
 	Partitions int `json:"partitions,omitempty"`
 	// +kubebuilder:validation:Maximum=168
 	// +kubebuilder:validation:Minimum=24
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="retentionInHours is immutable"
 	RetentionInHours int  `json:"retentionInHours,omitempty"`
 	StreamPoolId     OCID `json:"streamPoolId,omitempty"`
 	TagResources     `json:",inline"`

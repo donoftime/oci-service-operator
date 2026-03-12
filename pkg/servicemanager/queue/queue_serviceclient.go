@@ -13,6 +13,7 @@ import (
 	"github.com/oracle/oci-go-sdk/v65/common"
 	ociqueue "github.com/oracle/oci-go-sdk/v65/queue"
 	ociv1beta1 "github.com/oracle/oci-service-operator/api/v1beta1"
+	"github.com/oracle/oci-service-operator/pkg/servicemanager"
 	"github.com/oracle/oci-service-operator/pkg/util"
 )
 
@@ -21,6 +22,7 @@ type QueueAdminClientInterface interface {
 	CreateQueue(ctx context.Context, request ociqueue.CreateQueueRequest) (ociqueue.CreateQueueResponse, error)
 	GetQueue(ctx context.Context, request ociqueue.GetQueueRequest) (ociqueue.GetQueueResponse, error)
 	ListQueues(ctx context.Context, request ociqueue.ListQueuesRequest) (ociqueue.ListQueuesResponse, error)
+	ChangeQueueCompartment(ctx context.Context, request ociqueue.ChangeQueueCompartmentRequest) (ociqueue.ChangeQueueCompartmentResponse, error)
 	UpdateQueue(ctx context.Context, request ociqueue.UpdateQueueRequest) (ociqueue.UpdateQueueResponse, error)
 	DeleteQueue(ctx context.Context, request ociqueue.DeleteQueueRequest) (ociqueue.DeleteQueueResponse, error)
 }
@@ -142,30 +144,81 @@ func (c *OciQueueServiceManager) UpdateQueue(ctx context.Context, q *ociv1beta1.
 		return err
 	}
 
-	existing, err := c.GetQueue(ctx, q.Status.OsokStatus.Ocid)
+	targetID, err := servicemanager.ResolveResourceID(q.Status.OsokStatus.Ocid, q.Spec.QueueId)
 	if err != nil {
 		return err
 	}
 
+	existing, err := c.GetQueue(ctx, targetID)
+	if err != nil {
+		return err
+	}
+	if err := validateImmutableQueueUpdate(q, existing); err != nil {
+		return err
+	}
+
+	if err := c.changeQueueCompartmentIfNeeded(ctx, client, targetID, q, existing); err != nil {
+		return err
+	}
+
+	req, updateNeeded := buildQueueUpdateRequest(targetID, q, existing)
+	if !updateNeeded {
+		return nil
+	}
+
+	_, err = client.UpdateQueue(ctx, req)
+	return err
+}
+
+func (c *OciQueueServiceManager) changeQueueCompartmentIfNeeded(ctx context.Context,
+	client QueueAdminClientInterface, targetID ociv1beta1.OCID, q *ociv1beta1.OciQueue, existing *ociqueue.Queue) error {
+	if q.Spec.CompartmentId == "" {
+		return nil
+	}
+	if existing.CompartmentId != nil && *existing.CompartmentId == string(q.Spec.CompartmentId) {
+		return nil
+	}
+
+	_, err := client.ChangeQueueCompartment(ctx, ociqueue.ChangeQueueCompartmentRequest{
+		QueueId: common.String(string(targetID)),
+		ChangeQueueCompartmentDetails: ociqueue.ChangeQueueCompartmentDetails{
+			CompartmentId: common.String(string(q.Spec.CompartmentId)),
+		},
+	})
+	return err
+}
+
+func validateImmutableQueueUpdate(q *ociv1beta1.OciQueue, existing *ociqueue.Queue) error {
+	if q.Spec.RetentionInSeconds <= 0 {
+		return nil
+	}
+	if existing.RetentionInSeconds != nil && *existing.RetentionInSeconds == q.Spec.RetentionInSeconds {
+		return nil
+	}
+
+	currentRetention := "unset"
+	if existing.RetentionInSeconds != nil {
+		currentRetention = fmt.Sprintf("%d", *existing.RetentionInSeconds)
+	}
+
+	return fmt.Errorf("retentionInSeconds cannot be updated in place (desired=%d, current=%s)", q.Spec.RetentionInSeconds, currentRetention)
+}
+
+func buildQueueUpdateRequest(targetID ociv1beta1.OCID, q *ociv1beta1.OciQueue,
+	existing *ociqueue.Queue) (ociqueue.UpdateQueueRequest, bool) {
 	updateDetails := ociqueue.UpdateQueueDetails{}
 	updateNeeded := applyQueueDisplayNameUpdate(&updateDetails, q, existing)
 	updateNeeded = applyQueueVisibilityUpdate(&updateDetails, q, existing) || updateNeeded
 	updateNeeded = applyQueueTimeoutUpdate(&updateDetails, q, existing) || updateNeeded
 	updateNeeded = applyQueueDeadLetterCountUpdate(&updateDetails, q, existing) || updateNeeded
+	updateNeeded = applyQueueCustomEncryptionKeyUpdate(&updateDetails, q, existing) || updateNeeded
 	updateNeeded = applyQueueFreeformTagsUpdate(&updateDetails, q, existing) || updateNeeded
 	updateNeeded = applyQueueDefinedTagsUpdate(&updateDetails, q, existing) || updateNeeded
 
-	if !updateNeeded {
-		return nil
-	}
-
-	req := ociqueue.UpdateQueueRequest{
-		QueueId:            common.String(string(q.Status.OsokStatus.Ocid)),
+	return ociqueue.UpdateQueueRequest{
+		QueueId:            common.String(string(targetID)),
 		UpdateQueueDetails: updateDetails,
-	}
-
-	_, err = client.UpdateQueue(ctx, req)
-	return err
+	}, updateNeeded
 }
 
 func applyQueueDisplayNameUpdate(updateDetails *ociqueue.UpdateQueueDetails, q *ociv1beta1.OciQueue, existing *ociqueue.Queue) bool {
@@ -202,6 +255,19 @@ func applyQueueDeadLetterCountUpdate(updateDetails *ociqueue.UpdateQueueDetails,
 	}
 
 	updateDetails.DeadLetterQueueDeliveryCount = common.Int(q.Spec.DeadLetterQueueDeliveryCount)
+	return true
+}
+
+func applyQueueCustomEncryptionKeyUpdate(updateDetails *ociqueue.UpdateQueueDetails, q *ociv1beta1.OciQueue, existing *ociqueue.Queue) bool {
+	desiredKey := string(q.Spec.CustomEncryptionKeyId)
+	if desiredKey == "" {
+		return false
+	}
+	if existing.CustomEncryptionKeyId != nil && *existing.CustomEncryptionKeyId == desiredKey {
+		return false
+	}
+
+	updateDetails.CustomEncryptionKeyId = common.String(desiredKey)
 	return true
 }
 

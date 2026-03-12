@@ -22,6 +22,7 @@ type ComputeInstanceClientInterface interface {
 	LaunchInstance(ctx context.Context, request core.LaunchInstanceRequest) (core.LaunchInstanceResponse, error)
 	GetInstance(ctx context.Context, request core.GetInstanceRequest) (core.GetInstanceResponse, error)
 	ListInstances(ctx context.Context, request core.ListInstancesRequest) (core.ListInstancesResponse, error)
+	ChangeInstanceCompartment(ctx context.Context, request core.ChangeInstanceCompartmentRequest) (core.ChangeInstanceCompartmentResponse, error)
 	UpdateInstance(ctx context.Context, request core.UpdateInstanceRequest) (core.UpdateInstanceResponse, error)
 	TerminateInstance(ctx context.Context, request core.TerminateInstanceRequest) (core.TerminateInstanceResponse, error)
 }
@@ -156,6 +157,23 @@ func (c *ComputeInstanceServiceManager) UpdateInstance(ctx context.Context, ci *
 		return err
 	}
 
+	if err := validateComputeUnsupportedChanges(ci, existing); err != nil {
+		return err
+	}
+
+	if ci.Spec.CompartmentId != "" &&
+		(existing.CompartmentId == nil || *existing.CompartmentId != string(ci.Spec.CompartmentId)) {
+		_, err = client.ChangeInstanceCompartment(ctx, core.ChangeInstanceCompartmentRequest{
+			InstanceId: common.String(string(targetID)),
+			ChangeInstanceCompartmentDetails: core.ChangeInstanceCompartmentDetails{
+				CompartmentId: common.String(string(ci.Spec.CompartmentId)),
+			},
+		})
+		if err != nil {
+			return err
+		}
+	}
+
 	updateDetails, updateNeeded := buildUpdateInstanceDetails(ci, existing)
 	if !updateNeeded {
 		return nil
@@ -172,25 +190,111 @@ func (c *ComputeInstanceServiceManager) UpdateInstance(ctx context.Context, ci *
 
 func buildUpdateInstanceDetails(ci *ociv1beta1.ComputeInstance, existing *core.Instance) (core.UpdateInstanceDetails, bool) {
 	updateDetails := core.UpdateInstanceDetails{}
-	updateNeeded := false
-
-	if ci.Spec.DisplayName != nil && (existing.DisplayName == nil || *existing.DisplayName != *ci.Spec.DisplayName) {
-		updateDetails.DisplayName = ci.Spec.DisplayName
+	updateNeeded := applyComputeDisplayNameUpdate(&updateDetails, ci, existing)
+	if applyComputeShapeUpdate(&updateDetails, ci, existing) {
 		updateNeeded = true
 	}
-	if ci.Spec.FreeFormTags != nil && !reflect.DeepEqual(existing.FreeformTags, ci.Spec.FreeFormTags) {
-		updateDetails.FreeformTags = ci.Spec.FreeFormTags
+	if applyComputeShapeConfigUpdate(&updateDetails, ci, existing) {
 		updateNeeded = true
 	}
-	if ci.Spec.DefinedTags != nil {
-		desiredDefinedTags := *util.ConvertToOciDefinedTags(&ci.Spec.DefinedTags)
-		if !reflect.DeepEqual(existing.DefinedTags, desiredDefinedTags) {
-			updateDetails.DefinedTags = desiredDefinedTags
-			updateNeeded = true
-		}
+	if applyComputeFreeformTagUpdate(&updateDetails, ci, existing) {
+		updateNeeded = true
+	}
+	if applyComputeDefinedTagUpdate(&updateDetails, ci, existing) {
+		updateNeeded = true
 	}
 
 	return updateDetails, updateNeeded
+}
+
+func applyComputeDisplayNameUpdate(updateDetails *core.UpdateInstanceDetails, ci *ociv1beta1.ComputeInstance, existing *core.Instance) bool {
+	if ci.Spec.DisplayName == nil || (existing.DisplayName != nil && *existing.DisplayName == *ci.Spec.DisplayName) {
+		return false
+	}
+	updateDetails.DisplayName = ci.Spec.DisplayName
+	return true
+}
+
+func applyComputeShapeUpdate(updateDetails *core.UpdateInstanceDetails, ci *ociv1beta1.ComputeInstance, existing *core.Instance) bool {
+	if ci.Spec.Shape == "" || safeString(existing.Shape) == ci.Spec.Shape {
+		return false
+	}
+	updateDetails.Shape = common.String(ci.Spec.Shape)
+	return true
+}
+
+func applyComputeShapeConfigUpdate(updateDetails *core.UpdateInstanceDetails, ci *ociv1beta1.ComputeInstance, existing *core.Instance) bool {
+	if ci.Spec.ShapeConfig == nil || !shapeConfigDiffers(ci.Spec.ShapeConfig, existing.ShapeConfig) {
+		return false
+	}
+	updateDetails.ShapeConfig = &core.UpdateInstanceShapeConfigDetails{
+		Ocpus:       common.Float32(ci.Spec.ShapeConfig.Ocpus),
+		MemoryInGBs: common.Float32(ci.Spec.ShapeConfig.MemoryInGBs),
+	}
+	return true
+}
+
+func applyComputeFreeformTagUpdate(updateDetails *core.UpdateInstanceDetails, ci *ociv1beta1.ComputeInstance, existing *core.Instance) bool {
+	if ci.Spec.FreeFormTags == nil || reflect.DeepEqual(existing.FreeformTags, ci.Spec.FreeFormTags) {
+		return false
+	}
+	updateDetails.FreeformTags = ci.Spec.FreeFormTags
+	return true
+}
+
+func applyComputeDefinedTagUpdate(updateDetails *core.UpdateInstanceDetails, ci *ociv1beta1.ComputeInstance, existing *core.Instance) bool {
+	if ci.Spec.DefinedTags == nil {
+		return false
+	}
+	desiredDefinedTags := *util.ConvertToOciDefinedTags(&ci.Spec.DefinedTags)
+	if reflect.DeepEqual(existing.DefinedTags, desiredDefinedTags) {
+		return false
+	}
+	updateDetails.DefinedTags = desiredDefinedTags
+	return true
+}
+
+func validateComputeUnsupportedChanges(ci *ociv1beta1.ComputeInstance, existing *core.Instance) error {
+	if ci.Spec.AvailabilityDomain != "" &&
+		existing.AvailabilityDomain != nil &&
+		*existing.AvailabilityDomain != ci.Spec.AvailabilityDomain {
+		return fmt.Errorf("availabilityDomain cannot be updated in place")
+	}
+	if ci.Spec.ImageId != "" && currentComputeImageID(existing) != string(ci.Spec.ImageId) {
+		return fmt.Errorf("imageId cannot be updated in place")
+	}
+	return nil
+}
+
+func currentComputeImageID(existing *core.Instance) string {
+	if imageID := safeString(existing.ImageId); imageID != "" {
+		return imageID
+	}
+
+	switch details := existing.SourceDetails.(type) {
+	case core.InstanceSourceViaImageDetails:
+		return safeString(details.ImageId)
+	case *core.InstanceSourceViaImageDetails:
+		return safeString(details.ImageId)
+	default:
+		return ""
+	}
+}
+
+func shapeConfigDiffers(desired *ociv1beta1.ComputeInstanceShapeConfig, existing *core.InstanceShapeConfig) bool {
+	if desired == nil {
+		return false
+	}
+	if existing == nil {
+		return true
+	}
+	if existing.Ocpus == nil || *existing.Ocpus != desired.Ocpus {
+		return true
+	}
+	if existing.MemoryInGBs == nil || *existing.MemoryInGBs != desired.MemoryInGBs {
+		return true
+	}
+	return false
 }
 
 // TerminateInstance terminates the compute instance for the given OCID.

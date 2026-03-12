@@ -21,14 +21,15 @@ import (
 
 // fakeComputeClient implements ComputeInstanceClientInterface for testing.
 type fakeComputeClient struct {
-	launchFn        func(ctx context.Context, req core.LaunchInstanceRequest) (core.LaunchInstanceResponse, error)
-	getFn           func(ctx context.Context, req core.GetInstanceRequest) (core.GetInstanceResponse, error)
-	listFn          func(ctx context.Context, req core.ListInstancesRequest) (core.ListInstancesResponse, error)
-	updateFn        func(ctx context.Context, req core.UpdateInstanceRequest) (core.UpdateInstanceResponse, error)
-	terminateFn     func(ctx context.Context, req core.TerminateInstanceRequest) (core.TerminateInstanceResponse, error)
-	launchCalled    bool
-	terminateCalled bool
-	terminateOcid   string
+	launchFn            func(ctx context.Context, req core.LaunchInstanceRequest) (core.LaunchInstanceResponse, error)
+	getFn               func(ctx context.Context, req core.GetInstanceRequest) (core.GetInstanceResponse, error)
+	listFn              func(ctx context.Context, req core.ListInstancesRequest) (core.ListInstancesResponse, error)
+	changeCompartmentFn func(ctx context.Context, req core.ChangeInstanceCompartmentRequest) (core.ChangeInstanceCompartmentResponse, error)
+	updateFn            func(ctx context.Context, req core.UpdateInstanceRequest) (core.UpdateInstanceResponse, error)
+	terminateFn         func(ctx context.Context, req core.TerminateInstanceRequest) (core.TerminateInstanceResponse, error)
+	launchCalled        bool
+	terminateCalled     bool
+	terminateOcid       string
 }
 
 func (f *fakeComputeClient) LaunchInstance(ctx context.Context, req core.LaunchInstanceRequest) (core.LaunchInstanceResponse, error) {
@@ -58,6 +59,7 @@ func (f *fakeComputeClient) GetInstance(ctx context.Context, req core.GetInstanc
 		Instance: core.Instance{
 			Id:             common.String(id),
 			DisplayName:    common.String("test-instance"),
+			ImageId:        common.String("ocid1.image.oc1..xxx"),
 			LifecycleState: core.InstanceLifecycleStateRunning,
 		},
 	}, nil
@@ -68,6 +70,13 @@ func (f *fakeComputeClient) ListInstances(ctx context.Context, req core.ListInst
 		return f.listFn(ctx, req)
 	}
 	return core.ListInstancesResponse{Items: []core.Instance{}}, nil
+}
+
+func (f *fakeComputeClient) ChangeInstanceCompartment(ctx context.Context, req core.ChangeInstanceCompartmentRequest) (core.ChangeInstanceCompartmentResponse, error) {
+	if f.changeCompartmentFn != nil {
+		return f.changeCompartmentFn(ctx, req)
+	}
+	return core.ChangeInstanceCompartmentResponse{}, nil
 }
 
 func (f *fakeComputeClient) UpdateInstance(ctx context.Context, req core.UpdateInstanceRequest) (core.UpdateInstanceResponse, error) {
@@ -127,6 +136,7 @@ func TestCreateOrUpdate_CreatesNewInstance(t *testing.T) {
 				Instance: core.Instance{
 					Id:             common.String(launchedId),
 					DisplayName:    common.String("test-instance"),
+					ImageId:        common.String("ocid1.image.oc1..xxx"),
 					LifecycleState: core.InstanceLifecycleStateRunning,
 				},
 			}, nil
@@ -153,6 +163,7 @@ func TestCreateOrUpdate_InstanceRunning(t *testing.T) {
 					{
 						Id:             common.String(existingOcid),
 						DisplayName:    common.String("test-instance"),
+						ImageId:        common.String("ocid1.image.oc1..xxx"),
 						LifecycleState: core.InstanceLifecycleStateRunning,
 					},
 				},
@@ -163,6 +174,7 @@ func TestCreateOrUpdate_InstanceRunning(t *testing.T) {
 				Instance: core.Instance{
 					Id:             common.String(existingOcid),
 					DisplayName:    common.String("test-instance"),
+					ImageId:        common.String("ocid1.image.oc1..xxx"),
 					LifecycleState: core.InstanceLifecycleStateRunning,
 				},
 			}, nil
@@ -188,6 +200,7 @@ func TestCreateOrUpdate_BindsById(t *testing.T) {
 				Instance: core.Instance{
 					Id:             common.String(existingOcid),
 					DisplayName:    common.String("test-instance"),
+					ImageId:        common.String("ocid1.image.oc1..xxx"),
 					LifecycleState: core.InstanceLifecycleStateRunning,
 				},
 			}, nil
@@ -202,6 +215,37 @@ func TestCreateOrUpdate_BindsById(t *testing.T) {
 	assert.True(t, resp.IsSuccessful)
 	assert.False(t, ociClient.launchCalled, "LaunchInstance should not be called when ComputeInstanceId is set")
 	assert.Equal(t, ociv1beta1.OCID(existingOcid), ci.Status.OsokStatus.Ocid)
+}
+
+func TestCreateOrUpdate_StatusOcidUsesUpdatePath(t *testing.T) {
+	existingOcid := "ocid1.instance.oc1..tracked"
+	var updatedID string
+	ociClient := &fakeComputeClient{
+		getFn: func(_ context.Context, req core.GetInstanceRequest) (core.GetInstanceResponse, error) {
+			return core.GetInstanceResponse{
+				Instance: core.Instance{
+					Id:             req.InstanceId,
+					DisplayName:    common.String("old-instance"),
+					CompartmentId:  common.String("ocid1.compartment.oc1..xxx"),
+					ImageId:        common.String("ocid1.image.oc1..xxx"),
+					LifecycleState: core.InstanceLifecycleStateRunning,
+				},
+			}, nil
+		},
+		updateFn: func(_ context.Context, req core.UpdateInstanceRequest) (core.UpdateInstanceResponse, error) {
+			updatedID = *req.InstanceId
+			return core.UpdateInstanceResponse{}, nil
+		},
+	}
+	mgr := newTestManager(ociClient)
+	ci := makeComputeInstanceSpec("new-instance")
+	ci.Status.OsokStatus.Ocid = ociv1beta1.OCID(existingOcid)
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), ci, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.Equal(t, existingOcid, updatedID)
+	assert.False(t, ociClient.launchCalled)
 }
 
 // TestCreateOrUpdate_InstanceFailed verifies that a TERMINATED instance causes
@@ -228,6 +272,37 @@ func TestCreateOrUpdate_InstanceFailed(t *testing.T) {
 	resp, err := mgr.CreateOrUpdate(context.Background(), ci, ctrl.Request{})
 	assert.NoError(t, err)
 	assert.False(t, resp.IsSuccessful, "should be unsuccessful when instance is TERMINATED")
+}
+
+func TestUpdateInstance_SendsCompartmentMove(t *testing.T) {
+	existingOcid := "ocid1.instance.oc1..move"
+	var moved core.ChangeInstanceCompartmentRequest
+	ociClient := &fakeComputeClient{
+		getFn: func(_ context.Context, req core.GetInstanceRequest) (core.GetInstanceResponse, error) {
+			return core.GetInstanceResponse{
+				Instance: core.Instance{
+					Id:             req.InstanceId,
+					DisplayName:    common.String("test-instance"),
+					CompartmentId:  common.String("ocid1.compartment.oc1..old"),
+					ImageId:        common.String("ocid1.image.oc1..xxx"),
+					LifecycleState: core.InstanceLifecycleStateRunning,
+				},
+			}, nil
+		},
+		changeCompartmentFn: func(_ context.Context, req core.ChangeInstanceCompartmentRequest) (core.ChangeInstanceCompartmentResponse, error) {
+			moved = req
+			return core.ChangeInstanceCompartmentResponse{}, nil
+		},
+	}
+	mgr := newTestManager(ociClient)
+	ci := makeComputeInstanceSpec("test-instance")
+	ci.Status.OsokStatus.Ocid = ociv1beta1.OCID(existingOcid)
+	ci.Spec.CompartmentId = "ocid1.compartment.oc1..new"
+
+	err := mgr.UpdateInstance(context.Background(), ci)
+	assert.NoError(t, err)
+	assert.Equal(t, existingOcid, *moved.InstanceId)
+	assert.Equal(t, string(ci.Spec.CompartmentId), *moved.CompartmentId)
 }
 
 // TestDelete_CallsTerminate verifies that Delete calls TerminateInstance with the correct OCID.

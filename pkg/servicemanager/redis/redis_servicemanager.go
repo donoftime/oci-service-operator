@@ -90,6 +90,22 @@ func (c *RedisClusterServiceManager) resolveClusterForReconcile(ctx context.Cont
 
 func (c *RedisClusterServiceManager) resolveManagedCluster(ctx context.Context,
 	cluster *ociv1beta1.RedisCluster) (*redis.RedisCluster, servicemanager.OSOKResponse, bool, error) {
+	if strings.TrimSpace(string(cluster.Status.OsokStatus.Ocid)) != "" {
+		clusterInstance, err := c.GetRedisCluster(ctx, cluster.Status.OsokStatus.Ocid, nil)
+		if err != nil {
+			if !isNotFoundServiceError(err) {
+				return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
+			}
+			cluster.Status.OsokStatus.Ocid = ""
+		} else {
+			if err = c.UpdateRedisCluster(ctx, cluster); err != nil {
+				c.Log.ErrorLog(err, "Error while updating RedisCluster")
+				return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
+			}
+			return clusterInstance, servicemanager.OSOKResponse{}, false, nil
+		}
+	}
+
 	clusterOcid, err := c.GetRedisClusterOcid(ctx, *cluster)
 	if err != nil {
 		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
@@ -102,6 +118,12 @@ func (c *RedisClusterServiceManager) resolveManagedCluster(ctx context.Context,
 	clusterInstance, err := c.GetRedisCluster(ctx, *clusterOcid, nil)
 	if err != nil {
 		c.Log.ErrorLog(err, "Error while getting RedisCluster by OCID")
+		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
+	}
+
+	cluster.Status.OsokStatus.Ocid = *clusterOcid
+	if err = c.UpdateRedisCluster(ctx, cluster); err != nil {
+		c.Log.ErrorLog(err, "Error while updating RedisCluster")
 		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
 	}
 

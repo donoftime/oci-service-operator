@@ -294,6 +294,11 @@ func buildUpdateTableDetails(db *ociv1beta1.NoSQLDatabase, existingTable *nosql.
 	updateDetails := nosql.UpdateTableDetails{}
 	updateNeeded := false
 
+	if compartmentChanged(db.Spec.CompartmentId, existingTable.CompartmentId) {
+		updateDetails.CompartmentId = common.String(string(db.Spec.CompartmentId))
+		updateNeeded = true
+	}
+
 	if ddlStatementChanged(db.Spec.DdlStatement, existingTable.DdlStatement) {
 		updateDetails.DdlStatement = common.String(db.Spec.DdlStatement)
 		updateNeeded = true
@@ -323,6 +328,10 @@ func buildUpdateTableDetails(db *ociv1beta1.NoSQLDatabase, existingTable *nosql.
 
 func ddlStatementChanged(desired string, existing *string) bool {
 	return desired != "" && desired != safeString(existing)
+}
+
+func compartmentChanged(desired ociv1beta1.OCID, existing *string) bool {
+	return desired != "" && desired != ociv1beta1.OCID(safeString(existing))
 }
 
 func tableLimitsChanged(desired *ociv1beta1.NoSQLDatabaseTableLimits, existing *nosql.TableLimits) bool {

@@ -61,14 +61,15 @@ func (f *fakeCredentialClient) UpdateSecret(ctx context.Context, name, ns string
 
 // fakeOciClient implements ContainerInstanceClientInterface for testing.
 type fakeOciClient struct {
-	createFn      func(ctx context.Context, req ocicontainerinstances.CreateContainerInstanceRequest) (ocicontainerinstances.CreateContainerInstanceResponse, error)
-	getFn         func(ctx context.Context, req ocicontainerinstances.GetContainerInstanceRequest) (ocicontainerinstances.GetContainerInstanceResponse, error)
-	listFn        func(ctx context.Context, req ocicontainerinstances.ListContainerInstancesRequest) (ocicontainerinstances.ListContainerInstancesResponse, error)
-	updateFn      func(ctx context.Context, req ocicontainerinstances.UpdateContainerInstanceRequest) (ocicontainerinstances.UpdateContainerInstanceResponse, error)
-	deleteFn      func(ctx context.Context, req ocicontainerinstances.DeleteContainerInstanceRequest) (ocicontainerinstances.DeleteContainerInstanceResponse, error)
-	createCalled  bool
-	deleteCalled  bool
-	createRequest *ocicontainerinstances.CreateContainerInstanceRequest
+	createFn            func(ctx context.Context, req ocicontainerinstances.CreateContainerInstanceRequest) (ocicontainerinstances.CreateContainerInstanceResponse, error)
+	getFn               func(ctx context.Context, req ocicontainerinstances.GetContainerInstanceRequest) (ocicontainerinstances.GetContainerInstanceResponse, error)
+	listFn              func(ctx context.Context, req ocicontainerinstances.ListContainerInstancesRequest) (ocicontainerinstances.ListContainerInstancesResponse, error)
+	changeCompartmentFn func(ctx context.Context, req ocicontainerinstances.ChangeContainerInstanceCompartmentRequest) (ocicontainerinstances.ChangeContainerInstanceCompartmentResponse, error)
+	updateFn            func(ctx context.Context, req ocicontainerinstances.UpdateContainerInstanceRequest) (ocicontainerinstances.UpdateContainerInstanceResponse, error)
+	deleteFn            func(ctx context.Context, req ocicontainerinstances.DeleteContainerInstanceRequest) (ocicontainerinstances.DeleteContainerInstanceResponse, error)
+	createCalled        bool
+	deleteCalled        bool
+	createRequest       *ocicontainerinstances.CreateContainerInstanceRequest
 }
 
 func (f *fakeOciClient) CreateContainerInstance(ctx context.Context, req ocicontainerinstances.CreateContainerInstanceRequest) (ocicontainerinstances.CreateContainerInstanceResponse, error) {
@@ -110,6 +111,13 @@ func (f *fakeOciClient) ListContainerInstances(ctx context.Context, req ociconta
 			Items: []ocicontainerinstances.ContainerInstanceSummary{},
 		},
 	}, nil
+}
+
+func (f *fakeOciClient) ChangeContainerInstanceCompartment(ctx context.Context, req ocicontainerinstances.ChangeContainerInstanceCompartmentRequest) (ocicontainerinstances.ChangeContainerInstanceCompartmentResponse, error) {
+	if f.changeCompartmentFn != nil {
+		return f.changeCompartmentFn(ctx, req)
+	}
+	return ocicontainerinstances.ChangeContainerInstanceCompartmentResponse{}, nil
 }
 
 func (f *fakeOciClient) UpdateContainerInstance(ctx context.Context, req ocicontainerinstances.UpdateContainerInstanceRequest) (ocicontainerinstances.UpdateContainerInstanceResponse, error) {

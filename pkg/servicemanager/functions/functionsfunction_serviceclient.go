@@ -8,10 +8,12 @@ package functions
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	ocifunctions "github.com/oracle/oci-go-sdk/v65/functions"
 	ociv1beta1 "github.com/oracle/oci-service-operator/api/v1beta1"
+	"github.com/oracle/oci-service-operator/pkg/servicemanager"
 	"github.com/oracle/oci-service-operator/pkg/util"
 )
 
@@ -118,37 +120,116 @@ func (m *FunctionsFunctionServiceManager) UpdateFunction(ctx context.Context, fn
 		return err
 	}
 
-	updateDetails := ocifunctions.UpdateFunctionDetails{}
-	updateNeeded := false
-
-	if fn.Spec.Image != "" {
-		updateDetails.Image = common.String(fn.Spec.Image)
-		updateNeeded = true
-	}
-	if fn.Spec.MemoryInMBs > 0 {
-		updateDetails.MemoryInMBs = common.Int64(fn.Spec.MemoryInMBs)
-		updateNeeded = true
-	}
-	if fn.Spec.TimeoutInSeconds > 0 {
-		updateDetails.TimeoutInSeconds = common.Int(fn.Spec.TimeoutInSeconds)
-		updateNeeded = true
-	}
-	if len(fn.Spec.Config) > 0 {
-		updateDetails.Config = fn.Spec.Config
-		updateNeeded = true
+	targetID, err := servicemanager.ResolveResourceID(fn.Status.OsokStatus.Ocid, fn.Spec.FunctionsFunctionId)
+	if err != nil {
+		return err
 	}
 
+	existing, err := m.GetFunction(ctx, targetID, nil)
+	if err != nil {
+		return err
+	}
+
+	if err := validateFunctionUnsupportedChanges(fn, existing); err != nil {
+		return err
+	}
+
+	updateDetails, updateNeeded := buildFunctionUpdateDetails(fn, existing)
 	if !updateNeeded {
 		return nil
 	}
 
 	req := ocifunctions.UpdateFunctionRequest{
-		FunctionId:            common.String(string(fn.Status.OsokStatus.Ocid)),
+		FunctionId:            common.String(string(targetID)),
 		UpdateFunctionDetails: updateDetails,
 	}
 
 	_, err = client.UpdateFunction(ctx, req)
 	return err
+}
+
+func buildFunctionUpdateDetails(fn *ociv1beta1.FunctionsFunction, existing *ocifunctions.Function) (ocifunctions.UpdateFunctionDetails, bool) {
+	updateDetails := ocifunctions.UpdateFunctionDetails{}
+	updateNeeded := applyFunctionImageUpdate(&updateDetails, fn, existing)
+	if applyFunctionMemoryUpdate(&updateDetails, fn, existing) {
+		updateNeeded = true
+	}
+	if applyFunctionTimeoutUpdate(&updateDetails, fn, existing) {
+		updateNeeded = true
+	}
+	if applyFunctionConfigUpdate(&updateDetails, fn, existing) {
+		updateNeeded = true
+	}
+	if applyFunctionFreeformTagUpdate(&updateDetails, fn, existing) {
+		updateNeeded = true
+	}
+	if applyFunctionDefinedTagUpdate(&updateDetails, fn, existing) {
+		updateNeeded = true
+	}
+
+	return updateDetails, updateNeeded
+}
+
+func applyFunctionImageUpdate(updateDetails *ocifunctions.UpdateFunctionDetails, fn *ociv1beta1.FunctionsFunction, existing *ocifunctions.Function) bool {
+	if fn.Spec.Image == "" || safeFunctionsString(existing.Image) == fn.Spec.Image {
+		return false
+	}
+	updateDetails.Image = common.String(fn.Spec.Image)
+	return true
+}
+
+func applyFunctionMemoryUpdate(updateDetails *ocifunctions.UpdateFunctionDetails, fn *ociv1beta1.FunctionsFunction, existing *ocifunctions.Function) bool {
+	if fn.Spec.MemoryInMBs <= 0 || (existing.MemoryInMBs != nil && *existing.MemoryInMBs == fn.Spec.MemoryInMBs) {
+		return false
+	}
+	updateDetails.MemoryInMBs = common.Int64(fn.Spec.MemoryInMBs)
+	return true
+}
+
+func applyFunctionTimeoutUpdate(updateDetails *ocifunctions.UpdateFunctionDetails, fn *ociv1beta1.FunctionsFunction, existing *ocifunctions.Function) bool {
+	if fn.Spec.TimeoutInSeconds <= 0 || (existing.TimeoutInSeconds != nil && *existing.TimeoutInSeconds == fn.Spec.TimeoutInSeconds) {
+		return false
+	}
+	updateDetails.TimeoutInSeconds = common.Int(fn.Spec.TimeoutInSeconds)
+	return true
+}
+
+func applyFunctionConfigUpdate(updateDetails *ocifunctions.UpdateFunctionDetails, fn *ociv1beta1.FunctionsFunction, existing *ocifunctions.Function) bool {
+	if len(fn.Spec.Config) == 0 || reflect.DeepEqual(existing.Config, fn.Spec.Config) {
+		return false
+	}
+	updateDetails.Config = fn.Spec.Config
+	return true
+}
+
+func applyFunctionFreeformTagUpdate(updateDetails *ocifunctions.UpdateFunctionDetails, fn *ociv1beta1.FunctionsFunction, existing *ocifunctions.Function) bool {
+	if fn.Spec.FreeFormTags == nil || reflect.DeepEqual(existing.FreeformTags, fn.Spec.FreeFormTags) {
+		return false
+	}
+	updateDetails.FreeformTags = fn.Spec.FreeFormTags
+	return true
+}
+
+func applyFunctionDefinedTagUpdate(updateDetails *ocifunctions.UpdateFunctionDetails, fn *ociv1beta1.FunctionsFunction, existing *ocifunctions.Function) bool {
+	if fn.Spec.DefinedTags == nil {
+		return false
+	}
+	desiredDefinedTags := *util.ConvertToOciDefinedTags(&fn.Spec.DefinedTags)
+	if reflect.DeepEqual(existing.DefinedTags, desiredDefinedTags) {
+		return false
+	}
+	updateDetails.DefinedTags = desiredDefinedTags
+	return true
+}
+
+func validateFunctionUnsupportedChanges(fn *ociv1beta1.FunctionsFunction, existing *ocifunctions.Function) error {
+	if err := rejectFunctionsImmutableOCIDChange("applicationId", fn.Spec.ApplicationId, existing.ApplicationId); err != nil {
+		return err
+	}
+	if fn.Spec.DisplayName != "" && safeFunctionsString(existing.DisplayName) != fn.Spec.DisplayName {
+		return fmt.Errorf("displayName cannot be updated in place")
+	}
+	return nil
 }
 
 // DeleteFunction deletes the Functions function for the given OCID.

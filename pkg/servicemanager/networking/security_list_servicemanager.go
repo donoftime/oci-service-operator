@@ -8,7 +8,6 @@ package networking
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	ocicore "github.com/oracle/oci-go-sdk/v65/core"
@@ -53,41 +52,34 @@ func (c *OciSecurityListServiceManager) CreateOrUpdate(ctx context.Context, obj 
 		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
-	var slInstance *ocicore.SecurityList
-
-	if strings.TrimSpace(string(sl.Spec.SecurityListId)) == "" {
-		slOcid, err := c.GetSecurityListOcid(ctx, *sl)
-		if err != nil {
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		if slOcid == nil {
-			slInstance, err = c.CreateSecurityList(ctx, *sl)
-			if err != nil {
-				sl.Status.OsokStatus = util.UpdateOSOKStatusCondition(sl.Status.OsokStatus,
-					ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), c.Log)
-				c.Log.ErrorLog(err, "Create OciSecurityList failed")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		} else {
-			slInstance, err = c.GetSecurityList(ctx, *slOcid)
-			if err != nil {
-				c.Log.ErrorLog(err, "Error while getting OciSecurityList by OCID")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		}
-	} else {
-		slInstance, err = c.GetSecurityList(ctx, sl.Spec.SecurityListId)
-		if err != nil {
-			c.Log.ErrorLog(err, "Error while getting existing OciSecurityList")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		sl.Status.OsokStatus.Ocid = sl.Spec.SecurityListId
-		if err = c.UpdateSecurityList(ctx, sl); err != nil {
-			c.Log.ErrorLog(err, "Error while updating OciSecurityList")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
+	slInstance, err := reconcileNetworkingResource(networkingCreateOrUpdateOps[ocicore.SecurityList]{
+		SpecID: sl.Spec.SecurityListId,
+		Status: &sl.Status.OsokStatus,
+		Get: func(id ociv1beta1.OCID) (*ocicore.SecurityList, error) {
+			return c.GetSecurityList(ctx, id)
+		},
+		Update: func() error {
+			return c.UpdateSecurityList(ctx, sl)
+		},
+		Lookup: func() (*ociv1beta1.OCID, error) {
+			return c.GetSecurityListOcid(ctx, *sl)
+		},
+		Create: func() (*ocicore.SecurityList, error) {
+			return c.CreateSecurityList(ctx, *sl)
+		},
+		OnCreateError: func(err error) {
+			sl.Status.OsokStatus = util.UpdateOSOKStatusCondition(sl.Status.OsokStatus,
+				ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), c.Log)
+			c.Log.ErrorLog(err, "Create OciSecurityList failed")
+		},
+		Log:            c.Log,
+		GetExistingMsg: "Error while getting existing OciSecurityList",
+		GetStatusMsg:   "Error while getting existing OciSecurityList from status OCID",
+		GetByOCIDMsg:   "Error while getting OciSecurityList by OCID",
+		UpdateMsg:      "Error while updating OciSecurityList",
+	})
+	if err != nil {
+		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
 	return reconcileLifecycleStatus(&sl.Status.OsokStatus, "OciSecurityList", safeString(slInstance.DisplayName),

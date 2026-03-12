@@ -85,6 +85,9 @@ spec:
                 maxLength: 255
                 minLength: 1
                 type: string
+                x-kubernetes-validations:
+                - message: gatewayId is immutable
+                  rule: self == oldSelf
               id:
                 description: The OCID of an existing Deployment to bind to (optional;
                   if omitted, a new deployment is created)
@@ -95,6 +98,9 @@ spec:
                 description: PathPrefix is the path prefix for all routes in this
                   deployment
                 type: string
+                x-kubernetes-validations:
+                - message: pathPrefix is immutable
+                  rule: self == oldSelf
               routes:
                 description: Routes is the list of API routes in this deployment
                 items:

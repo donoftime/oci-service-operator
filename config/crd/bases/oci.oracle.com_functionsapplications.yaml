@@ -78,6 +78,9 @@ spec:
               displayName:
                 description: DisplayName is a user-friendly name for the application
                 type: string
+                x-kubernetes-validations:
+                - message: displayName is immutable
+                  rule: self == oldSelf
               freeformTags:
                 additionalProperties:
                   type: string
@@ -98,12 +101,18 @@ spec:
                 description: Shape is the processor shape for functions in the application
                   (GENERIC_X86, GENERIC_ARM, GENERIC_X86_ARM)
                 type: string
+                x-kubernetes-validations:
+                - message: shape is immutable
+                  rule: self == oldSelf
               subnetIds:
                 description: SubnetIds is the list of subnet OCIDs in which to run
                   functions in the application
                 items:
                   type: string
                 type: array
+                x-kubernetes-validations:
+                - message: subnetIds is immutable
+                  rule: self == oldSelf
               syslogUrl:
                 description: SyslogUrl is the syslog URL to which to send all function
                   logs

@@ -109,6 +109,9 @@ spec:
                 maxLength: 255
                 minLength: 1
                 type: string
+                x-kubernetes-validations:
+                - message: vcnId is immutable
+                  rule: self == oldSelf
             required:
             - compartmentId
             - displayName

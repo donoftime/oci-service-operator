@@ -27,10 +27,10 @@ func makePostgresSpec(name string) *ociv1beta1.PostgresDbSystem {
 	db.Name = name
 	db.Namespace = "default"
 	db.Spec.DisplayName = name
-	db.Spec.CompartmentId = "ocid1.compartment.oc1..x"
+	db.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
 	db.Spec.DbVersion = "14.10"
 	db.Spec.Shape = "VM.Standard.E4.Flex"
-	db.Spec.SubnetId = "ocid1.subnet.oc1..x"
+	db.Spec.SubnetId = "ocid1.subnet.oc1..xxx"
 	return db
 }
 
@@ -102,4 +102,65 @@ func TestPropertyPostgresDeleteWaitsForConfirmedDisappearance(t *testing.T) {
 	assert.NoError(t, err)
 	assert.False(t, done)
 	assert.False(t, credClient.deleteCalled)
+}
+
+func TestPropertyPostgresUnsupportedDriftFailsBeforeMutation(t *testing.T) {
+	testCases := []struct {
+		name        string
+		mutateSpec  func(*ociv1beta1.PostgresDbSystem)
+		expectedErr string
+	}{
+		{
+			name: "shape",
+			mutateSpec: func(db *ociv1beta1.PostgresDbSystem) {
+				db.Spec.Shape = "VM.Standard3.Flex"
+			},
+			expectedErr: "shape cannot be updated in place",
+		},
+		{
+			name: "instanceOcpuCount",
+			mutateSpec: func(db *ociv1beta1.PostgresDbSystem) {
+				db.Spec.InstanceOcpuCount = 4
+			},
+			expectedErr: "instanceOcpuCount cannot be updated in place",
+		},
+		{
+			name: "instanceMemoryInGBs",
+			mutateSpec: func(db *ociv1beta1.PostgresDbSystem) {
+				db.Spec.InstanceMemoryInGBs = 64
+			},
+			expectedErr: "instanceMemoryInGBs cannot be updated in place",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			updateCalled := false
+			moveCalled := false
+			ociClient := &mockOciPostgresClient{
+				getFn: func(_ context.Context, req ocipsql.GetDbSystemRequest) (ocipsql.GetDbSystemResponse, error) {
+					return ocipsql.GetDbSystemResponse{DbSystem: makeActiveDbSystem(*req.DbSystemId, "immutable-db")}, nil
+				},
+				changeCompartmentFn: func(_ context.Context, _ ocipsql.ChangeDbSystemCompartmentRequest) (ocipsql.ChangeDbSystemCompartmentResponse, error) {
+					moveCalled = true
+					return ocipsql.ChangeDbSystemCompartmentResponse{}, nil
+				},
+				updateFn: func(_ context.Context, _ ocipsql.UpdateDbSystemRequest) (ocipsql.UpdateDbSystemResponse, error) {
+					updateCalled = true
+					return ocipsql.UpdateDbSystemResponse{}, nil
+				},
+			}
+			mgr := newPostgresMgr(t, ociClient, &fakeCredentialClient{})
+			db := makePostgresSpec("immutable-db")
+			db.Status.OsokStatus.Ocid = "ocid1.postgresql.oc1..immutable"
+			db.Spec.CompartmentId = "ocid1.compartment.oc1..new"
+			tc.mutateSpec(db)
+
+			err := mgr.UpdatePostgresDbSystem(context.Background(), db)
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), tc.expectedErr)
+			assert.False(t, moveCalled)
+			assert.False(t, updateCalled)
+		})
+	}
 }

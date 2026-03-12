@@ -34,6 +34,7 @@ type ComputeInstanceSpec struct {
 
 	// AvailabilityDomain is the availability domain where the instance runs.
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="availabilityDomain is immutable"
 	AvailabilityDomain string `json:"availabilityDomain"`
 
 	// Shape is the OCI shape for the instance (e.g. "VM.Standard.E4.Flex").
@@ -45,10 +46,12 @@ type ComputeInstanceSpec struct {
 
 	// ImageId is the OCID of the image used to boot the instance.
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="imageId is immutable"
 	ImageId OCID `json:"imageId"`
 
 	// SubnetId is the OCID of the subnet in which to create the instance's primary VNIC.
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="subnetId is immutable"
 	SubnetId OCID `json:"subnetId"`
 
 	TagResources `json:",inline,omitempty"`

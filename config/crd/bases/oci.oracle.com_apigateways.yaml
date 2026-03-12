@@ -88,6 +88,9 @@ spec:
                 - PUBLIC
                 - PRIVATE
                 type: string
+                x-kubernetes-validations:
+                - message: endpointType is immutable
+                  rule: self == oldSelf
               freeformTags:
                 additionalProperties:
                   type: string
@@ -110,6 +113,9 @@ spec:
                 maxLength: 255
                 minLength: 1
                 type: string
+                x-kubernetes-validations:
+                - message: subnetId is immutable
+                  rule: self == oldSelf
             required:
             - compartmentId
             - endpointType

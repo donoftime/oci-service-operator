@@ -7,7 +7,17 @@
 - Bind-by-ID update no longer depends on a pre-populated `status.ocid`.
 - Existing lookup now paginates through the full list response before concluding there is no display-name match.
 - `UpdateServiceGateway` now reconciles defined tags in addition to display name and freeform tags.
+- Managed service gateway reconciles now continue using `status.ocid` after create/bind, so supported drift updates do not fall back to create-by-name behavior.
+- `spec.compartmentId` drift is now reconciled in place through OCI's service-gateway compartment-move API before other supported updates are applied.
 
 ## Accepted Boundaries
 
 - The current TLA+ model intentionally remains lifecycle-centric; OCI pagination and the supported field-drift reconciliation path are enforced in Go code and property tests rather than this minimal lifecycle spec.
+
+## Pending Update Surface Audit
+
+### Should Reconcile In Place
+- None identified in this pass.
+
+### Should Reject Updates
+- None identified in this pass.

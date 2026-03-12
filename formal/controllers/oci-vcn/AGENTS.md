@@ -17,6 +17,7 @@
 - `RetryableRequiresRequeueInvariant`
 - `DeleteRequiresResourceGoneInvariant`
 - `MutationUsesBoundIDInvariant`
+- `StatusPresentUsesStatusInvariant`
 - `DeleteRequiresConfirmationInvariant`
 - `DeleteSubmittedKeepsFinalizerInvariant`
 - `ConfirmedDeleteRemovesResourceInvariant`
@@ -38,4 +39,5 @@
 ## Notes
 
 - This file is the controller-local knowledge log for formal verification work.
+- Go property coverage for the status-bound update path lives in `pkg/servicemanager/networking/networking_properties_test.go`.
 - Update it with controller-specific counterexamples, linked Go property tests, and the final code fixes.

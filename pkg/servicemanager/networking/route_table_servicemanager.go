@@ -8,7 +8,6 @@ package networking
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	ocicore "github.com/oracle/oci-go-sdk/v65/core"
@@ -53,41 +52,34 @@ func (c *OciRouteTableServiceManager) CreateOrUpdate(ctx context.Context, obj ru
 		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
-	var rtInstance *ocicore.RouteTable
-
-	if strings.TrimSpace(string(rt.Spec.RouteTableId)) == "" {
-		rtOcid, err := c.GetRouteTableOcid(ctx, *rt)
-		if err != nil {
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		if rtOcid == nil {
-			rtInstance, err = c.CreateRouteTable(ctx, *rt)
-			if err != nil {
-				rt.Status.OsokStatus = util.UpdateOSOKStatusCondition(rt.Status.OsokStatus,
-					ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), c.Log)
-				c.Log.ErrorLog(err, "Create OciRouteTable failed")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		} else {
-			rtInstance, err = c.GetRouteTable(ctx, *rtOcid)
-			if err != nil {
-				c.Log.ErrorLog(err, "Error while getting OciRouteTable by OCID")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		}
-	} else {
-		rtInstance, err = c.GetRouteTable(ctx, rt.Spec.RouteTableId)
-		if err != nil {
-			c.Log.ErrorLog(err, "Error while getting existing OciRouteTable")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		rt.Status.OsokStatus.Ocid = rt.Spec.RouteTableId
-		if err = c.UpdateRouteTable(ctx, rt); err != nil {
-			c.Log.ErrorLog(err, "Error while updating OciRouteTable")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
+	rtInstance, err := reconcileNetworkingResource(networkingCreateOrUpdateOps[ocicore.RouteTable]{
+		SpecID: rt.Spec.RouteTableId,
+		Status: &rt.Status.OsokStatus,
+		Get: func(id ociv1beta1.OCID) (*ocicore.RouteTable, error) {
+			return c.GetRouteTable(ctx, id)
+		},
+		Update: func() error {
+			return c.UpdateRouteTable(ctx, rt)
+		},
+		Lookup: func() (*ociv1beta1.OCID, error) {
+			return c.GetRouteTableOcid(ctx, *rt)
+		},
+		Create: func() (*ocicore.RouteTable, error) {
+			return c.CreateRouteTable(ctx, *rt)
+		},
+		OnCreateError: func(err error) {
+			rt.Status.OsokStatus = util.UpdateOSOKStatusCondition(rt.Status.OsokStatus,
+				ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), c.Log)
+			c.Log.ErrorLog(err, "Create OciRouteTable failed")
+		},
+		Log:            c.Log,
+		GetExistingMsg: "Error while getting existing OciRouteTable",
+		GetStatusMsg:   "Error while getting existing OciRouteTable from status OCID",
+		GetByOCIDMsg:   "Error while getting OciRouteTable by OCID",
+		UpdateMsg:      "Error while updating OciRouteTable",
+	})
+	if err != nil {
+		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
 	return reconcileLifecycleStatus(&rt.Status.OsokStatus, "OciRouteTable", safeString(rtInstance.DisplayName),

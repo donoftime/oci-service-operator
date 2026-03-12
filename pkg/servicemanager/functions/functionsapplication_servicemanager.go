@@ -138,6 +138,22 @@ func (m *FunctionsApplicationServiceManager) resolveApplicationInstance(ctx cont
 	if strings.TrimSpace(string(app.Spec.FunctionsApplicationId)) != "" {
 		return m.bindApplication(ctx, app)
 	}
+	if strings.TrimSpace(string(app.Status.OsokStatus.Ocid)) != "" {
+		appInstance, err := m.GetApplication(ctx, app.Status.OsokStatus.Ocid, nil)
+		if err != nil {
+			if !isFunctionsNotFound(err) {
+				m.Log.ErrorLog(err, "Error while getting existing FunctionsApplication from status OCID")
+				return nil, err
+			}
+			app.Status.OsokStatus.Ocid = ""
+		} else {
+			if err := m.UpdateApplication(ctx, app); err != nil {
+				m.Log.ErrorLog(err, "Error while updating FunctionsApplication from status OCID")
+				return nil, err
+			}
+			return appInstance, nil
+		}
+	}
 	return m.lookupOrCreateApplication(ctx, app)
 }
 

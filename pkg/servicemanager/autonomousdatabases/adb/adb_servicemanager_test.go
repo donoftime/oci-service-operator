@@ -76,11 +76,12 @@ func (f *fakeCredentialClient) UpdateSecret(ctx context.Context, name, ns string
 
 // mockOciDbClient implements DatabaseClientInterface for testing.
 type mockOciDbClient struct {
-	createFn func(context.Context, database.CreateAutonomousDatabaseRequest) (database.CreateAutonomousDatabaseResponse, error)
-	listFn   func(context.Context, database.ListAutonomousDatabasesRequest) (database.ListAutonomousDatabasesResponse, error)
-	getFn    func(context.Context, database.GetAutonomousDatabaseRequest) (database.GetAutonomousDatabaseResponse, error)
-	updateFn func(context.Context, database.UpdateAutonomousDatabaseRequest) (database.UpdateAutonomousDatabaseResponse, error)
-	deleteFn func(context.Context, database.DeleteAutonomousDatabaseRequest) (database.DeleteAutonomousDatabaseResponse, error)
+	createFn            func(context.Context, database.CreateAutonomousDatabaseRequest) (database.CreateAutonomousDatabaseResponse, error)
+	listFn              func(context.Context, database.ListAutonomousDatabasesRequest) (database.ListAutonomousDatabasesResponse, error)
+	getFn               func(context.Context, database.GetAutonomousDatabaseRequest) (database.GetAutonomousDatabaseResponse, error)
+	changeCompartmentFn func(context.Context, database.ChangeAutonomousDatabaseCompartmentRequest) (database.ChangeAutonomousDatabaseCompartmentResponse, error)
+	updateFn            func(context.Context, database.UpdateAutonomousDatabaseRequest) (database.UpdateAutonomousDatabaseResponse, error)
+	deleteFn            func(context.Context, database.DeleteAutonomousDatabaseRequest) (database.DeleteAutonomousDatabaseResponse, error)
 }
 
 func (m *mockOciDbClient) CreateAutonomousDatabase(ctx context.Context, req database.CreateAutonomousDatabaseRequest) (database.CreateAutonomousDatabaseResponse, error) {
@@ -102,6 +103,13 @@ func (m *mockOciDbClient) GetAutonomousDatabase(ctx context.Context, req databas
 		return m.getFn(ctx, req)
 	}
 	return database.GetAutonomousDatabaseResponse{}, nil
+}
+
+func (m *mockOciDbClient) ChangeAutonomousDatabaseCompartment(ctx context.Context, req database.ChangeAutonomousDatabaseCompartmentRequest) (database.ChangeAutonomousDatabaseCompartmentResponse, error) {
+	if m.changeCompartmentFn != nil {
+		return m.changeCompartmentFn(ctx, req)
+	}
+	return database.ChangeAutonomousDatabaseCompartmentResponse{}, nil
 }
 
 func (m *mockOciDbClient) UpdateAutonomousDatabase(ctx context.Context, req database.UpdateAutonomousDatabaseRequest) (database.UpdateAutonomousDatabaseResponse, error) {
@@ -954,11 +962,10 @@ func TestCreateOrUpdate_CreateNewAdb_WithVersionAndLicense(t *testing.T) {
 // UpdateAdb DbName branch coverage
 // ---------------------------------------------------------------------------
 
-// TestCreateOrUpdate_BindExistingAdb_DbNameChange verifies that when DbName in the spec
-// differs from the existing ADB, the update request includes the new DbName.
+// TestCreateOrUpdate_BindExistingAdb_DbNameChange verifies that DbName drift is rejected.
 func TestCreateOrUpdate_BindExistingAdb_DbNameChange(t *testing.T) {
 	adbId := "ocid1.autonomousdatabase.oc1..dbname"
-	var capturedUpdate database.UpdateAutonomousDatabaseRequest
+	updateCalled := false
 
 	mgr := newTestManager(&fakeCredentialClient{})
 	mockClient := &mockOciDbClient{
@@ -968,7 +975,7 @@ func TestCreateOrUpdate_BindExistingAdb_DbNameChange(t *testing.T) {
 			}, nil
 		},
 		updateFn: func(_ context.Context, req database.UpdateAutonomousDatabaseRequest) (database.UpdateAutonomousDatabaseResponse, error) {
-			capturedUpdate = req
+			updateCalled = true
 			return database.UpdateAutonomousDatabaseResponse{}, nil
 		},
 	}
@@ -977,12 +984,13 @@ func TestCreateOrUpdate_BindExistingAdb_DbNameChange(t *testing.T) {
 	adb := &ociv1beta1.AutonomousDatabases{}
 	adb.Spec.AdbId = ociv1beta1.OCID(adbId)
 	adb.Spec.DisplayName = "new-name" // triggers updateNeeded
-	adb.Spec.DbName = "newdb"         // differs from "testdb" — exercises DbName branch
+	adb.Spec.DbName = "newdb"
 
 	resp, err := mgr.CreateOrUpdate(context.Background(), adb, ctrl.Request{})
-	assert.NoError(t, err)
-	assert.True(t, resp.IsSuccessful)
-	assert.Equal(t, common.String("newdb"), capturedUpdate.DbName)
+	assert.Error(t, err)
+	assert.False(t, resp.IsSuccessful)
+	assert.Contains(t, err.Error(), "dbName cannot be updated in place")
+	assert.False(t, updateCalled)
 }
 
 // ---------------------------------------------------------------------------

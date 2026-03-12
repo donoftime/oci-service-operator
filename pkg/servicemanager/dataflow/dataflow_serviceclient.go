@@ -13,6 +13,7 @@ import (
 	"github.com/oracle/oci-go-sdk/v65/common"
 	ocidataflow "github.com/oracle/oci-go-sdk/v65/dataflow"
 	ociv1beta1 "github.com/oracle/oci-service-operator/api/v1beta1"
+	"github.com/oracle/oci-service-operator/pkg/util"
 )
 
 // DataFlowClientInterface defines the OCI operations used by DataFlowApplicationServiceManager.
@@ -20,6 +21,7 @@ type DataFlowClientInterface interface {
 	CreateApplication(ctx context.Context, request ocidataflow.CreateApplicationRequest) (ocidataflow.CreateApplicationResponse, error)
 	GetApplication(ctx context.Context, request ocidataflow.GetApplicationRequest) (ocidataflow.GetApplicationResponse, error)
 	ListApplications(ctx context.Context, request ocidataflow.ListApplicationsRequest) (ocidataflow.ListApplicationsResponse, error)
+	ChangeApplicationCompartment(ctx context.Context, request ocidataflow.ChangeApplicationCompartmentRequest) (ocidataflow.ChangeApplicationCompartmentResponse, error)
 	UpdateApplication(ctx context.Context, request ocidataflow.UpdateApplicationRequest) (ocidataflow.UpdateApplicationResponse, error)
 	DeleteApplication(ctx context.Context, request ocidataflow.DeleteApplicationRequest) (ocidataflow.DeleteApplicationResponse, error)
 }
@@ -109,6 +111,9 @@ func applyDataFlowCreateTagFields(details *ocidataflow.CreateApplicationDetails,
 	if app.Spec.FreeFormTags != nil {
 		details.FreeformTags = app.Spec.FreeFormTags
 	}
+	if app.Spec.DefinedTags != nil {
+		details.DefinedTags = *util.ConvertToOciDefinedTags(&app.Spec.DefinedTags)
+	}
 }
 
 // GetDataFlowApplication retrieves a Data Flow Application by OCID.
@@ -176,6 +181,19 @@ func (c *DataFlowApplicationServiceManager) UpdateDataFlowApplication(ctx contex
 	existing, err := c.GetDataFlowApplication(ctx, applicationID)
 	if err != nil {
 		return err
+	}
+
+	if app.Spec.CompartmentId != "" &&
+		(existing.CompartmentId == nil || *existing.CompartmentId != string(app.Spec.CompartmentId)) {
+		_, err = client.ChangeApplicationCompartment(ctx, ocidataflow.ChangeApplicationCompartmentRequest{
+			ApplicationId: common.String(string(applicationID)),
+			ChangeApplicationCompartmentDetails: ocidataflow.ChangeApplicationCompartmentDetails{
+				CompartmentId: common.String(string(app.Spec.CompartmentId)),
+			},
+		})
+		if err != nil {
+			return err
+		}
 	}
 
 	updateDetails, updateNeeded := dataFlowUpdateNeeded(app, existing)

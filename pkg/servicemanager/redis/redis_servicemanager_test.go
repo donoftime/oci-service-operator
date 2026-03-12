@@ -247,11 +247,12 @@ func TestCreateOrUpdate_BadType(t *testing.T) {
 
 // fakeOciClient implements RedisClusterClientInterface for testing.
 type fakeOciClient struct {
-	createFn func(ctx context.Context, req ociredis.CreateRedisClusterRequest) (ociredis.CreateRedisClusterResponse, error)
-	getFn    func(ctx context.Context, req ociredis.GetRedisClusterRequest) (ociredis.GetRedisClusterResponse, error)
-	listFn   func(ctx context.Context, req ociredis.ListRedisClustersRequest) (ociredis.ListRedisClustersResponse, error)
-	updateFn func(ctx context.Context, req ociredis.UpdateRedisClusterRequest) (ociredis.UpdateRedisClusterResponse, error)
-	deleteFn func(ctx context.Context, req ociredis.DeleteRedisClusterRequest) (ociredis.DeleteRedisClusterResponse, error)
+	createFn            func(ctx context.Context, req ociredis.CreateRedisClusterRequest) (ociredis.CreateRedisClusterResponse, error)
+	getFn               func(ctx context.Context, req ociredis.GetRedisClusterRequest) (ociredis.GetRedisClusterResponse, error)
+	listFn              func(ctx context.Context, req ociredis.ListRedisClustersRequest) (ociredis.ListRedisClustersResponse, error)
+	changeCompartmentFn func(ctx context.Context, req ociredis.ChangeRedisClusterCompartmentRequest) (ociredis.ChangeRedisClusterCompartmentResponse, error)
+	updateFn            func(ctx context.Context, req ociredis.UpdateRedisClusterRequest) (ociredis.UpdateRedisClusterResponse, error)
+	deleteFn            func(ctx context.Context, req ociredis.DeleteRedisClusterRequest) (ociredis.DeleteRedisClusterResponse, error)
 
 	updateCalled bool
 }
@@ -275,6 +276,13 @@ func (f *fakeOciClient) ListRedisClusters(ctx context.Context, req ociredis.List
 		return f.listFn(ctx, req)
 	}
 	return ociredis.ListRedisClustersResponse{}, nil
+}
+
+func (f *fakeOciClient) ChangeRedisClusterCompartment(ctx context.Context, req ociredis.ChangeRedisClusterCompartmentRequest) (ociredis.ChangeRedisClusterCompartmentResponse, error) {
+	if f.changeCompartmentFn != nil {
+		return f.changeCompartmentFn(ctx, req)
+	}
+	return ociredis.ChangeRedisClusterCompartmentResponse{}, nil
 }
 
 func (f *fakeOciClient) UpdateRedisCluster(ctx context.Context, req ociredis.UpdateRedisClusterRequest) (ociredis.UpdateRedisClusterResponse, error) {
@@ -382,6 +390,53 @@ func TestGetRedisClusterOcid(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCreateOrUpdate_StatusOcidUsesUpdatePath(t *testing.T) {
+	clusterID := "ocid1.redis.oc1..tracked"
+	var updatedID string
+	ociCl := &fakeOciClient{
+		getFn: func(_ context.Context, req ociredis.GetRedisClusterRequest) (ociredis.GetRedisClusterResponse, error) {
+			return ociredis.GetRedisClusterResponse{RedisCluster: makeActiveRedisCluster(*req.RedisClusterId, "old-redis")}, nil
+		},
+		updateFn: func(_ context.Context, req ociredis.UpdateRedisClusterRequest) (ociredis.UpdateRedisClusterResponse, error) {
+			updatedID = *req.RedisClusterId
+			return ociredis.UpdateRedisClusterResponse{}, nil
+		},
+	}
+	mgr := newMgrWithFakeClient(ociCl, &fakeCredentialClient{})
+	cluster := makeRedisSpec("new-redis")
+	cluster.Status.OsokStatus.Ocid = ociv1beta1.OCID(clusterID)
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), cluster, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.Equal(t, clusterID, updatedID)
+}
+
+func TestUpdateRedisCluster_SendsCompartmentMove(t *testing.T) {
+	clusterID := "ocid1.redis.oc1..move"
+	var moved ociredis.ChangeRedisClusterCompartmentRequest
+	ociCl := &fakeOciClient{
+		getFn: func(_ context.Context, req ociredis.GetRedisClusterRequest) (ociredis.GetRedisClusterResponse, error) {
+			cluster := makeActiveRedisCluster(*req.RedisClusterId, "redis")
+			cluster.CompartmentId = common.String("ocid1.compartment.oc1..old")
+			return ociredis.GetRedisClusterResponse{RedisCluster: cluster}, nil
+		},
+		changeCompartmentFn: func(_ context.Context, req ociredis.ChangeRedisClusterCompartmentRequest) (ociredis.ChangeRedisClusterCompartmentResponse, error) {
+			moved = req
+			return ociredis.ChangeRedisClusterCompartmentResponse{}, nil
+		},
+	}
+	mgr := newMgrWithFakeClient(ociCl, &fakeCredentialClient{})
+	cluster := makeRedisSpec("redis")
+	cluster.Status.OsokStatus.Ocid = ociv1beta1.OCID(clusterID)
+	cluster.Spec.CompartmentId = "ocid1.compartment.oc1..new"
+
+	err := mgr.UpdateRedisCluster(context.Background(), cluster)
+	assert.NoError(t, err)
+	assert.Equal(t, clusterID, *moved.RedisClusterId)
+	assert.Equal(t, string(cluster.Spec.CompartmentId), *moved.CompartmentId)
 }
 
 // TestCreateOrUpdate_CreateNew covers the no-OCID create path.

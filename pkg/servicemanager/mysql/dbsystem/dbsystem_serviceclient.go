@@ -384,12 +384,11 @@ func (c *DbSystemServiceManager) UpdateMySqlDbSystem(ctx context.Context, dbSyst
 		return err
 	}
 
-	updateMySqlDbSystemDetails := mysql.UpdateDbSystemDetails{}
-	updateNeeded := applyMySQLDisplayNameUpdate(&updateMySqlDbSystemDetails, dbSystem, existingDbSystem)
-	updateNeeded = applyMySQLDescriptionUpdate(&updateMySqlDbSystemDetails, dbSystem, existingDbSystem) || updateNeeded
-	updateNeeded = applyMySQLConfigurationUpdate(&updateMySqlDbSystemDetails, dbSystem, existingDbSystem) || updateNeeded
-	updateNeeded = applyMySQLFreeformTagUpdate(&updateMySqlDbSystemDetails, dbSystem, existingDbSystem) || updateNeeded
-	updateNeeded = applyMySQLDefinedTagUpdate(&updateMySqlDbSystemDetails, dbSystem, existingDbSystem) || updateNeeded
+	if err := validateMySQLUnsupportedChanges(dbSystem, existingDbSystem); err != nil {
+		return err
+	}
+
+	updateMySqlDbSystemDetails, updateNeeded := buildMySQLUpdateDetails(dbSystem, existingDbSystem)
 
 	if updateNeeded {
 		updateMySqlDbSystemRequest := mysql.UpdateDbSystemRequest{
@@ -403,6 +402,31 @@ func (c *DbSystemServiceManager) UpdateMySqlDbSystem(ctx context.Context, dbSyst
 	}
 
 	return nil
+}
+
+func buildMySQLUpdateDetails(dbSystem *ociv1beta1.MySqlDbSystem, existingDbSystem *mysql.DbSystem) (mysql.UpdateDbSystemDetails, bool) {
+	updateDetails := mysql.UpdateDbSystemDetails{}
+	updateNeeded := false
+
+	for _, changed := range []bool{
+		applyMySQLDisplayNameUpdate(&updateDetails, dbSystem, existingDbSystem),
+		applyMySQLDescriptionUpdate(&updateDetails, dbSystem, existingDbSystem),
+		applyMySQLConfigurationUpdate(&updateDetails, dbSystem, existingDbSystem),
+		applyMySQLShapeUpdate(&updateDetails, dbSystem, existingDbSystem),
+		applyMySQLDataStorageUpdate(&updateDetails, dbSystem, existingDbSystem),
+		applyMySQLHostnameLabelUpdate(&updateDetails, dbSystem, existingDbSystem),
+		applyMySQLHighlyAvailableUpdate(&updateDetails, dbSystem, existingDbSystem),
+		applyMySQLBackupPolicyUpdate(&updateDetails, dbSystem, existingDbSystem),
+		applyMySQLMaintenanceUpdate(&updateDetails, dbSystem, existingDbSystem),
+		applyMySQLFreeformTagUpdate(&updateDetails, dbSystem, existingDbSystem),
+		applyMySQLDefinedTagUpdate(&updateDetails, dbSystem, existingDbSystem),
+	} {
+		if changed {
+			updateNeeded = true
+		}
+	}
+
+	return updateDetails, updateNeeded
 }
 
 func applyMySQLDisplayNameUpdate(updateDetails *mysql.UpdateDbSystemDetails,
@@ -435,6 +459,90 @@ func applyMySQLConfigurationUpdate(updateDetails *mysql.UpdateDbSystemDetails,
 	return true
 }
 
+func applyMySQLShapeUpdate(updateDetails *mysql.UpdateDbSystemDetails,
+	dbSystem *ociv1beta1.MySqlDbSystem, existingDbSystem *mysql.DbSystem) bool {
+	if dbSystem.Spec.ShapeName == "" || safeMySQLString(existingDbSystem.ShapeName) == dbSystem.Spec.ShapeName {
+		return false
+	}
+
+	updateDetails.ShapeName = common.String(dbSystem.Spec.ShapeName)
+	return true
+}
+
+func applyMySQLDataStorageUpdate(updateDetails *mysql.UpdateDbSystemDetails,
+	dbSystem *ociv1beta1.MySqlDbSystem, existingDbSystem *mysql.DbSystem) bool {
+	if dbSystem.Spec.DataStorageSizeInGBs == 0 || existingDbSystem.DataStorageSizeInGBs == nil ||
+		*existingDbSystem.DataStorageSizeInGBs == dbSystem.Spec.DataStorageSizeInGBs {
+		return false
+	}
+
+	updateDetails.DataStorageSizeInGBs = common.Int(dbSystem.Spec.DataStorageSizeInGBs)
+	return true
+}
+
+func applyMySQLHostnameLabelUpdate(updateDetails *mysql.UpdateDbSystemDetails,
+	dbSystem *ociv1beta1.MySqlDbSystem, existingDbSystem *mysql.DbSystem) bool {
+	if dbSystem.Spec.HostnameLabel == "" || safeMySQLString(existingDbSystem.HostnameLabel) == dbSystem.Spec.HostnameLabel {
+		return false
+	}
+
+	updateDetails.HostnameLabel = common.String(dbSystem.Spec.HostnameLabel)
+	return true
+}
+
+func applyMySQLHighlyAvailableUpdate(updateDetails *mysql.UpdateDbSystemDetails,
+	dbSystem *ociv1beta1.MySqlDbSystem, existingDbSystem *mysql.DbSystem) bool {
+	if existingDbSystem.IsHighlyAvailable != nil && *existingDbSystem.IsHighlyAvailable == dbSystem.Spec.IsHighlyAvailable {
+		return false
+	}
+
+	updateDetails.IsHighlyAvailable = common.Bool(dbSystem.Spec.IsHighlyAvailable)
+	return true
+}
+
+func applyMySQLBackupPolicyUpdate(updateDetails *mysql.UpdateDbSystemDetails,
+	dbSystem *ociv1beta1.MySqlDbSystem, existingDbSystem *mysql.DbSystem) bool {
+	if existingDbSystem.BackupPolicy == nil {
+		return false
+	}
+
+	backupDetails := &mysql.UpdateBackupPolicyDetails{}
+	updateNeeded := false
+	if existingDbSystem.BackupPolicy.IsEnabled == nil || *existingDbSystem.BackupPolicy.IsEnabled != dbSystem.Spec.BackupPolicy.IsEnabled {
+		backupDetails.IsEnabled = common.Bool(dbSystem.Spec.BackupPolicy.IsEnabled)
+		updateNeeded = true
+	}
+	if dbSystem.Spec.BackupPolicy.WindowStartTime != "" &&
+		safeMySQLString(existingDbSystem.BackupPolicy.WindowStartTime) != dbSystem.Spec.BackupPolicy.WindowStartTime {
+		backupDetails.WindowStartTime = common.String(dbSystem.Spec.BackupPolicy.WindowStartTime)
+		updateNeeded = true
+	}
+	if dbSystem.Spec.BackupPolicy.RetentionInDays != 0 &&
+		(existingDbSystem.BackupPolicy.RetentionInDays == nil || *existingDbSystem.BackupPolicy.RetentionInDays != dbSystem.Spec.BackupPolicy.RetentionInDays) {
+		backupDetails.RetentionInDays = common.Int(dbSystem.Spec.BackupPolicy.RetentionInDays)
+		updateNeeded = true
+	}
+	if !updateNeeded {
+		return false
+	}
+
+	updateDetails.BackupPolicy = backupDetails
+	return true
+}
+
+func applyMySQLMaintenanceUpdate(updateDetails *mysql.UpdateDbSystemDetails,
+	dbSystem *ociv1beta1.MySqlDbSystem, existingDbSystem *mysql.DbSystem) bool {
+	if dbSystem.Spec.Maintenance.WindowStartTime == "" || existingDbSystem.Maintenance == nil ||
+		safeMySQLString(existingDbSystem.Maintenance.WindowStartTime) == dbSystem.Spec.Maintenance.WindowStartTime {
+		return false
+	}
+
+	updateDetails.Maintenance = &mysql.UpdateMaintenanceDetails{
+		WindowStartTime: common.String(dbSystem.Spec.Maintenance.WindowStartTime),
+	}
+	return true
+}
+
 func applyMySQLFreeformTagUpdate(updateDetails *mysql.UpdateDbSystemDetails,
 	dbSystem *ociv1beta1.MySqlDbSystem, existingDbSystem *mysql.DbSystem) bool {
 	if dbSystem.Spec.FreeFormTags == nil || reflect.DeepEqual(existingDbSystem.FreeformTags, dbSystem.Spec.FreeFormTags) {
@@ -458,4 +566,92 @@ func applyMySQLDefinedTagUpdate(updateDetails *mysql.UpdateDbSystemDetails,
 
 	updateDetails.DefinedTags = defTag
 	return true
+}
+
+func validateMySQLUnsupportedChanges(dbSystem *ociv1beta1.MySqlDbSystem, existingDbSystem *mysql.DbSystem) error {
+	if err := validateMySQLCompartmentChange(dbSystem, existingDbSystem); err != nil {
+		return err
+	}
+	if err := validateMySQLAvailabilityDomainChange(dbSystem, existingDbSystem); err != nil {
+		return err
+	}
+	if err := validateMySQLFaultDomainChange(dbSystem, existingDbSystem); err != nil {
+		return err
+	}
+	if err := validateMySQLIPAddressChange(dbSystem, existingDbSystem); err != nil {
+		return err
+	}
+	if err := validateMySQLVersionChange(dbSystem, existingDbSystem); err != nil {
+		return err
+	}
+	if err := validateMySQLPortChange(dbSystem, existingDbSystem); err != nil {
+		return err
+	}
+	if err := validateMySQLPortXChange(dbSystem, existingDbSystem); err != nil {
+		return err
+	}
+	return validateMySQLSubnetChange(dbSystem, existingDbSystem)
+}
+
+func validateMySQLCompartmentChange(dbSystem *ociv1beta1.MySqlDbSystem, existingDbSystem *mysql.DbSystem) error {
+	if dbSystem.Spec.CompartmentId != "" && safeMySQLString(existingDbSystem.CompartmentId) != string(dbSystem.Spec.CompartmentId) {
+		return fmt.Errorf("compartmentId cannot be updated in place")
+	}
+	return nil
+}
+
+func validateMySQLAvailabilityDomainChange(dbSystem *ociv1beta1.MySqlDbSystem, existingDbSystem *mysql.DbSystem) error {
+	if dbSystem.Spec.AvailabilityDomain != "" && safeMySQLString(existingDbSystem.AvailabilityDomain) != dbSystem.Spec.AvailabilityDomain {
+		return fmt.Errorf("availabilityDomain cannot be updated in place")
+	}
+	return nil
+}
+
+func validateMySQLFaultDomainChange(dbSystem *ociv1beta1.MySqlDbSystem, existingDbSystem *mysql.DbSystem) error {
+	if dbSystem.Spec.FaultDomain != "" && safeMySQLString(existingDbSystem.FaultDomain) != dbSystem.Spec.FaultDomain {
+		return fmt.Errorf("faultDomain cannot be updated in place")
+	}
+	return nil
+}
+
+func validateMySQLIPAddressChange(dbSystem *ociv1beta1.MySqlDbSystem, existingDbSystem *mysql.DbSystem) error {
+	if dbSystem.Spec.IpAddress != "" && safeMySQLString(existingDbSystem.IpAddress) != dbSystem.Spec.IpAddress {
+		return fmt.Errorf("ipAddress cannot be updated in place")
+	}
+	return nil
+}
+
+func validateMySQLVersionChange(dbSystem *ociv1beta1.MySqlDbSystem, existingDbSystem *mysql.DbSystem) error {
+	if dbSystem.Spec.MysqlVersion != "" && safeMySQLString(existingDbSystem.MysqlVersion) != dbSystem.Spec.MysqlVersion {
+		return fmt.Errorf("mysqlVersion cannot be updated in place")
+	}
+	return nil
+}
+
+func validateMySQLPortChange(dbSystem *ociv1beta1.MySqlDbSystem, existingDbSystem *mysql.DbSystem) error {
+	if dbSystem.Spec.Port != 0 && existingDbSystem.Port != nil && *existingDbSystem.Port != dbSystem.Spec.Port {
+		return fmt.Errorf("port cannot be updated in place")
+	}
+	return nil
+}
+
+func validateMySQLPortXChange(dbSystem *ociv1beta1.MySqlDbSystem, existingDbSystem *mysql.DbSystem) error {
+	if dbSystem.Spec.PortX != 0 && existingDbSystem.PortX != nil && *existingDbSystem.PortX != dbSystem.Spec.PortX {
+		return fmt.Errorf("portX cannot be updated in place")
+	}
+	return nil
+}
+
+func validateMySQLSubnetChange(dbSystem *ociv1beta1.MySqlDbSystem, existingDbSystem *mysql.DbSystem) error {
+	if dbSystem.Spec.SubnetId != "" && safeMySQLString(existingDbSystem.SubnetId) != string(dbSystem.Spec.SubnetId) {
+		return fmt.Errorf("subnetId cannot be updated in place")
+	}
+	return nil
+}
+
+func safeMySQLString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }

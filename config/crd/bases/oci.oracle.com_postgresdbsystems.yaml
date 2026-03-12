@@ -66,6 +66,9 @@ spec:
                         type: string
                     type: object
                 type: object
+                x-kubernetes-validations:
+                - message: adminPassword is immutable
+                  rule: self == oldSelf
               adminUsername:
                 description: AdminUsername is the admin username for the PostgreSQL
                   DB system, read from a Kubernetes secret
@@ -76,6 +79,9 @@ spec:
                         type: string
                     type: object
                 type: object
+                x-kubernetes-validations:
+                - message: adminUsername is immutable
+                  rule: self == oldSelf
               compartmentId:
                 description: CompartmentId is the OCID of the compartment in which
                   to create the PostgreSQL DB system
@@ -85,6 +91,9 @@ spec:
               dbVersion:
                 description: DbVersion is the PostgreSQL version (e.g. "14.10")
                 type: string
+                x-kubernetes-validations:
+                - message: dbVersion is immutable
+                  rule: self == oldSelf
               definedTags:
                 additionalProperties:
                   additionalProperties:
@@ -114,27 +123,45 @@ spec:
                   (defaults to 1)
                 minimum: 1
                 type: integer
+                x-kubernetes-validations:
+                - message: instanceCount is immutable
+                  rule: self == oldSelf
               instanceMemoryInGBs:
                 description: InstanceMemoryInGBs is the total memory available to
                   each instance node, in gigabytes
                 type: integer
+                x-kubernetes-validations:
+                - message: instanceMemoryInGBs is immutable
+                  rule: self == oldSelf
               instanceOcpuCount:
                 description: InstanceOcpuCount is the total OCPUs available to each
                   instance node
                 type: integer
+                x-kubernetes-validations:
+                - message: instanceOcpuCount is immutable
+                  rule: self == oldSelf
               shape:
                 description: Shape is the instance shape for the DB system nodes (e.g.
                   "VM.Standard.E4.Flex")
                 type: string
+                x-kubernetes-validations:
+                - message: shape is immutable
+                  rule: self == oldSelf
               storageType:
                 description: StorageType is an optional hint for storage selection;
                   currently the OCI Optimized storage tier is always used
                 type: string
+                x-kubernetes-validations:
+                - message: storageType is immutable
+                  rule: self == oldSelf
               subnetId:
                 description: SubnetId is the OCID of the subnet for the DB system
                 maxLength: 255
                 minLength: 1
                 type: string
+                x-kubernetes-validations:
+                - message: subnetId is immutable
+                  rule: self == oldSelf
             required:
             - compartmentId
             - dbVersion

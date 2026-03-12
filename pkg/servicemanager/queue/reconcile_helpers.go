@@ -24,11 +24,28 @@ import (
 const queueRequeueDuration = 30 * time.Second
 
 func (c *OciQueueServiceManager) resolveQueueForReconcile(ctx context.Context, q *ociv1beta1.OciQueue) (*ociqueue.Queue, *servicemanager.OSOKResponse, error) {
-	if strings.TrimSpace(string(q.Spec.QueueId)) == "" {
-		return c.createOrLookupQueue(ctx, q)
+	if strings.TrimSpace(string(q.Spec.QueueId)) != "" {
+		return c.bindQueueByID(ctx, q)
 	}
 
-	return c.bindQueueByID(ctx, q)
+	if strings.TrimSpace(string(q.Status.OsokStatus.Ocid)) != "" {
+		queueInstance, err := c.GetQueue(ctx, q.Status.OsokStatus.Ocid)
+		if err != nil {
+			if !isQueueNotFound(err) {
+				return nil, nil, err
+			}
+			q.Status.OsokStatus.Ocid = ""
+		} else {
+			if queueInstance.LifecycleState == ociqueue.QueueLifecycleStateActive {
+				if err := c.UpdateQueue(ctx, q); err != nil {
+					return nil, nil, err
+				}
+			}
+			return queueInstance, nil, nil
+		}
+	}
+
+	return c.createOrLookupQueue(ctx, q)
 }
 
 func (c *OciQueueServiceManager) createOrLookupQueue(ctx context.Context, q *ociv1beta1.OciQueue) (*ociqueue.Queue, *servicemanager.OSOKResponse, error) {

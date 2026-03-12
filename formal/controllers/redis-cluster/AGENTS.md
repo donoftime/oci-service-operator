@@ -17,6 +17,7 @@
 - `RetryableRequiresRequeueInvariant`
 - `DeleteRequiresResourceGoneInvariant`
 - `MutationUsesBoundIDInvariant`
+- `StatusPresentUsesStatusInvariant`
 - `DeleteRequiresConfirmationInvariant`
 - `DeleteSubmittedKeepsFinalizerInvariant`
 - `ConfirmedDeleteRemovesResourceInvariant`

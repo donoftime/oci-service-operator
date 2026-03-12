@@ -17,8 +17,6 @@ resources:
   kind: AutonomousDatabases
   path: github.com/oracle/oci-service-operator/api/v1beta1
   version: v1beta1
-  webhooks:
-    webhookVersion: v1
 - api:
     crdVersion: v1
     namespaced: true
@@ -50,9 +48,6 @@ resources:
   kind: Mesh
   path: github.com/oracle/oci-service-operator/apis/servicemesh.oci/v1beta1
   version: v1beta1
-  webhooks:
-    validation: true
-    webhookVersion: v1
 - api:
     crdVersion: v1
     namespaced: true
@@ -62,9 +57,6 @@ resources:
   kind: VirtualService
   path: github.com/oracle/oci-service-operator/apis/servicemesh.oci/v1beta1
   version: v1beta1
-  webhooks:
-    validation: true
-    webhookVersion: v1
 - api:
     crdVersion: v1
     namespaced: true
@@ -74,9 +66,6 @@ resources:
   kind: VirtualDeployment
   path: github.com/oracle/oci-service-operator/apis/servicemesh.oci/v1beta1
   version: v1beta1
-  webhooks:
-    validation: true
-    webhookVersion: v1
 - api:
     crdVersion: v1
     namespaced: true
@@ -86,9 +75,6 @@ resources:
   kind: VirtualServiceRouteTable
   path: github.com/oracle/oci-service-operator/apis/servicemesh.oci/v1beta1
   version: v1beta1
-  webhooks:
-    validation: true
-    webhookVersion: v1
 - api:
     crdVersion: v1
     namespaced: true
@@ -98,9 +84,6 @@ resources:
   kind: VirtualDeploymentBinding
   path: github.com/oracle/oci-service-operator/apis/servicemesh.oci/v1beta1
   version: v1beta1
-  webhooks:
-    validation: true
-    webhookVersion: v1
 - api:
     crdVersion: v1
     namespaced: true
@@ -110,9 +93,6 @@ resources:
   kind: AccessPolicy
   path: github.com/oracle/oci-service-operator/apis/servicemesh.oci/v1beta1
   version: v1beta1
-  webhooks:
-    validation: true
-    webhookVersion: v1
 - api:
     crdVersion: v1
     namespaced: true
@@ -122,9 +102,6 @@ resources:
   kind: IngressGateway
   path: github.com/oracle/oci-service-operator/apis/servicemesh.oci/v1beta1
   version: v1beta1
-  webhooks:
-    validation: true
-    webhookVersion: v1
 - api:
     crdVersion: v1
     namespaced: true
@@ -134,9 +111,6 @@ resources:
   kind: IngressGatewayDeployment
   path: github.com/oracle/oci-service-operator/apis/servicemesh.oci/v1beta1
   version: v1beta1
-  webhooks:
-    validation: true
-    webhookVersion: v1
 - api:
     crdVersion: v1
     namespaced: true
@@ -146,7 +120,4 @@ resources:
   kind: IngressGatewayRouteTable
   path: github.com/oracle/oci-service-operator/apis/servicemesh.oci/v1beta1
   version: v1beta1
-  webhooks:
-    validation: true
-    webhookVersion: v1
 version: "3"

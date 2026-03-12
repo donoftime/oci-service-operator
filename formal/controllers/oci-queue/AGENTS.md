@@ -17,6 +17,7 @@
 - `RetryableRequiresRequeueInvariant`
 - `DeleteRequiresResourceGoneInvariant`
 - `MutationUsesBoundIDInvariant`
+- `StatusPresentUsesStatusInvariant`
 - `DeleteRequiresConfirmationInvariant`
 - `DeleteSubmittedKeepsFinalizerInvariant`
 - `ConfirmedDeleteRemovesResourceInvariant`
@@ -39,3 +40,4 @@
 
 - This file is the controller-local knowledge log for formal verification work.
 - Update it with controller-specific counterexamples, linked Go property tests, and the final code fixes.
+- Queue-specific property coverage for tracked-ID updates, compartment moves, custom-encryption-key drift, and retention rejection lives in `pkg/servicemanager/queue/queue_properties_test.go`.

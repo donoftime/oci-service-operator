@@ -24,9 +24,11 @@ type OciVcnSpec struct {
 
 	// CidrBlock is the CIDR block for the VCN
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="cidrBlock is immutable"
 	CidrBlock string `json:"cidrBlock"`
 
 	// DnsLabel is the DNS label for the VCN (optional)
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="dnsLabel is immutable"
 	DnsLabel string `json:"dnsLabel,omitempty"`
 
 	TagResources `json:",inline,omitempty"`
@@ -81,6 +83,7 @@ type OciSubnetSpec struct {
 
 	// VcnId is the OCID of the VCN that contains this subnet
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="vcnId is immutable"
 	VcnId OCID `json:"vcnId"`
 
 	// CidrBlock is the CIDR block for the subnet
@@ -88,12 +91,15 @@ type OciSubnetSpec struct {
 	CidrBlock string `json:"cidrBlock"`
 
 	// AvailabilityDomain is the availability domain for the subnet (omit for regional subnet)
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="availabilityDomain is immutable"
 	AvailabilityDomain string `json:"availabilityDomain,omitempty"`
 
 	// DnsLabel is the DNS label for the subnet (optional)
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="dnsLabel is immutable"
 	DnsLabel string `json:"dnsLabel,omitempty"`
 
 	// ProhibitPublicIpOnVnic controls whether VNICs in this subnet can have public IPs
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="prohibitPublicIpOnVnic is immutable"
 	ProhibitPublicIpOnVnic bool `json:"prohibitPublicIpOnVnic,omitempty"`
 
 	// RouteTableId is the OCID of the route table the subnet uses (optional)
@@ -150,6 +156,7 @@ type OciInternetGatewaySpec struct {
 
 	// VcnId is the OCID of the VCN that contains this Internet Gateway
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="vcnId is immutable"
 	VcnId OCID `json:"vcnId"`
 
 	// DisplayName is a user-friendly name for the Internet Gateway
@@ -207,6 +214,7 @@ type OciNatGatewaySpec struct {
 
 	// VcnId is the OCID of the VCN that contains this NAT Gateway
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="vcnId is immutable"
 	VcnId OCID `json:"vcnId"`
 
 	// DisplayName is a user-friendly name for the NAT Gateway
@@ -264,6 +272,7 @@ type OciServiceGatewaySpec struct {
 
 	// VcnId is the OCID of the VCN that contains this Service Gateway
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="vcnId is immutable"
 	VcnId OCID `json:"vcnId"`
 
 	// DisplayName is a user-friendly name for the Service Gateway
@@ -411,6 +420,7 @@ type OciSecurityListSpec struct {
 
 	// VcnId is the OCID of the VCN that contains this Security List
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="vcnId is immutable"
 	VcnId OCID `json:"vcnId"`
 
 	// DisplayName is a user-friendly name for the Security List
@@ -471,6 +481,7 @@ type OciNetworkSecurityGroupSpec struct {
 
 	// VcnId is the OCID of the VCN that contains this NSG
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="vcnId is immutable"
 	VcnId OCID `json:"vcnId"`
 
 	// DisplayName is a user-friendly name for the NSG
@@ -540,6 +551,7 @@ type OciRouteTableSpec struct {
 
 	// VcnId is the OCID of the VCN that contains this Route Table
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="vcnId is immutable"
 	VcnId OCID `json:"vcnId"`
 
 	// DisplayName is a user-friendly name for the Route Table

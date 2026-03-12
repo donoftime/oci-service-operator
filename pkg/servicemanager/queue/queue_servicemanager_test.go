@@ -86,11 +86,12 @@ func (f *fakeCredentialClient) UpdateSecret(ctx context.Context, name, ns string
 // ---------------------------------------------------------------------------
 
 type fakeQueueAdminClient struct {
-	createQueueFn func(ctx context.Context, req ociqueue.CreateQueueRequest) (ociqueue.CreateQueueResponse, error)
-	getQueueFn    func(ctx context.Context, req ociqueue.GetQueueRequest) (ociqueue.GetQueueResponse, error)
-	listQueuesFn  func(ctx context.Context, req ociqueue.ListQueuesRequest) (ociqueue.ListQueuesResponse, error)
-	updateQueueFn func(ctx context.Context, req ociqueue.UpdateQueueRequest) (ociqueue.UpdateQueueResponse, error)
-	deleteQueueFn func(ctx context.Context, req ociqueue.DeleteQueueRequest) (ociqueue.DeleteQueueResponse, error)
+	createQueueFn            func(ctx context.Context, req ociqueue.CreateQueueRequest) (ociqueue.CreateQueueResponse, error)
+	getQueueFn               func(ctx context.Context, req ociqueue.GetQueueRequest) (ociqueue.GetQueueResponse, error)
+	listQueuesFn             func(ctx context.Context, req ociqueue.ListQueuesRequest) (ociqueue.ListQueuesResponse, error)
+	changeQueueCompartmentFn func(ctx context.Context, req ociqueue.ChangeQueueCompartmentRequest) (ociqueue.ChangeQueueCompartmentResponse, error)
+	updateQueueFn            func(ctx context.Context, req ociqueue.UpdateQueueRequest) (ociqueue.UpdateQueueResponse, error)
+	deleteQueueFn            func(ctx context.Context, req ociqueue.DeleteQueueRequest) (ociqueue.DeleteQueueResponse, error)
 }
 
 func (f *fakeQueueAdminClient) CreateQueue(ctx context.Context, req ociqueue.CreateQueueRequest) (ociqueue.CreateQueueResponse, error) {
@@ -112,6 +113,13 @@ func (f *fakeQueueAdminClient) ListQueues(ctx context.Context, req ociqueue.List
 		return f.listQueuesFn(ctx, req)
 	}
 	return ociqueue.ListQueuesResponse{}, nil
+}
+
+func (f *fakeQueueAdminClient) ChangeQueueCompartment(ctx context.Context, req ociqueue.ChangeQueueCompartmentRequest) (ociqueue.ChangeQueueCompartmentResponse, error) {
+	if f.changeQueueCompartmentFn != nil {
+		return f.changeQueueCompartmentFn(ctx, req)
+	}
+	return ociqueue.ChangeQueueCompartmentResponse{}, nil
 }
 
 func (f *fakeQueueAdminClient) UpdateQueue(ctx context.Context, req ociqueue.UpdateQueueRequest) (ociqueue.UpdateQueueResponse, error) {
@@ -217,6 +225,168 @@ func TestDelete_NoOcid(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, done)
 	assert.False(t, credClient.deleteCalled, "DeleteSecret should not be called when OCID is empty")
+}
+
+func TestCreateOrUpdate_StatusOcidUsesUpdatePath(t *testing.T) {
+	queueID := "ocid1.queue.oc1..tracked"
+	var updatedID string
+	fake := &fakeQueueAdminClient{
+		getQueueFn: func(_ context.Context, _ ociqueue.GetQueueRequest) (ociqueue.GetQueueResponse, error) {
+			return ociqueue.GetQueueResponse{Queue: makeActiveQueue(queueID, "old-queue", "")}, nil
+		},
+		updateQueueFn: func(_ context.Context, req ociqueue.UpdateQueueRequest) (ociqueue.UpdateQueueResponse, error) {
+			updatedID = *req.QueueId
+			return ociqueue.UpdateQueueResponse{}, nil
+		},
+	}
+	mgr := mgrWithFake(&fakeCredentialClient{}, fake)
+	q := &ociv1beta1.OciQueue{}
+	q.Status.OsokStatus.Ocid = ociv1beta1.OCID(queueID)
+	q.Spec.DisplayName = "new-queue"
+	q.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), q, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.Equal(t, queueID, updatedID)
+}
+
+func TestCreateOrUpdate_StatusOcidAppliesCustomEncryptionKeyDrift(t *testing.T) {
+	queueID := "ocid1.queue.oc1..tracked-enc"
+	var updateReq ociqueue.UpdateQueueRequest
+	fake := &fakeQueueAdminClient{
+		getQueueFn: func(_ context.Context, _ ociqueue.GetQueueRequest) (ociqueue.GetQueueResponse, error) {
+			queue := makeActiveQueue(queueID, "queue", "")
+			queue.CustomEncryptionKeyId = common.String("ocid1.key.oc1..old")
+			return ociqueue.GetQueueResponse{Queue: queue}, nil
+		},
+		updateQueueFn: func(_ context.Context, req ociqueue.UpdateQueueRequest) (ociqueue.UpdateQueueResponse, error) {
+			updateReq = req
+			return ociqueue.UpdateQueueResponse{}, nil
+		},
+	}
+	mgr := mgrWithFake(&fakeCredentialClient{}, fake)
+	q := &ociv1beta1.OciQueue{}
+	q.Status.OsokStatus.Ocid = ociv1beta1.OCID(queueID)
+	q.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+	q.Spec.CustomEncryptionKeyId = "ocid1.key.oc1..new"
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), q, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.Equal(t, queueID, *updateReq.QueueId)
+	assert.NotNil(t, updateReq.CustomEncryptionKeyId)
+	assert.Equal(t, "ocid1.key.oc1..new", *updateReq.CustomEncryptionKeyId)
+}
+
+func TestUpdateQueue_SendsCompartmentMove(t *testing.T) {
+	queueID := "ocid1.queue.oc1..move"
+	var moved ociqueue.ChangeQueueCompartmentRequest
+	fake := &fakeQueueAdminClient{
+		getQueueFn: func(_ context.Context, _ ociqueue.GetQueueRequest) (ociqueue.GetQueueResponse, error) {
+			queue := makeActiveQueue(queueID, "queue", "")
+			queue.CompartmentId = common.String("ocid1.compartment.oc1..old")
+			return ociqueue.GetQueueResponse{Queue: queue}, nil
+		},
+		changeQueueCompartmentFn: func(_ context.Context, req ociqueue.ChangeQueueCompartmentRequest) (ociqueue.ChangeQueueCompartmentResponse, error) {
+			moved = req
+			return ociqueue.ChangeQueueCompartmentResponse{}, nil
+		},
+	}
+	mgr := mgrWithFake(&fakeCredentialClient{}, fake)
+	q := &ociv1beta1.OciQueue{}
+	q.Status.OsokStatus.Ocid = ociv1beta1.OCID(queueID)
+	q.Spec.CompartmentId = "ocid1.compartment.oc1..new"
+
+	err := mgr.UpdateQueue(context.Background(), q)
+	assert.NoError(t, err)
+	assert.Equal(t, queueID, *moved.QueueId)
+	assert.Equal(t, string(q.Spec.CompartmentId), *moved.CompartmentId)
+}
+
+func TestUpdateQueue_SendsCustomEncryptionKeyUpdate(t *testing.T) {
+	queueID := "ocid1.queue.oc1..enc-update"
+	var updateReq ociqueue.UpdateQueueRequest
+	fake := &fakeQueueAdminClient{
+		getQueueFn: func(_ context.Context, _ ociqueue.GetQueueRequest) (ociqueue.GetQueueResponse, error) {
+			queue := makeActiveQueue(queueID, "queue", "")
+			queue.CustomEncryptionKeyId = common.String("ocid1.key.oc1..old")
+			return ociqueue.GetQueueResponse{Queue: queue}, nil
+		},
+		updateQueueFn: func(_ context.Context, req ociqueue.UpdateQueueRequest) (ociqueue.UpdateQueueResponse, error) {
+			updateReq = req
+			return ociqueue.UpdateQueueResponse{}, nil
+		},
+	}
+	mgr := mgrWithFake(&fakeCredentialClient{}, fake)
+	q := &ociv1beta1.OciQueue{}
+	q.Status.OsokStatus.Ocid = ociv1beta1.OCID(queueID)
+	q.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+	q.Spec.CustomEncryptionKeyId = "ocid1.key.oc1..new"
+
+	err := mgr.UpdateQueue(context.Background(), q)
+	assert.NoError(t, err)
+	assert.Equal(t, queueID, *updateReq.QueueId)
+	assert.NotNil(t, updateReq.CustomEncryptionKeyId)
+	assert.Equal(t, "ocid1.key.oc1..new", *updateReq.CustomEncryptionKeyId)
+}
+
+func TestUpdateQueue_EmptyCustomEncryptionKeyDoesNotClear(t *testing.T) {
+	queueID := "ocid1.queue.oc1..enc-no-clear"
+	updateCalled := false
+	fake := &fakeQueueAdminClient{
+		getQueueFn: func(_ context.Context, _ ociqueue.GetQueueRequest) (ociqueue.GetQueueResponse, error) {
+			queue := makeActiveQueue(queueID, "queue", "")
+			queue.CustomEncryptionKeyId = common.String("ocid1.key.oc1..existing")
+			return ociqueue.GetQueueResponse{Queue: queue}, nil
+		},
+		updateQueueFn: func(_ context.Context, _ ociqueue.UpdateQueueRequest) (ociqueue.UpdateQueueResponse, error) {
+			updateCalled = true
+			return ociqueue.UpdateQueueResponse{}, nil
+		},
+	}
+	mgr := mgrWithFake(&fakeCredentialClient{}, fake)
+	q := &ociv1beta1.OciQueue{}
+	q.Status.OsokStatus.Ocid = ociv1beta1.OCID(queueID)
+	q.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+
+	err := mgr.UpdateQueue(context.Background(), q)
+	assert.NoError(t, err)
+	assert.False(t, updateCalled, "empty customEncryptionKeyId should not clear the live key")
+}
+
+func TestUpdateQueue_RetentionMismatchReturnsErrorBeforeMutation(t *testing.T) {
+	queueID := "ocid1.queue.oc1..ret-immutable"
+	moveCalled := false
+	updateCalled := false
+	fake := &fakeQueueAdminClient{
+		getQueueFn: func(_ context.Context, _ ociqueue.GetQueueRequest) (ociqueue.GetQueueResponse, error) {
+			queue := makeActiveQueue(queueID, "queue", "")
+			queue.CompartmentId = common.String("ocid1.compartment.oc1..old")
+			queue.RetentionInSeconds = common.Int(86400)
+			return ociqueue.GetQueueResponse{Queue: queue}, nil
+		},
+		changeQueueCompartmentFn: func(_ context.Context, _ ociqueue.ChangeQueueCompartmentRequest) (ociqueue.ChangeQueueCompartmentResponse, error) {
+			moveCalled = true
+			return ociqueue.ChangeQueueCompartmentResponse{}, nil
+		},
+		updateQueueFn: func(_ context.Context, _ ociqueue.UpdateQueueRequest) (ociqueue.UpdateQueueResponse, error) {
+			updateCalled = true
+			return ociqueue.UpdateQueueResponse{}, nil
+		},
+	}
+	mgr := mgrWithFake(&fakeCredentialClient{}, fake)
+	q := &ociv1beta1.OciQueue{}
+	q.Status.OsokStatus.Ocid = ociv1beta1.OCID(queueID)
+	q.Spec.CompartmentId = "ocid1.compartment.oc1..new"
+	q.Spec.DisplayName = "new-name"
+	q.Spec.RetentionInSeconds = 3600
+
+	err := mgr.UpdateQueue(context.Background(), q)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "retentionInSeconds cannot be updated in place")
+	assert.False(t, moveCalled, "retention drift should block compartment moves")
+	assert.False(t, updateCalled, "retention drift should block queue updates")
 }
 
 // TestDelete_SecretNotFound verifies Delete ignores missing queue secrets.

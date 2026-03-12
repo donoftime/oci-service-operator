@@ -14,6 +14,7 @@ import (
 	"github.com/oracle/oci-go-sdk/v65/common"
 	"github.com/oracle/oci-go-sdk/v65/streaming"
 	ociv1beta1 "github.com/oracle/oci-service-operator/api/v1beta1"
+	"github.com/stretchr/testify/assert"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
@@ -82,4 +83,86 @@ func TestStreamServiceManager_PropertyUpdateByNameUsesResolvedID(t *testing.T) {
 	if err := quick.Check(property, nil); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestStreamServiceManager_PropertyStatusIDUsesTrackedResourceForUpdate(t *testing.T) {
+	streamID := "ocid1.stream.oc1..tracked"
+	var updatedID string
+	mockClient := &mockStreamAdminClient{
+		getStreamFn: func(_ context.Context, _ streaming.GetStreamRequest) (streaming.GetStreamResponse, error) {
+			return streaming.GetStreamResponse{Stream: makeActiveStream(streamID, "tracked-stream")}, nil
+		},
+		updateStreamFn: func(_ context.Context, req streaming.UpdateStreamRequest) (streaming.UpdateStreamResponse, error) {
+			updatedID = *req.StreamId
+			return streaming.UpdateStreamResponse{}, nil
+		},
+	}
+	mgr := makeTestManager(&fakeCredentialClient{}, mockClient)
+
+	stream := &ociv1beta1.Stream{}
+	stream.Name = "tracked-stream"
+	stream.Namespace = "default"
+	stream.Status.OsokStatus.Ocid = ociv1beta1.OCID(streamID)
+	stream.Spec.Partitions = 1
+	stream.Spec.RetentionInHours = 24
+	stream.Spec.FreeFormTags = map[string]string{"env": "prop"}
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), stream, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.Equal(t, streamID, updatedID)
+}
+
+func TestStreamServiceManager_PropertyCompartmentDriftTriggersMove(t *testing.T) {
+	streamID := "ocid1.stream.oc1..move"
+	var moved streaming.ChangeStreamCompartmentRequest
+	mockClient := &mockStreamAdminClient{
+		getStreamFn: func(_ context.Context, _ streaming.GetStreamRequest) (streaming.GetStreamResponse, error) {
+			stream := makeActiveStream(streamID, "stream")
+			stream.CompartmentId = common.String("ocid1.compartment.oc1..old")
+			return streaming.GetStreamResponse{Stream: stream}, nil
+		},
+		changeStreamCompartmentFn: func(_ context.Context, req streaming.ChangeStreamCompartmentRequest) (streaming.ChangeStreamCompartmentResponse, error) {
+			moved = req
+			return streaming.ChangeStreamCompartmentResponse{}, nil
+		},
+	}
+	mgr := makeTestManager(&fakeCredentialClient{}, mockClient)
+
+	stream := &ociv1beta1.Stream{}
+	stream.Status.OsokStatus.Ocid = ociv1beta1.OCID(streamID)
+	stream.Spec.Partitions = 1
+	stream.Spec.RetentionInHours = 24
+	stream.Spec.CompartmentId = "ocid1.compartment.oc1..new"
+
+	assert.NoError(t, mgr.UpdateStream(context.Background(), stream))
+	assert.Equal(t, streamID, *moved.StreamId)
+	assert.Equal(t, string(stream.Spec.CompartmentId), *moved.CompartmentId)
+}
+
+func TestStreamServiceManager_PropertyImmutableNameDriftFailsBeforeUpdate(t *testing.T) {
+	streamID := "ocid1.stream.oc1..immutable"
+	updateCalled := false
+	mockClient := &mockStreamAdminClient{
+		getStreamFn: func(_ context.Context, _ streaming.GetStreamRequest) (streaming.GetStreamResponse, error) {
+			stream := makeActiveStream(streamID, "existing-stream")
+			return streaming.GetStreamResponse{Stream: stream}, nil
+		},
+		updateStreamFn: func(_ context.Context, _ streaming.UpdateStreamRequest) (streaming.UpdateStreamResponse, error) {
+			updateCalled = true
+			return streaming.UpdateStreamResponse{}, nil
+		},
+	}
+	mgr := makeTestManager(&fakeCredentialClient{}, mockClient)
+
+	stream := &ociv1beta1.Stream{}
+	stream.Status.OsokStatus.Ocid = ociv1beta1.OCID(streamID)
+	stream.Spec.Name = "new-stream"
+	stream.Spec.Partitions = 1
+	stream.Spec.RetentionInHours = 24
+
+	err := mgr.UpdateStream(context.Background(), stream)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "name can't be updated")
+	assert.False(t, updateCalled)
 }

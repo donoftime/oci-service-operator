@@ -50,6 +50,7 @@ type ApiGatewayDeploySpec struct {
 
 	// GatewayId is the OCID of the API Gateway to deploy to
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="gatewayId is immutable"
 	GatewayId OCID `json:"gatewayId"`
 
 	// CompartmentId is the OCID of the compartment in which to create the deployment
@@ -61,6 +62,7 @@ type ApiGatewayDeploySpec struct {
 
 	// PathPrefix is the path prefix for all routes in this deployment
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="pathPrefix is immutable"
 	PathPrefix string `json:"pathPrefix"`
 
 	// Routes is the list of API routes in this deployment

@@ -66,6 +66,22 @@ func (c *ContainerInstanceServiceManager) resolveContainerInstance(ctx context.C
 	if hasContainerInstanceID(ci) {
 		return c.bindContainerInstance(ctx, ci)
 	}
+	if strings.TrimSpace(string(ci.Status.OsokStatus.Ocid)) != "" {
+		ciInstance, err := c.GetContainerInstance(ctx, ci.Status.OsokStatus.Ocid, nil)
+		if err != nil {
+			if !isNotFoundServiceError(err) {
+				c.Log.ErrorLog(err, "Error while getting existing ContainerInstance from status OCID")
+				return nil, servicemanager.OSOKResponse{IsSuccessful: false}, err
+			}
+			ci.Status.OsokStatus.Ocid = ""
+		} else {
+			if err := c.UpdateContainerInstance(ctx, ci); err != nil {
+				c.Log.ErrorLog(err, "Error while updating ContainerInstance from status OCID")
+				return nil, servicemanager.OSOKResponse{IsSuccessful: false}, err
+			}
+			return ciInstance, servicemanager.OSOKResponse{}, nil
+		}
+	}
 	return c.lookupOrCreateContainerInstance(ctx, ci)
 }
 
@@ -86,6 +102,11 @@ func (c *ContainerInstanceServiceManager) lookupOrCreateContainerInstance(ctx co
 	ciInstance, err := c.GetContainerInstance(ctx, *ciOcid, nil)
 	if err != nil {
 		c.Log.ErrorLog(err, "Error while getting ContainerInstance by OCID")
+		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, err
+	}
+	ci.Status.OsokStatus.Ocid = *ciOcid
+	if err := c.UpdateContainerInstance(ctx, ci); err != nil {
+		c.Log.ErrorLog(err, "Error while updating ContainerInstance by resolved OCID")
 		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 	return ciInstance, servicemanager.OSOKResponse{}, nil
@@ -134,6 +155,7 @@ func (c *ContainerInstanceServiceManager) bindContainerInstance(ctx context.Cont
 		c.Log.ErrorLog(err, "Error while getting existing ContainerInstance")
 		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
+	ci.Status.OsokStatus.Ocid = ci.Spec.ContainerInstanceId
 
 	if err = c.UpdateContainerInstance(ctx, ci); err != nil {
 		c.Log.ErrorLog(err, "Error while updating ContainerInstance")

@@ -60,6 +60,9 @@ spec:
                 description: AvailabilityDomain is the availability domain where the
                   instance runs.
                 type: string
+                x-kubernetes-validations:
+                - message: availabilityDomain is immutable
+                  rule: self == oldSelf
               compartmentId:
                 description: CompartmentId is the OCID of the compartment in which
                   to create the instance.
@@ -90,6 +93,9 @@ spec:
                 maxLength: 255
                 minLength: 1
                 type: string
+                x-kubernetes-validations:
+                - message: imageId is immutable
+                  rule: self == oldSelf
               shape:
                 description: Shape is the OCI shape for the instance (e.g. "VM.Standard.E4.Flex").
                 type: string
@@ -114,6 +120,9 @@ spec:
                 maxLength: 255
                 minLength: 1
                 type: string
+                x-kubernetes-validations:
+                - message: subnetId is immutable
+                  rule: self == oldSelf
             required:
             - availabilityDomain
             - compartmentId

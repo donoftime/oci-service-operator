@@ -33,6 +33,16 @@ func safeFunctionsString(value *string) string {
 	return *value
 }
 
+func rejectFunctionsImmutableOCIDChange(field string, desired ociv1beta1.OCID, existing *string) error {
+	if desired == "" || existing == nil {
+		return nil
+	}
+	if *existing == string(desired) {
+		return nil
+	}
+	return fmt.Errorf("%s cannot be updated in place", field)
+}
+
 func applyFunctionsCreateFailure(status *ociv1beta1.OSOKStatus, err error, log loggerutil.OSOKLogger, kind string) {
 	*status = util.UpdateOSOKStatusCondition(*status, ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), log)
 	if code, ok := functionsBadRequestCode(err); ok {

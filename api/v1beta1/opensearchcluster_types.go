@@ -14,6 +14,7 @@ type OpenSearchClusterSpec struct {
 	// The OCID of an existing OpenSearch cluster to bind (optional; if set, cluster is adopted rather than created)
 	OpenSearchClusterId OCID `json:"id,omitempty"`
 	// The OCID of the compartment in which to create the cluster
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="compartmentId is immutable"
 	CompartmentId OCID `json:"compartmentId,omitempty"`
 	// The display name of the cluster
 	DisplayName string `json:"displayName,omitempty"`
@@ -24,24 +25,28 @@ type OpenSearchClusterSpec struct {
 	// +kubebuilder:validation:Minimum:=1
 	MasterNodeCount int `json:"masterNodeCount,omitempty"`
 	// +kubebuilder:validation:Enum:=FLEX;BM
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="masterNodeHostType is immutable"
 	MasterNodeHostType string `json:"masterNodeHostType,omitempty"`
 	// +kubebuilder:validation:Minimum:=1
 	MasterNodeHostOcpuCount int `json:"masterNodeHostOcpuCount,omitempty"`
 	// +kubebuilder:validation:Minimum:=1
-	MasterNodeHostMemoryGB       int    `json:"masterNodeHostMemoryGB,omitempty"`
+	MasterNodeHostMemoryGB int `json:"masterNodeHostMemoryGB,omitempty"`
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="masterNodeHostBareMetalShape is immutable"
 	MasterNodeHostBareMetalShape string `json:"masterNodeHostBareMetalShape,omitempty"`
 
 	// Data node configuration
 	// +kubebuilder:validation:Minimum:=1
 	DataNodeCount int `json:"dataNodeCount,omitempty"`
 	// +kubebuilder:validation:Enum:=FLEX;BM;DENSE_IO
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="dataNodeHostType is immutable"
 	DataNodeHostType string `json:"dataNodeHostType,omitempty"`
 	// +kubebuilder:validation:Minimum:=1
 	DataNodeHostOcpuCount int `json:"dataNodeHostOcpuCount,omitempty"`
 	// +kubebuilder:validation:Minimum:=1
 	DataNodeHostMemoryGB int `json:"dataNodeHostMemoryGB,omitempty"`
 	// +kubebuilder:validation:Minimum:=1
-	DataNodeStorageGB          int    `json:"dataNodeStorageGB,omitempty"`
+	DataNodeStorageGB int `json:"dataNodeStorageGB,omitempty"`
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="dataNodeHostBareMetalShape is immutable"
 	DataNodeHostBareMetalShape string `json:"dataNodeHostBareMetalShape,omitempty"`
 
 	// OpenSearch Dashboard node configuration
@@ -53,9 +58,13 @@ type OpenSearchClusterSpec struct {
 	OpendashboardNodeHostMemoryGB int `json:"opendashboardNodeHostMemoryGB,omitempty"`
 
 	// Networking
-	VcnId               OCID `json:"vcnId,omitempty"`
-	SubnetId            OCID `json:"subnetId,omitempty"`
-	VcnCompartmentId    OCID `json:"vcnCompartmentId,omitempty"`
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="vcnId is immutable"
+	VcnId OCID `json:"vcnId,omitempty"`
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="subnetId is immutable"
+	SubnetId OCID `json:"subnetId,omitempty"`
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="vcnCompartmentId is immutable"
+	VcnCompartmentId OCID `json:"vcnCompartmentId,omitempty"`
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="subnetCompartmentId is immutable"
 	SubnetCompartmentId OCID `json:"subnetCompartmentId,omitempty"`
 
 	// Security

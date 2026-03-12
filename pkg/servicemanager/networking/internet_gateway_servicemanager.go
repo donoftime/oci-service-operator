@@ -8,7 +8,6 @@ package networking
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	ocicore "github.com/oracle/oci-go-sdk/v65/core"
@@ -53,43 +52,34 @@ func (c *OciInternetGatewayServiceManager) CreateOrUpdate(ctx context.Context, o
 		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
-	var igwInstance *ocicore.InternetGateway
-
-	if strings.TrimSpace(string(igw.Spec.InternetGatewayId)) == "" {
-		// No explicit ID — look up by display name or create.
-		igwOcid, err := c.GetInternetGatewayOcid(ctx, *igw)
-		if err != nil {
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		if igwOcid == nil {
-			igwInstance, err = c.CreateInternetGateway(ctx, *igw)
-			if err != nil {
-				igw.Status.OsokStatus = util.UpdateOSOKStatusCondition(igw.Status.OsokStatus,
-					ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), c.Log)
-				c.Log.ErrorLog(err, "Create OciInternetGateway failed")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		} else {
-			igwInstance, err = c.GetInternetGateway(ctx, *igwOcid)
-			if err != nil {
-				c.Log.ErrorLog(err, "Error while getting OciInternetGateway by OCID")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		}
-	} else {
-		// Bind to an existing Internet Gateway by ID.
-		igwInstance, err = c.GetInternetGateway(ctx, igw.Spec.InternetGatewayId)
-		if err != nil {
-			c.Log.ErrorLog(err, "Error while getting existing OciInternetGateway")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		igw.Status.OsokStatus.Ocid = igw.Spec.InternetGatewayId
-		if err = c.UpdateInternetGateway(ctx, igw); err != nil {
-			c.Log.ErrorLog(err, "Error while updating OciInternetGateway")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
+	igwInstance, err := reconcileNetworkingResource(networkingCreateOrUpdateOps[ocicore.InternetGateway]{
+		SpecID: igw.Spec.InternetGatewayId,
+		Status: &igw.Status.OsokStatus,
+		Get: func(id ociv1beta1.OCID) (*ocicore.InternetGateway, error) {
+			return c.GetInternetGateway(ctx, id)
+		},
+		Update: func() error {
+			return c.UpdateInternetGateway(ctx, igw)
+		},
+		Lookup: func() (*ociv1beta1.OCID, error) {
+			return c.GetInternetGatewayOcid(ctx, *igw)
+		},
+		Create: func() (*ocicore.InternetGateway, error) {
+			return c.CreateInternetGateway(ctx, *igw)
+		},
+		OnCreateError: func(err error) {
+			igw.Status.OsokStatus = util.UpdateOSOKStatusCondition(igw.Status.OsokStatus,
+				ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), c.Log)
+			c.Log.ErrorLog(err, "Create OciInternetGateway failed")
+		},
+		Log:            c.Log,
+		GetExistingMsg: "Error while getting existing OciInternetGateway",
+		GetStatusMsg:   "Error while getting existing OciInternetGateway from status OCID",
+		GetByOCIDMsg:   "Error while getting OciInternetGateway by OCID",
+		UpdateMsg:      "Error while updating OciInternetGateway",
+	})
+	if err != nil {
+		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
 	return reconcileLifecycleStatus(&igw.Status.OsokStatus, "OciInternetGateway", safeString(igwInstance.DisplayName),

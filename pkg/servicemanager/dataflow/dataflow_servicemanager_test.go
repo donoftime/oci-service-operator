@@ -46,11 +46,12 @@ func (f *fakeCredentialClient) UpdateSecret(_ context.Context, _, _ string, _ ma
 // ---------------------------------------------------------------------------
 
 type fakeDataFlowClient struct {
-	createApplicationFn func(ctx context.Context, req ocidataflow.CreateApplicationRequest) (ocidataflow.CreateApplicationResponse, error)
-	getApplicationFn    func(ctx context.Context, req ocidataflow.GetApplicationRequest) (ocidataflow.GetApplicationResponse, error)
-	listApplicationsFn  func(ctx context.Context, req ocidataflow.ListApplicationsRequest) (ocidataflow.ListApplicationsResponse, error)
-	updateApplicationFn func(ctx context.Context, req ocidataflow.UpdateApplicationRequest) (ocidataflow.UpdateApplicationResponse, error)
-	deleteApplicationFn func(ctx context.Context, req ocidataflow.DeleteApplicationRequest) (ocidataflow.DeleteApplicationResponse, error)
+	createApplicationFn            func(ctx context.Context, req ocidataflow.CreateApplicationRequest) (ocidataflow.CreateApplicationResponse, error)
+	getApplicationFn               func(ctx context.Context, req ocidataflow.GetApplicationRequest) (ocidataflow.GetApplicationResponse, error)
+	listApplicationsFn             func(ctx context.Context, req ocidataflow.ListApplicationsRequest) (ocidataflow.ListApplicationsResponse, error)
+	changeApplicationCompartmentFn func(ctx context.Context, req ocidataflow.ChangeApplicationCompartmentRequest) (ocidataflow.ChangeApplicationCompartmentResponse, error)
+	updateApplicationFn            func(ctx context.Context, req ocidataflow.UpdateApplicationRequest) (ocidataflow.UpdateApplicationResponse, error)
+	deleteApplicationFn            func(ctx context.Context, req ocidataflow.DeleteApplicationRequest) (ocidataflow.DeleteApplicationResponse, error)
 }
 
 func (f *fakeDataFlowClient) CreateApplication(ctx context.Context, req ocidataflow.CreateApplicationRequest) (ocidataflow.CreateApplicationResponse, error) {
@@ -78,6 +79,13 @@ func (f *fakeDataFlowClient) ListApplications(ctx context.Context, req ocidatafl
 		return f.listApplicationsFn(ctx, req)
 	}
 	return ocidataflow.ListApplicationsResponse{}, nil
+}
+
+func (f *fakeDataFlowClient) ChangeApplicationCompartment(ctx context.Context, req ocidataflow.ChangeApplicationCompartmentRequest) (ocidataflow.ChangeApplicationCompartmentResponse, error) {
+	if f.changeApplicationCompartmentFn != nil {
+		return f.changeApplicationCompartmentFn(ctx, req)
+	}
+	return ocidataflow.ChangeApplicationCompartmentResponse{}, nil
 }
 
 func (f *fakeDataFlowClient) UpdateApplication(ctx context.Context, req ocidataflow.UpdateApplicationRequest) (ocidataflow.UpdateApplicationResponse, error) {
@@ -217,6 +225,31 @@ func TestDelete_Error(t *testing.T) {
 	done, err := mgr.Delete(context.Background(), app)
 	assert.Error(t, err)
 	assert.False(t, done)
+}
+
+func TestUpdateDataFlowApplication_SendsCompartmentMove(t *testing.T) {
+	appID := "ocid1.dataflowapplication.oc1..move"
+	var moved ocidataflow.ChangeApplicationCompartmentRequest
+	fake := &fakeDataFlowClient{
+		getApplicationFn: func(_ context.Context, _ ocidataflow.GetApplicationRequest) (ocidataflow.GetApplicationResponse, error) {
+			app := makeExistingApplication(appID, "test-app", ocidataflow.ApplicationLifecycleStateActive)
+			app.CompartmentId = common.String("ocid1.compartment.oc1..old")
+			return ocidataflow.GetApplicationResponse{Application: app}, nil
+		},
+		changeApplicationCompartmentFn: func(_ context.Context, req ocidataflow.ChangeApplicationCompartmentRequest) (ocidataflow.ChangeApplicationCompartmentResponse, error) {
+			moved = req
+			return ocidataflow.ChangeApplicationCompartmentResponse{}, nil
+		},
+	}
+	mgr := mgrWithFake(fake)
+
+	app := makeApp("test-app", appID)
+	app.Spec.CompartmentId = "ocid1.compartment.oc1..new"
+
+	err := mgr.UpdateDataFlowApplication(context.Background(), app)
+	assert.NoError(t, err)
+	assert.Equal(t, appID, *moved.ApplicationId)
+	assert.Equal(t, string(app.Spec.CompartmentId), *moved.CompartmentId)
 }
 
 // ---------------------------------------------------------------------------

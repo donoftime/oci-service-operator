@@ -11,31 +11,41 @@ import (
 
 // MySqlDbSystemSpec defines the desired state of MySqlDbSystem
 type MySqlDbSystemSpec struct {
-	MySqlDbSystemId OCID           `json:"id,omitempty"`
-	CompartmentId   OCID           `json:"compartmentId,omitempty"`
-	ShapeName       string         `json:"shapeName,omitempty"`
-	SubnetId        OCID           `json:"subnetId,omitempty"`
-	AdminUsername   UsernameSource `json:"adminUsername,omitempty"`
-	AdminPassword   PasswordSource `json:"adminPassword,omitempty"`
-	DisplayName     string         `json:"displayName,omitempty"`
+	MySqlDbSystemId OCID `json:"id,omitempty"`
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="compartmentId is immutable"
+	CompartmentId OCID   `json:"compartmentId,omitempty"`
+	ShapeName     string `json:"shapeName,omitempty"`
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="subnetId is immutable"
+	SubnetId OCID `json:"subnetId,omitempty"`
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="adminUsername is immutable"
+	AdminUsername UsernameSource `json:"adminUsername,omitempty"`
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="adminPassword is immutable"
+	AdminPassword PasswordSource `json:"adminPassword,omitempty"`
+	DisplayName   string         `json:"displayName,omitempty"`
 	// +kubebuilder:validation:MinLength:=1
 	// +kubebuilder:validation:MaxLength:=400
-	Description        string `json:"description,omitempty"`
+	Description string `json:"description,omitempty"`
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="availabilityDomain is immutable"
 	AvailabilityDomain string `json:"availabilityDomain,omitempty"`
 	// +kubebuilder:default:=FAULT-DOMAIN-1
-	FaultDomain  string `json:"faultDomain,omitempty"`
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="faultDomain is immutable"
+	FaultDomain string `json:"faultDomain,omitempty"`
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="mysqlVersion is immutable"
 	MysqlVersion string `json:"mysqlVersion,omitempty"`
 	// +kubebuilder:validation:Minimum:=50
 	// +kubebuilder:validation:Maximum:=65536
 	DataStorageSizeInGBs int    `json:"dataStorageSizeInGBs,omitempty"`
 	HostnameLabel        string `json:"hostnameLabel,omitempty"`
-	IpAddress            string `json:"ipAddress,omitempty"`
-	IsHighlyAvailable    bool   `json:"isHighlyAvailable,omitempty"`
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="ipAddress is immutable"
+	IpAddress         string `json:"ipAddress,omitempty"`
+	IsHighlyAvailable bool   `json:"isHighlyAvailable,omitempty"`
 	// +kubebuilder:validation:Minimum:=1024
 	// +kubebuilder:validation:Maximum:=65535
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="port is immutable"
 	Port int `json:"port,omitempty"`
 	// +kubebuilder:validation:Minimum:=1024
 	// +kubebuilder:validation:Maximum:=65535
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="portX is immutable"
 	PortX           int                         `json:"portX,omitempty"`
 	ConfigurationId CreateConfigurationDetails  `json:"configuration,omitempty"`
 	BackupPolicy    CreateBackupPolicyDetails   `json:"backupPolicy,omitempty"`
@@ -46,7 +56,8 @@ type MySqlDbSystemSpec struct {
 
 // CreateDbSystemSourceDetails Parameters detailing how to provision the initial data of the system.
 type CreateDbSystemSourceDetails struct {
-	JsonData   string `json:"jsonData,omitempty"`
+	JsonData string `json:"jsonData,omitempty"`
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="source.sourceType is immutable"
 	SourceType string `json:"sourceType,omitempty"`
 }
 

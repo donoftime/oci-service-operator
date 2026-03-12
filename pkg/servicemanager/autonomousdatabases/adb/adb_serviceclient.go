@@ -33,6 +33,7 @@ type DatabaseClientInterface interface {
 	CreateAutonomousDatabase(ctx context.Context, request database.CreateAutonomousDatabaseRequest) (database.CreateAutonomousDatabaseResponse, error)
 	ListAutonomousDatabases(ctx context.Context, request database.ListAutonomousDatabasesRequest) (database.ListAutonomousDatabasesResponse, error)
 	GetAutonomousDatabase(ctx context.Context, request database.GetAutonomousDatabaseRequest) (database.GetAutonomousDatabaseResponse, error)
+	ChangeAutonomousDatabaseCompartment(ctx context.Context, request database.ChangeAutonomousDatabaseCompartmentRequest) (database.ChangeAutonomousDatabaseCompartmentResponse, error)
 	UpdateAutonomousDatabase(ctx context.Context, request database.UpdateAutonomousDatabaseRequest) (database.UpdateAutonomousDatabaseResponse, error)
 	DeleteAutonomousDatabase(ctx context.Context, request database.DeleteAutonomousDatabaseRequest) (database.DeleteAutonomousDatabaseResponse, error)
 }
@@ -185,15 +186,31 @@ func (c *AdbServiceManager) UpdateAdb(ctx context.Context, adb *ociv1beta1.Auton
 		return err
 	}
 
-	existingAdb, err := c.GetAdb(ctx, adb.Spec.AdbId, nil)
+	targetID, err := servicemanager.ResolveResourceID(adb.Status.OsokStatus.Ocid, adb.Spec.AdbId)
 	if err != nil {
 		return err
 	}
 
+	existingAdb, err := c.GetAdb(ctx, targetID, nil)
+	if err != nil {
+		return err
+	}
+
+	if adb.Spec.DbName != "" && adb.Spec.DbName != *existingAdb.DbName {
+		return fmt.Errorf("dbName cannot be updated in place")
+	}
+
+	if err = c.moveAdbCompartmentIfNeeded(ctx, dbClient, adb, existingAdb, targetID); err != nil {
+		return err
+	}
+
 	updateAutonomousDatabaseDetails, updateNeeded := buildUpdateAutonomousDatabaseDetails(adb, existingAdb)
+	if updateNeeded, err = c.applyAdbPasswordUpdate(ctx, adb, &updateAutonomousDatabaseDetails, updateNeeded); err != nil {
+		return err
+	}
 	if updateNeeded {
 		updateAutonomousDatabaseRequest := database.UpdateAutonomousDatabaseRequest{
-			AutonomousDatabaseId:            common.String(string(adb.Spec.AdbId)),
+			AutonomousDatabaseId:            common.String(string(targetID)),
 			UpdateAutonomousDatabaseDetails: updateAutonomousDatabaseDetails,
 		}
 
@@ -203,6 +220,35 @@ func (c *AdbServiceManager) UpdateAdb(ctx context.Context, adb *ociv1beta1.Auton
 	}
 
 	return nil
+}
+
+func (c *AdbServiceManager) moveAdbCompartmentIfNeeded(ctx context.Context, dbClient DatabaseClientInterface,
+	adb *ociv1beta1.AutonomousDatabases, existingAdb *database.AutonomousDatabase, targetID ociv1beta1.OCID) error {
+	if adb.Spec.CompartmentId == "" || (existingAdb.CompartmentId != nil && *existingAdb.CompartmentId == string(adb.Spec.CompartmentId)) {
+		return nil
+	}
+
+	_, err := dbClient.ChangeAutonomousDatabaseCompartment(ctx, database.ChangeAutonomousDatabaseCompartmentRequest{
+		AutonomousDatabaseId: common.String(string(targetID)),
+		ChangeCompartmentDetails: database.ChangeCompartmentDetails{
+			CompartmentId: common.String(string(adb.Spec.CompartmentId)),
+		},
+	})
+	return err
+}
+
+func (c *AdbServiceManager) applyAdbPasswordUpdate(ctx context.Context, adb *ociv1beta1.AutonomousDatabases,
+	updateDetails *database.UpdateAutonomousDatabaseDetails, updateNeeded bool) (bool, error) {
+	if adb.Spec.AdminPassword.Secret.SecretName == "" {
+		return updateNeeded, nil
+	}
+
+	password, err := c.getAdminPassword(ctx, adb, adb.Namespace)
+	if err != nil {
+		return false, err
+	}
+	updateDetails.AdminPassword = common.String(password)
+	return true, nil
 }
 
 func buildUpdateAutonomousDatabaseDetails(adb *ociv1beta1.AutonomousDatabases,
@@ -220,10 +266,10 @@ func buildUpdateAutonomousDatabaseDetails(adb *ociv1beta1.AutonomousDatabases,
 func applyAdbIdentityUpdates(updateDetails *database.UpdateAutonomousDatabaseDetails,
 	adb *ociv1beta1.AutonomousDatabases, existingAdb *database.AutonomousDatabase) bool {
 	updateNeeded := applyAdbDisplayNameUpdate(updateDetails, adb, existingAdb)
-	updateNeeded = applyAdbDbNameUpdate(updateDetails, adb, existingAdb) || updateNeeded
 	updateNeeded = applyAdbDbWorkloadUpdate(updateDetails, adb, existingAdb) || updateNeeded
 	updateNeeded = applyAdbDbVersionUpdate(updateDetails, adb, existingAdb) || updateNeeded
 	updateNeeded = applyAdbLicenseModelUpdate(updateDetails, adb, existingAdb) || updateNeeded
+	updateNeeded = applyAdbComputeModelAndCountUpdate(updateDetails, adb, existingAdb) || updateNeeded
 	return updateNeeded
 }
 
@@ -237,6 +283,22 @@ func applyAdbCapacityUpdates(updateDetails *database.UpdateAutonomousDatabaseDet
 	}
 	if adb.Spec.CpuCoreCount != 0 && adb.Spec.CpuCoreCount != *existingAdb.CpuCoreCount {
 		updateDetails.CpuCoreCount = common.Int(adb.Spec.CpuCoreCount)
+		updateNeeded = true
+	}
+
+	return updateNeeded
+}
+
+func applyAdbComputeModelAndCountUpdate(updateDetails *database.UpdateAutonomousDatabaseDetails,
+	adb *ociv1beta1.AutonomousDatabases, existingAdb *database.AutonomousDatabase) bool {
+	updateNeeded := false
+
+	if adb.Spec.ComputeModel != "" && string(existingAdb.ComputeModel) != adb.Spec.ComputeModel {
+		updateDetails.ComputeModel = database.UpdateAutonomousDatabaseDetailsComputeModelEnum(adb.Spec.ComputeModel)
+		updateNeeded = true
+	}
+	if adb.Spec.ComputeModel != "" && existingAdb.ComputeCount != nil && adb.Spec.ComputeCount != *existingAdb.ComputeCount {
+		updateDetails.ComputeCount = common.Float32(adb.Spec.ComputeCount)
 		updateNeeded = true
 	}
 
@@ -284,16 +346,6 @@ func applyAdbDisplayNameUpdate(updateDetails *database.UpdateAutonomousDatabaseD
 	}
 
 	updateDetails.DisplayName = common.String(adb.Spec.DisplayName)
-	return true
-}
-
-func applyAdbDbNameUpdate(updateDetails *database.UpdateAutonomousDatabaseDetails,
-	adb *ociv1beta1.AutonomousDatabases, existingAdb *database.AutonomousDatabase) bool {
-	if adb.Spec.DbName == "" || adb.Spec.DbName == *existingAdb.DbName {
-		return false
-	}
-
-	updateDetails.DbName = common.String(adb.Spec.DbName)
 	return true
 }
 

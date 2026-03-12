@@ -12,9 +12,10 @@ import (
 
 // AutonomousDatabasesSpec defines the desired state of AutonomousDatabases
 type AutonomousDatabasesSpec struct {
-	AdbId                OCID           `json:"id,omitempty"`
-	CompartmentId        OCID           `json:"compartmentId,omitempty"`
-	DisplayName          string         `json:"displayName,omitempty"`
+	AdbId         OCID   `json:"id,omitempty"`
+	CompartmentId OCID   `json:"compartmentId,omitempty"`
+	DisplayName   string `json:"displayName,omitempty"`
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="dbName is immutable"
 	DbName               string         `json:"dbName,omitempty"`
 	DbWorkload           string         `json:"dbWorkload,omitempty"`
 	IsDedicated          bool           `json:"isDedicated,omitempty"`

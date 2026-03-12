@@ -8,7 +8,6 @@ package networking
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	ocicore "github.com/oracle/oci-go-sdk/v65/core"
@@ -53,43 +52,34 @@ func (c *OciDrgServiceManager) CreateOrUpdate(ctx context.Context, obj runtime.O
 		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
-	var drgInstance *ocicore.Drg
-
-	if strings.TrimSpace(string(drg.Spec.DrgId)) == "" {
-		// No explicit ID — look up by display name or create.
-		drgOcid, err := c.GetDrgOcid(ctx, *drg)
-		if err != nil {
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		if drgOcid == nil {
-			drgInstance, err = c.CreateDrg(ctx, *drg)
-			if err != nil {
-				drg.Status.OsokStatus = util.UpdateOSOKStatusCondition(drg.Status.OsokStatus,
-					ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), c.Log)
-				c.Log.ErrorLog(err, "Create OciDrg failed")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		} else {
-			drgInstance, err = c.GetDrg(ctx, *drgOcid)
-			if err != nil {
-				c.Log.ErrorLog(err, "Error while getting OciDrg by OCID")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		}
-	} else {
-		// Bind to an existing DRG by ID.
-		drgInstance, err = c.GetDrg(ctx, drg.Spec.DrgId)
-		if err != nil {
-			c.Log.ErrorLog(err, "Error while getting existing OciDrg")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		drg.Status.OsokStatus.Ocid = drg.Spec.DrgId
-		if err = c.UpdateDrg(ctx, drg); err != nil {
-			c.Log.ErrorLog(err, "Error while updating OciDrg")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
+	drgInstance, err := reconcileNetworkingResource(networkingCreateOrUpdateOps[ocicore.Drg]{
+		SpecID: drg.Spec.DrgId,
+		Status: &drg.Status.OsokStatus,
+		Get: func(id ociv1beta1.OCID) (*ocicore.Drg, error) {
+			return c.GetDrg(ctx, id)
+		},
+		Update: func() error {
+			return c.UpdateDrg(ctx, drg)
+		},
+		Lookup: func() (*ociv1beta1.OCID, error) {
+			return c.GetDrgOcid(ctx, *drg)
+		},
+		Create: func() (*ocicore.Drg, error) {
+			return c.CreateDrg(ctx, *drg)
+		},
+		OnCreateError: func(err error) {
+			drg.Status.OsokStatus = util.UpdateOSOKStatusCondition(drg.Status.OsokStatus,
+				ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), c.Log)
+			c.Log.ErrorLog(err, "Create OciDrg failed")
+		},
+		Log:            c.Log,
+		GetExistingMsg: "Error while getting existing OciDrg",
+		GetStatusMsg:   "Error while getting existing OciDrg from status OCID",
+		GetByOCIDMsg:   "Error while getting OciDrg by OCID",
+		UpdateMsg:      "Error while updating OciDrg",
+	})
+	if err != nil {
+		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
 	return reconcileLifecycleStatus(&drg.Status.OsokStatus, "OciDrg", safeString(drgInstance.DisplayName),

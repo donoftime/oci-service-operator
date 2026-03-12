@@ -16,6 +16,7 @@ import (
 	ociobjectstorage "github.com/oracle/oci-go-sdk/v65/objectstorage"
 	ociv1beta1 "github.com/oracle/oci-service-operator/api/v1beta1"
 	. "github.com/oracle/oci-service-operator/pkg/servicemanager/objectstorage"
+	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -165,4 +166,80 @@ func TestObjectStorageBucket_PropertyTagDriftTriggersUpdate(t *testing.T) {
 	if err := quick.Check(property, nil); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestObjectStorageBucket_PropertyCompartmentDriftTriggersUpdate(t *testing.T) {
+	property := func(seed uint16) bool {
+		namespace := fmt.Sprintf("ns-%d", seed)
+		bucketName := fmt.Sprintf("bucket-%d", seed)
+		var updatedReq ociobjectstorage.UpdateBucketRequest
+
+		fake := &fakeObjectStorageClient{
+			getBucketFn: func(_ context.Context, req ociobjectstorage.GetBucketRequest) (ociobjectstorage.GetBucketResponse, error) {
+				return ociobjectstorage.GetBucketResponse{
+					Bucket: ociobjectstorage.Bucket{
+						Name:          req.BucketName,
+						Namespace:     req.NamespaceName,
+						CompartmentId: common.String("ocid1.compartment.oc1..old"),
+					},
+				}, nil
+			},
+			updateBucketFn: func(_ context.Context, req ociobjectstorage.UpdateBucketRequest) (ociobjectstorage.UpdateBucketResponse, error) {
+				updatedReq = req
+				return ociobjectstorage.UpdateBucketResponse{}, nil
+			},
+		}
+
+		mgr := mgrWithFake(&fakeCredentialClient{}, fake)
+		bucket := &ociv1beta1.ObjectStorageBucket{}
+		bucket.Name = "bucket-cr"
+		bucket.Namespace = "default"
+		bucket.Status.OsokStatus.Ocid = ociv1beta1.OCID(namespace + "/" + bucketName)
+		bucket.Spec.CompartmentId = "ocid1.compartment.oc1..new"
+
+		resp, err := mgr.CreateOrUpdate(context.Background(), bucket, ctrl.Request{})
+		return err == nil &&
+			resp.IsSuccessful &&
+			updatedReq.CompartmentId != nil &&
+			*updatedReq.CompartmentId == string(bucket.Spec.CompartmentId)
+	}
+
+	if err := quick.Check(property, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestObjectStorageBucket_PropertyImmutableDriftFailsBeforeUpdate(t *testing.T) {
+	namespace := "ns-immutable"
+	bucketName := "bucket-immutable"
+	updateCalled := false
+
+	fake := &fakeObjectStorageClient{
+		getBucketFn: func(_ context.Context, req ociobjectstorage.GetBucketRequest) (ociobjectstorage.GetBucketResponse, error) {
+			return ociobjectstorage.GetBucketResponse{
+				Bucket: ociobjectstorage.Bucket{
+					Name:        req.BucketName,
+					Namespace:   req.NamespaceName,
+					StorageTier: ociobjectstorage.BucketStorageTierArchive,
+				},
+			}, nil
+		},
+		updateBucketFn: func(_ context.Context, _ ociobjectstorage.UpdateBucketRequest) (ociobjectstorage.UpdateBucketResponse, error) {
+			updateCalled = true
+			return ociobjectstorage.UpdateBucketResponse{}, nil
+		},
+	}
+
+	mgr := mgrWithFake(&fakeCredentialClient{}, fake)
+	bucket := &ociv1beta1.ObjectStorageBucket{}
+	bucket.Name = "bucket-cr"
+	bucket.Namespace = "default"
+	bucket.Status.OsokStatus.Ocid = ociv1beta1.OCID(namespace + "/" + bucketName)
+	bucket.Spec.StorageType = "Standard"
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), bucket, ctrl.Request{})
+	assert.Error(t, err)
+	assert.False(t, resp.IsSuccessful)
+	assert.Contains(t, err.Error(), "storageType cannot be updated in place")
+	assert.False(t, updateCalled)
 }

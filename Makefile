@@ -95,8 +95,8 @@ help: ## Display this help.
 
 ##@ Development
 
-manifests: module-cache cache-dirs controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) webhook paths=$(API_GEN_PATHS) output:crd:artifacts:config=config/crd/bases
+manifests: module-cache cache-dirs controller-gen ## Generate ClusterRole and CustomResourceDefinition objects.
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths=$(API_GEN_PATHS) output:crd:artifacts:config=config/crd/bases
 	$(CONTROLLER_GEN) rbac:roleName=manager-role paths=$(CONTROLLER_GEN_PATHS)
 
 generate: module-cache cache-dirs controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.

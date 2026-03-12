@@ -59,6 +59,9 @@ spec:
               cidrBlock:
                 description: CidrBlock is the CIDR block for the VCN
                 type: string
+                x-kubernetes-validations:
+                - message: cidrBlock is immutable
+                  rule: self == oldSelf
               compartmentId:
                 description: CompartmentId is the OCID of the compartment in which
                   to create the VCN
@@ -77,6 +80,9 @@ spec:
               dnsLabel:
                 description: DnsLabel is the DNS label for the VCN (optional)
                 type: string
+                x-kubernetes-validations:
+                - message: dnsLabel is immutable
+                  rule: self == oldSelf
               freeformTags:
                 additionalProperties:
                   type: string

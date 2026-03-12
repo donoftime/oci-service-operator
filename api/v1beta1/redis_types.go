@@ -33,10 +33,12 @@ type RedisClusterSpec struct {
 
 	// SoftwareVersion is the Redis version for the cluster (e.g. "V7_0_5")
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="softwareVersion is immutable"
 	SoftwareVersion string `json:"softwareVersion"`
 
 	// SubnetId is the OCID of the subnet for the Redis cluster
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="subnetId is immutable"
 	SubnetId OCID `json:"subnetId"`
 
 	TagResources `json:",inline,omitempty"`

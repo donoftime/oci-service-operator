@@ -52,11 +52,13 @@ func (f *fakeCredentialClient) UpdateSecret(_ context.Context, _, _ string, _ ma
 
 // fakeOciClient implements the OpensearchClusterClientInterface interface for testing.
 type fakeOciClient struct {
-	createFn func(ctx context.Context, req ociopensearch.CreateOpensearchClusterRequest) (ociopensearch.CreateOpensearchClusterResponse, error)
-	getFn    func(ctx context.Context, req ociopensearch.GetOpensearchClusterRequest) (ociopensearch.GetOpensearchClusterResponse, error)
-	updateFn func(ctx context.Context, req ociopensearch.UpdateOpensearchClusterRequest) (ociopensearch.UpdateOpensearchClusterResponse, error)
-	deleteFn func(ctx context.Context, req ociopensearch.DeleteOpensearchClusterRequest) (ociopensearch.DeleteOpensearchClusterResponse, error)
-	listFn   func(ctx context.Context, req ociopensearch.ListOpensearchClustersRequest) (ociopensearch.ListOpensearchClustersResponse, error)
+	createFn           func(ctx context.Context, req ociopensearch.CreateOpensearchClusterRequest) (ociopensearch.CreateOpensearchClusterResponse, error)
+	getFn              func(ctx context.Context, req ociopensearch.GetOpensearchClusterRequest) (ociopensearch.GetOpensearchClusterResponse, error)
+	resizeHorizontalFn func(ctx context.Context, req ociopensearch.ResizeOpensearchClusterHorizontalRequest) (ociopensearch.ResizeOpensearchClusterHorizontalResponse, error)
+	resizeVerticalFn   func(ctx context.Context, req ociopensearch.ResizeOpensearchClusterVerticalRequest) (ociopensearch.ResizeOpensearchClusterVerticalResponse, error)
+	updateFn           func(ctx context.Context, req ociopensearch.UpdateOpensearchClusterRequest) (ociopensearch.UpdateOpensearchClusterResponse, error)
+	deleteFn           func(ctx context.Context, req ociopensearch.DeleteOpensearchClusterRequest) (ociopensearch.DeleteOpensearchClusterResponse, error)
+	listFn             func(ctx context.Context, req ociopensearch.ListOpensearchClustersRequest) (ociopensearch.ListOpensearchClustersResponse, error)
 }
 
 func (f *fakeOciClient) CreateOpensearchCluster(ctx context.Context, req ociopensearch.CreateOpensearchClusterRequest) (ociopensearch.CreateOpensearchClusterResponse, error) {
@@ -71,6 +73,20 @@ func (f *fakeOciClient) GetOpensearchCluster(ctx context.Context, req ociopensea
 		return f.getFn(ctx, req)
 	}
 	return ociopensearch.GetOpensearchClusterResponse{}, nil
+}
+
+func (f *fakeOciClient) ResizeOpensearchClusterHorizontal(ctx context.Context, req ociopensearch.ResizeOpensearchClusterHorizontalRequest) (ociopensearch.ResizeOpensearchClusterHorizontalResponse, error) {
+	if f.resizeHorizontalFn != nil {
+		return f.resizeHorizontalFn(ctx, req)
+	}
+	return ociopensearch.ResizeOpensearchClusterHorizontalResponse{}, nil
+}
+
+func (f *fakeOciClient) ResizeOpensearchClusterVertical(ctx context.Context, req ociopensearch.ResizeOpensearchClusterVerticalRequest) (ociopensearch.ResizeOpensearchClusterVerticalResponse, error) {
+	if f.resizeVerticalFn != nil {
+		return f.resizeVerticalFn(ctx, req)
+	}
+	return ociopensearch.ResizeOpensearchClusterVerticalResponse{}, nil
 }
 
 func (f *fakeOciClient) UpdateOpensearchCluster(ctx context.Context, req ociopensearch.UpdateOpensearchClusterRequest) (ociopensearch.UpdateOpensearchClusterResponse, error) {
@@ -111,19 +127,33 @@ func makeManagerWithFake(fake *fakeOciClient) *OpenSearchClusterServiceManager {
 
 func makeActiveCluster(id, name string) ociopensearch.OpensearchCluster {
 	return ociopensearch.OpensearchCluster{
-		Id:                     common.String(id),
-		DisplayName:            common.String(name),
-		CompartmentId:          common.String("ocid1.compartment.oc1..xxx"),
-		LifecycleState:         ociopensearch.OpensearchClusterLifecycleStateActive,
-		SoftwareVersion:        common.String("2.3.0"),
-		TotalStorageGB:         common.Int(100),
-		OpensearchFqdn:         common.String("opensearch.example.com"),
-		OpensearchPrivateIp:    common.String("10.0.0.1"),
-		OpendashboardFqdn:      common.String("dashboard.example.com"),
-		OpendashboardPrivateIp: common.String("10.0.0.2"),
-		MasterNodeCount:        common.Int(3),
-		DataNodeCount:          common.Int(3),
-		DataNodeStorageGB:      common.Int(50),
+		Id:                             common.String(id),
+		DisplayName:                    common.String(name),
+		CompartmentId:                  common.String("ocid1.compartment.oc1..xxx"),
+		LifecycleState:                 ociopensearch.OpensearchClusterLifecycleStateActive,
+		SoftwareVersion:                common.String("2.3.0"),
+		TotalStorageGB:                 common.Int(100),
+		OpensearchFqdn:                 common.String("opensearch.example.com"),
+		OpensearchPrivateIp:            common.String("10.0.0.1"),
+		OpendashboardFqdn:              common.String("dashboard.example.com"),
+		OpendashboardPrivateIp:         common.String("10.0.0.2"),
+		MasterNodeCount:                common.Int(3),
+		MasterNodeHostType:             ociopensearch.MasterNodeHostTypeFlex,
+		MasterNodeHostOcpuCount:        common.Int(1),
+		MasterNodeHostMemoryGB:         common.Int(8),
+		DataNodeCount:                  common.Int(3),
+		DataNodeHostType:               ociopensearch.DataNodeHostTypeFlex,
+		DataNodeHostOcpuCount:          common.Int(1),
+		DataNodeHostMemoryGB:           common.Int(8),
+		DataNodeStorageGB:              common.Int(50),
+		OpendashboardNodeCount:         common.Int(1),
+		OpendashboardNodeHostOcpuCount: common.Int(1),
+		OpendashboardNodeHostMemoryGB:  common.Int(8),
+		VcnId:                          common.String("ocid1.vcn.oc1..x"),
+		SubnetId:                       common.String("ocid1.subnet.oc1..x"),
+		VcnCompartmentId:               common.String("ocid1.compartment.oc1..xxx"),
+		SubnetCompartmentId:            common.String("ocid1.compartment.oc1..xxx"),
+		SecurityMode:                   ociopensearch.SecurityModeDisabled,
 	}
 }
 

@@ -82,6 +82,9 @@ spec:
                 type: integer
               dbName:
                 type: string
+                x-kubernetes-validations:
+                - message: dbName is immutable
+                  rule: self == oldSelf
               dbVersion:
                 type: string
               dbWorkload:

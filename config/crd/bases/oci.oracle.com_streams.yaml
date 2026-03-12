@@ -79,13 +79,22 @@ spec:
                 type: object
               name:
                 type: string
+                x-kubernetes-validations:
+                - message: name is immutable
+                  rule: self == oldSelf
               partitions:
                 minimum: 1
                 type: integer
+                x-kubernetes-validations:
+                - message: partitions is immutable
+                  rule: self == oldSelf
               retentionInHours:
                 maximum: 168
                 minimum: 24
                 type: integer
+                x-kubernetes-validations:
+                - message: retentionInHours is immutable
+                  rule: self == oldSelf
               streamPoolId:
                 maxLength: 255
                 minLength: 1

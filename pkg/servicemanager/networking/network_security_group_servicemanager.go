@@ -8,7 +8,6 @@ package networking
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	ocicore "github.com/oracle/oci-go-sdk/v65/core"
@@ -53,41 +52,34 @@ func (c *OciNetworkSecurityGroupServiceManager) CreateOrUpdate(ctx context.Conte
 		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
-	var nsgInstance *ocicore.NetworkSecurityGroup
-
-	if strings.TrimSpace(string(nsg.Spec.NetworkSecurityGroupId)) == "" {
-		nsgOcid, err := c.GetNetworkSecurityGroupOcid(ctx, *nsg)
-		if err != nil {
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		if nsgOcid == nil {
-			nsgInstance, err = c.CreateNetworkSecurityGroup(ctx, *nsg)
-			if err != nil {
-				nsg.Status.OsokStatus = util.UpdateOSOKStatusCondition(nsg.Status.OsokStatus,
-					ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), c.Log)
-				c.Log.ErrorLog(err, "Create OciNetworkSecurityGroup failed")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		} else {
-			nsgInstance, err = c.GetNetworkSecurityGroup(ctx, *nsgOcid)
-			if err != nil {
-				c.Log.ErrorLog(err, "Error while getting OciNetworkSecurityGroup by OCID")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		}
-	} else {
-		nsgInstance, err = c.GetNetworkSecurityGroup(ctx, nsg.Spec.NetworkSecurityGroupId)
-		if err != nil {
-			c.Log.ErrorLog(err, "Error while getting existing OciNetworkSecurityGroup")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		nsg.Status.OsokStatus.Ocid = nsg.Spec.NetworkSecurityGroupId
-		if err = c.UpdateNetworkSecurityGroup(ctx, nsg); err != nil {
-			c.Log.ErrorLog(err, "Error while updating OciNetworkSecurityGroup")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
+	nsgInstance, err := reconcileNetworkingResource(networkingCreateOrUpdateOps[ocicore.NetworkSecurityGroup]{
+		SpecID: nsg.Spec.NetworkSecurityGroupId,
+		Status: &nsg.Status.OsokStatus,
+		Get: func(id ociv1beta1.OCID) (*ocicore.NetworkSecurityGroup, error) {
+			return c.GetNetworkSecurityGroup(ctx, id)
+		},
+		Update: func() error {
+			return c.UpdateNetworkSecurityGroup(ctx, nsg)
+		},
+		Lookup: func() (*ociv1beta1.OCID, error) {
+			return c.GetNetworkSecurityGroupOcid(ctx, *nsg)
+		},
+		Create: func() (*ocicore.NetworkSecurityGroup, error) {
+			return c.CreateNetworkSecurityGroup(ctx, *nsg)
+		},
+		OnCreateError: func(err error) {
+			nsg.Status.OsokStatus = util.UpdateOSOKStatusCondition(nsg.Status.OsokStatus,
+				ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), c.Log)
+			c.Log.ErrorLog(err, "Create OciNetworkSecurityGroup failed")
+		},
+		Log:            c.Log,
+		GetExistingMsg: "Error while getting existing OciNetworkSecurityGroup",
+		GetStatusMsg:   "Error while getting existing OciNetworkSecurityGroup from status OCID",
+		GetByOCIDMsg:   "Error while getting OciNetworkSecurityGroup by OCID",
+		UpdateMsg:      "Error while updating OciNetworkSecurityGroup",
+	})
+	if err != nil {
+		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
 	return reconcileLifecycleStatus(&nsg.Status.OsokStatus, "OciNetworkSecurityGroup", safeString(nsgInstance.DisplayName),

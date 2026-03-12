@@ -13,6 +13,7 @@ import (
 	"github.com/oracle/oci-go-sdk/v65/common"
 	ocifunctions "github.com/oracle/oci-go-sdk/v65/functions"
 	ociv1beta1 "github.com/oracle/oci-service-operator/api/v1beta1"
+	"github.com/oracle/oci-service-operator/pkg/servicemanager"
 	"github.com/oracle/oci-service-operator/pkg/util"
 )
 
@@ -21,6 +22,7 @@ type FunctionsManagementClientInterface interface {
 	CreateApplication(ctx context.Context, request ocifunctions.CreateApplicationRequest) (ocifunctions.CreateApplicationResponse, error)
 	GetApplication(ctx context.Context, request ocifunctions.GetApplicationRequest) (ocifunctions.GetApplicationResponse, error)
 	ListApplications(ctx context.Context, request ocifunctions.ListApplicationsRequest) (ocifunctions.ListApplicationsResponse, error)
+	ChangeApplicationCompartment(ctx context.Context, request ocifunctions.ChangeApplicationCompartmentRequest) (ocifunctions.ChangeApplicationCompartmentResponse, error)
 	UpdateApplication(ctx context.Context, request ocifunctions.UpdateApplicationRequest) (ocifunctions.UpdateApplicationResponse, error)
 	DeleteApplication(ctx context.Context, request ocifunctions.DeleteApplicationRequest) (ocifunctions.DeleteApplicationResponse, error)
 	CreateFunction(ctx context.Context, request ocifunctions.CreateFunctionRequest) (ocifunctions.CreateFunctionResponse, error)
@@ -142,9 +144,31 @@ func (m *FunctionsApplicationServiceManager) UpdateApplication(ctx context.Conte
 		return err
 	}
 
-	existing, err := m.GetApplication(ctx, app.Status.OsokStatus.Ocid, nil)
+	targetID, err := servicemanager.ResolveResourceID(app.Status.OsokStatus.Ocid, app.Spec.FunctionsApplicationId)
 	if err != nil {
 		return err
+	}
+
+	existing, err := m.GetApplication(ctx, targetID, nil)
+	if err != nil {
+		return err
+	}
+
+	if err := validateApplicationUnsupportedChanges(app, existing); err != nil {
+		return err
+	}
+
+	if app.Spec.CompartmentId != "" &&
+		(existing.CompartmentId == nil || *existing.CompartmentId != string(app.Spec.CompartmentId)) {
+		_, err = client.ChangeApplicationCompartment(ctx, ocifunctions.ChangeApplicationCompartmentRequest{
+			ApplicationId: common.String(string(targetID)),
+			ChangeApplicationCompartmentDetails: ocifunctions.ChangeApplicationCompartmentDetails{
+				CompartmentId: common.String(string(app.Spec.CompartmentId)),
+			},
+		})
+		if err != nil {
+			return err
+		}
 	}
 
 	updateDetails, updateNeeded := buildApplicationUpdateDetails(app, existing)
@@ -154,7 +178,7 @@ func (m *FunctionsApplicationServiceManager) UpdateApplication(ctx context.Conte
 	}
 
 	req := ocifunctions.UpdateApplicationRequest{
-		ApplicationId:            common.String(string(app.Status.OsokStatus.Ocid)),
+		ApplicationId:            common.String(string(targetID)),
 		UpdateApplicationDetails: updateDetails,
 	}
 
@@ -186,6 +210,19 @@ func applyApplicationConfigUpdate(
 
 	updateDetails.Config = app.Spec.Config
 	return true
+}
+
+func validateApplicationUnsupportedChanges(app *ociv1beta1.FunctionsApplication, existing *ocifunctions.Application) error {
+	if app.Spec.DisplayName != "" && safeFunctionsString(existing.DisplayName) != app.Spec.DisplayName {
+		return fmt.Errorf("displayName cannot be updated in place")
+	}
+	if app.Spec.Shape != "" && existing.Shape != "" && string(existing.Shape) != app.Spec.Shape {
+		return fmt.Errorf("shape cannot be updated in place")
+	}
+	if len(app.Spec.SubnetIds) > 0 && len(existing.SubnetIds) > 0 && !reflect.DeepEqual(existing.SubnetIds, app.Spec.SubnetIds) {
+		return fmt.Errorf("subnetIds cannot be updated in place")
+	}
+	return nil
 }
 
 func applyApplicationNetworkSecurityGroupUpdate(

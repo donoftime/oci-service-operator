@@ -16,7 +16,6 @@ import (
 	ctrlcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
-	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	"gopkg.in/yaml.v3"
 )
@@ -38,7 +37,6 @@ type controllerManagerConfig struct {
 	Controller              *controllerManagerController     `yaml:"controller,omitempty"`
 	Metrics                 controllerManagerMetrics         `yaml:"metrics,omitempty"`
 	Health                  controllerManagerHealth          `yaml:"health,omitempty"`
-	Webhook                 controllerManagerWebhook         `yaml:"webhook,omitempty"`
 	LeaderElection          *controllerManagerLeaderElection `yaml:"leaderElection,omitempty"`
 }
 
@@ -60,14 +58,6 @@ type controllerManagerHealth struct {
 	HealthProbeBindAddress string `yaml:"healthProbeBindAddress,omitempty"`
 	ReadinessEndpointName  string `yaml:"readinessEndpointName,omitempty"`
 	LivenessEndpointName   string `yaml:"livenessEndpointName,omitempty"`
-}
-
-type controllerManagerWebhook struct {
-	Port     *int   `yaml:"port,omitempty"`
-	Host     string `yaml:"host,omitempty"`
-	CertDir  string `yaml:"certDir,omitempty"`
-	CertName string `yaml:"certName,omitempty"`
-	KeyName  string `yaml:"keyName,omitempty"`
 }
 
 type controllerManagerLeaderElection struct {
@@ -122,7 +112,7 @@ func parseManagerFlags() (managerFlags, zap.Options, map[string]bool) {
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
 	flag.BoolVar(&flags.initOSOKResources, "init-osok-resources", false,
-		"Install OSOK prerequisites like CRDs and Webhooks at manager bootup")
+		"Install OSOK prerequisites like CRDs at manager bootup")
 
 	zapOptions.BindFlags(flag.CommandLine)
 	flag.Parse()
@@ -186,7 +176,6 @@ func mergeManagerOptions(options ctrl.Options, config controllerManagerConfig, e
 	applyLeaderElectionOptions(&options, config, explicitFlags)
 	applyShutdownOptions(&options, config)
 	applyControllerOptions(&options, config)
-	applyWebhookOptions(&options, config)
 
 	return options
 }
@@ -286,27 +275,4 @@ func applyControllerOptions(options *ctrl.Options, config controllerManagerConfi
 	if options.Controller.RecoverPanic == nil && config.Controller.RecoverPanic != nil {
 		options.Controller.RecoverPanic = config.Controller.RecoverPanic
 	}
-}
-
-func applyWebhookOptions(options *ctrl.Options, config controllerManagerConfig) {
-	if options.WebhookServer == nil && shouldConfigureWebhookServer(config.Webhook) {
-		options.WebhookServer = webhook.NewServer(webhook.Options{
-			Port:     webhookPort(config.Webhook.Port),
-			Host:     config.Webhook.Host,
-			CertDir:  config.Webhook.CertDir,
-			CertName: config.Webhook.CertName,
-			KeyName:  config.Webhook.KeyName,
-		})
-	}
-}
-
-func shouldConfigureWebhookServer(config controllerManagerWebhook) bool {
-	return config.Port != nil || config.Host != "" || config.CertDir != "" || config.CertName != "" || config.KeyName != ""
-}
-
-func webhookPort(port *int) int {
-	if port == nil {
-		return 0
-	}
-	return *port
 }

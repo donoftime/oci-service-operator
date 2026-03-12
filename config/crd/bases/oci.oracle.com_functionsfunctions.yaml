@@ -62,6 +62,9 @@ spec:
                 maxLength: 255
                 minLength: 1
                 type: string
+                x-kubernetes-validations:
+                - message: applicationId is immutable
+                  rule: self == oldSelf
               config:
                 additionalProperties:
                   type: string
@@ -77,6 +80,9 @@ spec:
               displayName:
                 description: DisplayName is a user-friendly name for the function
                 type: string
+                x-kubernetes-validations:
+                - message: displayName is immutable
+                  rule: self == oldSelf
               freeformTags:
                 additionalProperties:
                   type: string

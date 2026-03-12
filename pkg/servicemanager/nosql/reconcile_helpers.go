@@ -22,11 +22,27 @@ import (
 )
 
 func (c *NoSQLDatabaseServiceManager) resolveTableForReconcile(ctx context.Context, db *ociv1beta1.NoSQLDatabase) (*nosql.Table, *servicemanager.OSOKResponse, error) {
-	if strings.TrimSpace(string(db.Spec.TableId)) == "" {
-		return c.createOrLookupTable(ctx, db)
+	if strings.TrimSpace(string(db.Spec.TableId)) != "" {
+		return c.bindTableByID(ctx, db)
 	}
 
-	return c.bindTableByID(ctx, db)
+	if strings.TrimSpace(string(db.Status.OsokStatus.Ocid)) != "" {
+		tableInstance, err := c.GetTable(ctx, db.Status.OsokStatus.Ocid, nil)
+		if err != nil {
+			if !isNotFoundServiceError(err) {
+				return nil, nil, err
+			}
+			db.Status.OsokStatus.Ocid = ""
+		} else {
+			if err := c.UpdateTable(ctx, db); err != nil {
+				c.Log.ErrorLog(err, "Error while updating NoSQL table")
+				return nil, nil, err
+			}
+			return tableInstance, nil, nil
+		}
+	}
+
+	return c.createOrLookupTable(ctx, db)
 }
 
 func (c *NoSQLDatabaseServiceManager) createOrLookupTable(ctx context.Context, db *ociv1beta1.NoSQLDatabase) (*nosql.Table, *servicemanager.OSOKResponse, error) {
@@ -45,6 +61,10 @@ func (c *NoSQLDatabaseServiceManager) createOrLookupTable(ctx context.Context, d
 	}
 
 	db.Status.OsokStatus.Ocid = ociv1beta1.OCID(safeString(tableInstance.Id))
+	if err := c.UpdateTable(ctx, db); err != nil {
+		c.Log.ErrorLog(err, "Error while updating NoSQL table")
+		return nil, nil, err
+	}
 	return tableInstance, nil, nil
 }
 

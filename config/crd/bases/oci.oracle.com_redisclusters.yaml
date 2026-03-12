@@ -93,11 +93,17 @@ spec:
                 description: SoftwareVersion is the Redis version for the cluster
                   (e.g. "V7_0_5")
                 type: string
+                x-kubernetes-validations:
+                - message: softwareVersion is immutable
+                  rule: self == oldSelf
               subnetId:
                 description: SubnetId is the OCID of the subnet for the Redis cluster
                 maxLength: 255
                 minLength: 1
                 type: string
+                x-kubernetes-validations:
+                - message: subnetId is immutable
+                  rule: self == oldSelf
             required:
             - compartmentId
             - displayName

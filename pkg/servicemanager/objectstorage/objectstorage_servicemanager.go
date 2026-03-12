@@ -335,6 +335,10 @@ func (m *ObjectStorageBucketServiceManager) updateBucket(ctx context.Context, ns
 	}
 	currentBucket := currentBucketResp.Bucket
 
+	if err := validateBucketUnsupportedChanges(resource, ns, bucketName, currentBucket); err != nil {
+		return err
+	}
+
 	updateDetails, updateNeeded := buildBucketUpdateDetails(resource, currentBucket)
 
 	if !updateNeeded {
@@ -350,6 +354,24 @@ func (m *ObjectStorageBucketServiceManager) updateBucket(ctx context.Context, ns
 	return err
 }
 
+func validateBucketUnsupportedChanges(
+	resource *ociv1beta1.ObjectStorageBucket,
+	namespace string,
+	bucketName string,
+	currentBucket ociobjectstorage.Bucket,
+) error {
+	if resource.Spec.Name != "" && resource.Spec.Name != bucketName {
+		return fmt.Errorf("name cannot be updated in place")
+	}
+	if resource.Spec.Namespace != "" && resource.Spec.Namespace != namespace {
+		return fmt.Errorf("namespace cannot be updated in place")
+	}
+	if resource.Spec.StorageType != "" && string(currentBucket.StorageTier) != "" && string(currentBucket.StorageTier) != resource.Spec.StorageType {
+		return fmt.Errorf("storageType cannot be updated in place")
+	}
+	return nil
+}
+
 func buildBucketUpdateDetails(
 	resource *ociv1beta1.ObjectStorageBucket,
 	currentBucket ociobjectstorage.Bucket,
@@ -357,12 +379,29 @@ func buildBucketUpdateDetails(
 	updateDetails := ociobjectstorage.UpdateBucketDetails{}
 	updateNeeded := false
 
+	updateNeeded = applyBucketCompartmentUpdate(&updateDetails, resource, currentBucket) || updateNeeded
 	updateNeeded = applyBucketAccessTypeUpdate(&updateDetails, resource, currentBucket) || updateNeeded
 	updateNeeded = applyBucketVersioningUpdate(&updateDetails, resource, currentBucket) || updateNeeded
 	updateNeeded = applyBucketFreeformTagUpdate(&updateDetails, resource, currentBucket) || updateNeeded
 	updateNeeded = applyBucketDefinedTagUpdate(&updateDetails, resource, currentBucket) || updateNeeded
 
 	return updateDetails, updateNeeded
+}
+
+func applyBucketCompartmentUpdate(
+	updateDetails *ociobjectstorage.UpdateBucketDetails,
+	resource *ociv1beta1.ObjectStorageBucket,
+	currentBucket ociobjectstorage.Bucket,
+) bool {
+	if resource.Spec.CompartmentId == "" {
+		return false
+	}
+	if currentBucket.CompartmentId != nil && *currentBucket.CompartmentId == string(resource.Spec.CompartmentId) {
+		return false
+	}
+
+	updateDetails.CompartmentId = common.String(string(resource.Spec.CompartmentId))
+	return true
 }
 
 func applyBucketAccessTypeUpdate(

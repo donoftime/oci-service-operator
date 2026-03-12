@@ -591,6 +591,55 @@ func TestCreateOrUpdate_WithTableId_Success(t *testing.T) {
 	assert.True(t, updateCalled, "UpdateTable should be called when DDL is provided")
 }
 
+func TestCreateOrUpdate_StatusOcidUsesUpdatePath(t *testing.T) {
+	updateCalled := false
+	mock := &mockNosqlClient{
+		getFn: func(_ context.Context, req nosql.GetTableRequest) (nosql.GetTableResponse, error) {
+			assert.Equal(t, testTableOcid, *req.TableNameOrId)
+			return nosql.GetTableResponse{Table: makeActiveTable(testTableOcid, "my-table")}, nil
+		},
+		updateFn: func(_ context.Context, req nosql.UpdateTableRequest) (nosql.UpdateTableResponse, error) {
+			updateCalled = true
+			assert.Equal(t, testTableOcid, *req.TableNameOrId)
+			return nosql.UpdateTableResponse{}, nil
+		},
+	}
+	mgr := newTestManager(mock)
+
+	db := &ociv1beta1.NoSQLDatabase{}
+	db.Status.OsokStatus.Ocid = ociv1beta1.OCID(testTableOcid)
+	db.Spec.DdlStatement = "ALTER TABLE my-table ADD COLUMN col1 STRING"
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), db, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.True(t, updateCalled)
+}
+
+func TestUpdateTable_SendsCompartmentDrift(t *testing.T) {
+	mock := &mockNosqlClient{
+		getFn: func(_ context.Context, req nosql.GetTableRequest) (nosql.GetTableResponse, error) {
+			assert.Equal(t, testTableOcid, *req.TableNameOrId)
+			table := makeActiveTable(testTableOcid, "my-table")
+			table.CompartmentId = common.String("ocid1.compartment.oc1..old")
+			return nosql.GetTableResponse{Table: table}, nil
+		},
+		updateFn: func(_ context.Context, req nosql.UpdateTableRequest) (nosql.UpdateTableResponse, error) {
+			assert.NotNil(t, req.CompartmentId)
+			assert.Equal(t, "ocid1.compartment.oc1..new", *req.CompartmentId)
+			return nosql.UpdateTableResponse{}, nil
+		},
+	}
+	mgr := newTestManager(mock)
+
+	db := &ociv1beta1.NoSQLDatabase{}
+	db.Status.OsokStatus.Ocid = ociv1beta1.OCID(testTableOcid)
+	db.Spec.CompartmentId = "ocid1.compartment.oc1..new"
+
+	err := mgr.UpdateTable(context.Background(), db)
+	assert.NoError(t, err)
+}
+
 // TestCreateOrUpdate_WithTableId_UpdateNoOp verifies no UpdateTable call when no DDL or limits.
 func TestCreateOrUpdate_WithTableId_UpdateNoOp(t *testing.T) {
 	updateCalled := false

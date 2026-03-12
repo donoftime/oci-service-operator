@@ -74,6 +74,24 @@ func (c *ComputeInstanceServiceManager) resolveInstanceForReconcile(ctx context.
 
 func (c *ComputeInstanceServiceManager) resolveManagedInstance(ctx context.Context, ci *ociv1beta1.ComputeInstance,
 	req ctrl.Request) (*core.Instance, servicemanager.OSOKResponse, bool, error) {
+	if strings.TrimSpace(string(ci.Status.OsokStatus.Ocid)) != "" {
+		instance, err := c.GetInstance(ctx, ci.Status.OsokStatus.Ocid, nil)
+		if err != nil {
+			if !isNotFoundServiceError(err) {
+				c.Log.ErrorLog(err, "Error while getting ComputeInstance from status OCID")
+				return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
+			}
+
+			ci.Status.OsokStatus.Ocid = ""
+		} else {
+			if err = c.UpdateInstance(ctx, ci); err != nil {
+				c.Log.ErrorLog(err, "Error while updating ComputeInstance")
+				return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
+			}
+			return instance, servicemanager.OSOKResponse{}, false, nil
+		}
+	}
+
 	instanceOcid, err := c.GetInstanceOcid(ctx, *ci)
 	if err != nil {
 		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
@@ -86,6 +104,12 @@ func (c *ComputeInstanceServiceManager) resolveManagedInstance(ctx context.Conte
 	instance, err := c.GetInstance(ctx, *instanceOcid, nil)
 	if err != nil {
 		c.Log.ErrorLog(err, "Error while getting ComputeInstance by OCID")
+		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
+	}
+
+	ci.Status.OsokStatus.Ocid = *instanceOcid
+	if err = c.UpdateInstance(ctx, ci); err != nil {
+		c.Log.ErrorLog(err, "Error while updating ComputeInstance")
 		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
 	}
 

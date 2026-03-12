@@ -191,6 +191,18 @@ func (c *StreamServiceManager) resolveStreamInstance(ctx context.Context, stream
 		streamInstance, err := c.loadStreamInstance(ctx, streamID, nil, kind, req)
 		return streamInstance, streamID, err
 	}
+	if strings.TrimSpace(string(streamObject.Status.OsokStatus.Ocid)) != "" {
+		streamID := streamObject.Status.OsokStatus.Ocid
+		streamInstance, err := c.loadStreamInstance(ctx, streamID, nil, kind, req)
+		if err != nil {
+			if !isStreamNotFound(err) {
+				return nil, "", err
+			}
+			streamObject.Status.OsokStatus.Ocid = ""
+		} else {
+			return streamInstance, streamID, nil
+		}
+	}
 	return c.lookupOrCreateStream(ctx, streamObject, kind, req)
 }
 

@@ -60,6 +60,9 @@ spec:
                 description: AvailabilityDomain is the availability domain for the
                   subnet (omit for regional subnet)
                 type: string
+                x-kubernetes-validations:
+                - message: availabilityDomain is immutable
+                  rule: self == oldSelf
               cidrBlock:
                 description: CidrBlock is the CIDR block for the subnet
                 type: string
@@ -81,6 +84,9 @@ spec:
               dnsLabel:
                 description: DnsLabel is the DNS label for the subnet (optional)
                 type: string
+                x-kubernetes-validations:
+                - message: dnsLabel is immutable
+                  rule: self == oldSelf
               freeformTags:
                 additionalProperties:
                   type: string
@@ -95,6 +101,9 @@ spec:
                 description: ProhibitPublicIpOnVnic controls whether VNICs in this
                   subnet can have public IPs
                 type: boolean
+                x-kubernetes-validations:
+                - message: prohibitPublicIpOnVnic is immutable
+                  rule: self == oldSelf
               routeTableId:
                 description: RouteTableId is the OCID of the route table the subnet
                   uses (optional)
@@ -114,6 +123,9 @@ spec:
                 maxLength: 255
                 minLength: 1
                 type: string
+                x-kubernetes-validations:
+                - message: vcnId is immutable
+                  rule: self == oldSelf
             required:
             - cidrBlock
             - compartmentId

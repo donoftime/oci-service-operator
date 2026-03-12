@@ -8,11 +8,13 @@ package apigateway
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/apigateway"
 	"github.com/oracle/oci-go-sdk/v65/common"
 	ociv1beta1 "github.com/oracle/oci-service-operator/api/v1beta1"
+	"github.com/oracle/oci-service-operator/pkg/servicemanager"
 	"github.com/oracle/oci-service-operator/pkg/util"
 )
 
@@ -22,6 +24,7 @@ type GatewayClientInterface interface {
 	CreateGateway(ctx context.Context, request apigateway.CreateGatewayRequest) (apigateway.CreateGatewayResponse, error)
 	GetGateway(ctx context.Context, request apigateway.GetGatewayRequest) (apigateway.GetGatewayResponse, error)
 	ListGateways(ctx context.Context, request apigateway.ListGatewaysRequest) (apigateway.ListGatewaysResponse, error)
+	ChangeGatewayCompartment(ctx context.Context, request apigateway.ChangeGatewayCompartmentRequest) (apigateway.ChangeGatewayCompartmentResponse, error)
 	UpdateGateway(ctx context.Context, request apigateway.UpdateGatewayRequest) (apigateway.UpdateGatewayResponse, error)
 	DeleteGateway(ctx context.Context, request apigateway.DeleteGatewayRequest) (apigateway.DeleteGatewayResponse, error)
 }
@@ -135,45 +138,118 @@ func (c *GatewayServiceManager) UpdateGateway(ctx context.Context, gw *ociv1beta
 		return err
 	}
 
-	updateDetails := apigateway.UpdateGatewayDetails{}
-	updateNeeded := false
-
-	if gw.Spec.DisplayName != "" {
-		updateDetails.DisplayName = common.String(gw.Spec.DisplayName)
-		updateNeeded = true
+	targetID, err := servicemanager.ResolveResourceID(gw.Status.OsokStatus.Ocid, gw.Spec.ApiGatewayId)
+	if err != nil {
+		return err
 	}
 
-	if len(gw.Spec.NetworkSecurityGroupIds) > 0 {
-		updateDetails.NetworkSecurityGroupIds = gw.Spec.NetworkSecurityGroupIds
-		updateNeeded = true
+	existing, err := c.GetGateway(ctx, targetID, nil)
+	if err != nil {
+		return err
 	}
 
-	if gw.Spec.CertificateId != "" {
-		updateDetails.CertificateId = common.String(string(gw.Spec.CertificateId))
-		updateNeeded = true
+	if err := validateGatewayUnsupportedChanges(gw, existing); err != nil {
+		return err
 	}
 
-	if gw.Spec.FreeFormTags != nil {
-		updateDetails.FreeformTags = gw.Spec.FreeFormTags
-		updateNeeded = true
+	if gw.Spec.CompartmentId != "" &&
+		(existing.CompartmentId == nil || *existing.CompartmentId != string(gw.Spec.CompartmentId)) {
+		if _, err = client.ChangeGatewayCompartment(ctx, apigateway.ChangeGatewayCompartmentRequest{
+			GatewayId: common.String(string(targetID)),
+			ChangeGatewayCompartmentDetails: apigateway.ChangeGatewayCompartmentDetails{
+				CompartmentId: common.String(string(gw.Spec.CompartmentId)),
+			},
+		}); err != nil {
+			return err
+		}
 	}
 
-	if gw.Spec.DefinedTags != nil {
-		updateDetails.DefinedTags = *util.ConvertToOciDefinedTags(&gw.Spec.DefinedTags)
-		updateNeeded = true
-	}
+	updateDetails, updateNeeded := buildGatewayUpdateDetails(gw, existing)
 
 	if !updateNeeded {
 		return nil
 	}
 
 	req := apigateway.UpdateGatewayRequest{
-		GatewayId:            common.String(string(gw.Status.OsokStatus.Ocid)),
+		GatewayId:            common.String(string(targetID)),
 		UpdateGatewayDetails: updateDetails,
 	}
 
 	_, err = client.UpdateGateway(ctx, req)
 	return err
+}
+
+func buildGatewayUpdateDetails(gw *ociv1beta1.ApiGateway, existing *apigateway.Gateway) (apigateway.UpdateGatewayDetails, bool) {
+	updateDetails := apigateway.UpdateGatewayDetails{}
+	updateNeeded := applyGatewayDisplayNameUpdate(&updateDetails, gw, existing)
+	if applyGatewayNetworkSecurityGroupUpdate(&updateDetails, gw, existing) {
+		updateNeeded = true
+	}
+	if applyGatewayCertificateUpdate(&updateDetails, gw, existing) {
+		updateNeeded = true
+	}
+	if applyGatewayFreeformTagUpdate(&updateDetails, gw, existing) {
+		updateNeeded = true
+	}
+	if applyGatewayDefinedTagUpdate(&updateDetails, gw, existing) {
+		updateNeeded = true
+	}
+
+	return updateDetails, updateNeeded
+}
+
+func applyGatewayDisplayNameUpdate(updateDetails *apigateway.UpdateGatewayDetails, gw *ociv1beta1.ApiGateway, existing *apigateway.Gateway) bool {
+	if gw.Spec.DisplayName == "" || safeGatewayString(existing.DisplayName) == gw.Spec.DisplayName {
+		return false
+	}
+	updateDetails.DisplayName = common.String(gw.Spec.DisplayName)
+	return true
+}
+
+func applyGatewayNetworkSecurityGroupUpdate(updateDetails *apigateway.UpdateGatewayDetails, gw *ociv1beta1.ApiGateway, existing *apigateway.Gateway) bool {
+	if len(gw.Spec.NetworkSecurityGroupIds) == 0 || reflect.DeepEqual(existing.NetworkSecurityGroupIds, gw.Spec.NetworkSecurityGroupIds) {
+		return false
+	}
+	updateDetails.NetworkSecurityGroupIds = gw.Spec.NetworkSecurityGroupIds
+	return true
+}
+
+func applyGatewayCertificateUpdate(updateDetails *apigateway.UpdateGatewayDetails, gw *ociv1beta1.ApiGateway, existing *apigateway.Gateway) bool {
+	if gw.Spec.CertificateId == "" || safeGatewayString(existing.CertificateId) == string(gw.Spec.CertificateId) {
+		return false
+	}
+	updateDetails.CertificateId = common.String(string(gw.Spec.CertificateId))
+	return true
+}
+
+func applyGatewayFreeformTagUpdate(updateDetails *apigateway.UpdateGatewayDetails, gw *ociv1beta1.ApiGateway, existing *apigateway.Gateway) bool {
+	if gw.Spec.FreeFormTags == nil || reflect.DeepEqual(existing.FreeformTags, gw.Spec.FreeFormTags) {
+		return false
+	}
+	updateDetails.FreeformTags = gw.Spec.FreeFormTags
+	return true
+}
+
+func applyGatewayDefinedTagUpdate(updateDetails *apigateway.UpdateGatewayDetails, gw *ociv1beta1.ApiGateway, existing *apigateway.Gateway) bool {
+	if gw.Spec.DefinedTags == nil {
+		return false
+	}
+	desiredDefinedTags := *util.ConvertToOciDefinedTags(&gw.Spec.DefinedTags)
+	if reflect.DeepEqual(existing.DefinedTags, desiredDefinedTags) {
+		return false
+	}
+	updateDetails.DefinedTags = desiredDefinedTags
+	return true
+}
+
+func validateGatewayUnsupportedChanges(gw *ociv1beta1.ApiGateway, existing *apigateway.Gateway) error {
+	if gw.Spec.EndpointType != "" && existing.EndpointType != "" && string(existing.EndpointType) != gw.Spec.EndpointType {
+		return fmt.Errorf("endpointType cannot be updated in place")
+	}
+	if gw.Spec.SubnetId != "" && safeGatewayString(existing.SubnetId) != "" && safeGatewayString(existing.SubnetId) != string(gw.Spec.SubnetId) {
+		return fmt.Errorf("subnetId cannot be updated in place")
+	}
+	return nil
 }
 
 // DeleteGateway deletes the API Gateway for the given OCID.

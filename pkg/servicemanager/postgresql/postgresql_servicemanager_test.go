@@ -80,11 +80,12 @@ func (f *fakeCredentialClient) UpdateSecret(ctx context.Context, name, ns string
 
 // mockOciPostgresClient implements PostgresClientInterface for unit testing.
 type mockOciPostgresClient struct {
-	createFn func(ctx context.Context, req ocipsql.CreateDbSystemRequest) (ocipsql.CreateDbSystemResponse, error)
-	getFn    func(ctx context.Context, req ocipsql.GetDbSystemRequest) (ocipsql.GetDbSystemResponse, error)
-	listFn   func(ctx context.Context, req ocipsql.ListDbSystemsRequest) (ocipsql.ListDbSystemsResponse, error)
-	updateFn func(ctx context.Context, req ocipsql.UpdateDbSystemRequest) (ocipsql.UpdateDbSystemResponse, error)
-	deleteFn func(ctx context.Context, req ocipsql.DeleteDbSystemRequest) (ocipsql.DeleteDbSystemResponse, error)
+	createFn            func(ctx context.Context, req ocipsql.CreateDbSystemRequest) (ocipsql.CreateDbSystemResponse, error)
+	getFn               func(ctx context.Context, req ocipsql.GetDbSystemRequest) (ocipsql.GetDbSystemResponse, error)
+	listFn              func(ctx context.Context, req ocipsql.ListDbSystemsRequest) (ocipsql.ListDbSystemsResponse, error)
+	changeCompartmentFn func(ctx context.Context, req ocipsql.ChangeDbSystemCompartmentRequest) (ocipsql.ChangeDbSystemCompartmentResponse, error)
+	updateFn            func(ctx context.Context, req ocipsql.UpdateDbSystemRequest) (ocipsql.UpdateDbSystemResponse, error)
+	deleteFn            func(ctx context.Context, req ocipsql.DeleteDbSystemRequest) (ocipsql.DeleteDbSystemResponse, error)
 }
 
 func (m *mockOciPostgresClient) CreateDbSystem(ctx context.Context, req ocipsql.CreateDbSystemRequest) (ocipsql.CreateDbSystemResponse, error) {
@@ -106,6 +107,13 @@ func (m *mockOciPostgresClient) ListDbSystems(ctx context.Context, req ocipsql.L
 		return m.listFn(ctx, req)
 	}
 	return ocipsql.ListDbSystemsResponse{}, nil
+}
+
+func (m *mockOciPostgresClient) ChangeDbSystemCompartment(ctx context.Context, req ocipsql.ChangeDbSystemCompartmentRequest) (ocipsql.ChangeDbSystemCompartmentResponse, error) {
+	if m.changeCompartmentFn != nil {
+		return m.changeCompartmentFn(ctx, req)
+	}
+	return ocipsql.ChangeDbSystemCompartmentResponse{}, nil
 }
 
 func (m *mockOciPostgresClient) UpdateDbSystem(ctx context.Context, req ocipsql.UpdateDbSystemRequest) (ocipsql.UpdateDbSystemResponse, error) {

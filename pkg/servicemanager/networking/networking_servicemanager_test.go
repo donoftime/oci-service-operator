@@ -39,58 +39,67 @@ func (f *fakeServiceError) GetOpcRequestID() string {
 // ---------------------------------------------------------------------------
 
 type fakeVirtualNetworkClient struct {
-	createVcnFn    func(ctx context.Context, req ocicore.CreateVcnRequest) (ocicore.CreateVcnResponse, error)
-	getVcnFn       func(ctx context.Context, req ocicore.GetVcnRequest) (ocicore.GetVcnResponse, error)
-	listVcnsFn     func(ctx context.Context, req ocicore.ListVcnsRequest) (ocicore.ListVcnsResponse, error)
-	updateVcnFn    func(ctx context.Context, req ocicore.UpdateVcnRequest) (ocicore.UpdateVcnResponse, error)
-	deleteVcnFn    func(ctx context.Context, req ocicore.DeleteVcnRequest) (ocicore.DeleteVcnResponse, error)
-	createSubnetFn func(ctx context.Context, req ocicore.CreateSubnetRequest) (ocicore.CreateSubnetResponse, error)
-	getSubnetFn    func(ctx context.Context, req ocicore.GetSubnetRequest) (ocicore.GetSubnetResponse, error)
-	listSubnetsFn  func(ctx context.Context, req ocicore.ListSubnetsRequest) (ocicore.ListSubnetsResponse, error)
-	updateSubnetFn func(ctx context.Context, req ocicore.UpdateSubnetRequest) (ocicore.UpdateSubnetResponse, error)
-	deleteSubnetFn func(ctx context.Context, req ocicore.DeleteSubnetRequest) (ocicore.DeleteSubnetResponse, error)
+	createVcnFn               func(ctx context.Context, req ocicore.CreateVcnRequest) (ocicore.CreateVcnResponse, error)
+	getVcnFn                  func(ctx context.Context, req ocicore.GetVcnRequest) (ocicore.GetVcnResponse, error)
+	listVcnsFn                func(ctx context.Context, req ocicore.ListVcnsRequest) (ocicore.ListVcnsResponse, error)
+	changeVcnCompartmentFn    func(ctx context.Context, req ocicore.ChangeVcnCompartmentRequest) (ocicore.ChangeVcnCompartmentResponse, error)
+	updateVcnFn               func(ctx context.Context, req ocicore.UpdateVcnRequest) (ocicore.UpdateVcnResponse, error)
+	deleteVcnFn               func(ctx context.Context, req ocicore.DeleteVcnRequest) (ocicore.DeleteVcnResponse, error)
+	createSubnetFn            func(ctx context.Context, req ocicore.CreateSubnetRequest) (ocicore.CreateSubnetResponse, error)
+	getSubnetFn               func(ctx context.Context, req ocicore.GetSubnetRequest) (ocicore.GetSubnetResponse, error)
+	listSubnetsFn             func(ctx context.Context, req ocicore.ListSubnetsRequest) (ocicore.ListSubnetsResponse, error)
+	changeSubnetCompartmentFn func(ctx context.Context, req ocicore.ChangeSubnetCompartmentRequest) (ocicore.ChangeSubnetCompartmentResponse, error)
+	updateSubnetFn            func(ctx context.Context, req ocicore.UpdateSubnetRequest) (ocicore.UpdateSubnetResponse, error)
+	deleteSubnetFn            func(ctx context.Context, req ocicore.DeleteSubnetRequest) (ocicore.DeleteSubnetResponse, error)
 	// Internet Gateway
-	createInternetGatewayFn func(ctx context.Context, req ocicore.CreateInternetGatewayRequest) (ocicore.CreateInternetGatewayResponse, error)
-	getInternetGatewayFn    func(ctx context.Context, req ocicore.GetInternetGatewayRequest) (ocicore.GetInternetGatewayResponse, error)
-	listInternetGatewaysFn  func(ctx context.Context, req ocicore.ListInternetGatewaysRequest) (ocicore.ListInternetGatewaysResponse, error)
-	updateInternetGatewayFn func(ctx context.Context, req ocicore.UpdateInternetGatewayRequest) (ocicore.UpdateInternetGatewayResponse, error)
-	deleteInternetGatewayFn func(ctx context.Context, req ocicore.DeleteInternetGatewayRequest) (ocicore.DeleteInternetGatewayResponse, error)
+	createInternetGatewayFn            func(ctx context.Context, req ocicore.CreateInternetGatewayRequest) (ocicore.CreateInternetGatewayResponse, error)
+	getInternetGatewayFn               func(ctx context.Context, req ocicore.GetInternetGatewayRequest) (ocicore.GetInternetGatewayResponse, error)
+	listInternetGatewaysFn             func(ctx context.Context, req ocicore.ListInternetGatewaysRequest) (ocicore.ListInternetGatewaysResponse, error)
+	changeInternetGatewayCompartmentFn func(ctx context.Context, req ocicore.ChangeInternetGatewayCompartmentRequest) (ocicore.ChangeInternetGatewayCompartmentResponse, error)
+	updateInternetGatewayFn            func(ctx context.Context, req ocicore.UpdateInternetGatewayRequest) (ocicore.UpdateInternetGatewayResponse, error)
+	deleteInternetGatewayFn            func(ctx context.Context, req ocicore.DeleteInternetGatewayRequest) (ocicore.DeleteInternetGatewayResponse, error)
 	// NAT Gateway
-	createNatGatewayFn func(ctx context.Context, req ocicore.CreateNatGatewayRequest) (ocicore.CreateNatGatewayResponse, error)
-	getNatGatewayFn    func(ctx context.Context, req ocicore.GetNatGatewayRequest) (ocicore.GetNatGatewayResponse, error)
-	listNatGatewaysFn  func(ctx context.Context, req ocicore.ListNatGatewaysRequest) (ocicore.ListNatGatewaysResponse, error)
-	updateNatGatewayFn func(ctx context.Context, req ocicore.UpdateNatGatewayRequest) (ocicore.UpdateNatGatewayResponse, error)
-	deleteNatGatewayFn func(ctx context.Context, req ocicore.DeleteNatGatewayRequest) (ocicore.DeleteNatGatewayResponse, error)
+	createNatGatewayFn            func(ctx context.Context, req ocicore.CreateNatGatewayRequest) (ocicore.CreateNatGatewayResponse, error)
+	getNatGatewayFn               func(ctx context.Context, req ocicore.GetNatGatewayRequest) (ocicore.GetNatGatewayResponse, error)
+	listNatGatewaysFn             func(ctx context.Context, req ocicore.ListNatGatewaysRequest) (ocicore.ListNatGatewaysResponse, error)
+	changeNatGatewayCompartmentFn func(ctx context.Context, req ocicore.ChangeNatGatewayCompartmentRequest) (ocicore.ChangeNatGatewayCompartmentResponse, error)
+	updateNatGatewayFn            func(ctx context.Context, req ocicore.UpdateNatGatewayRequest) (ocicore.UpdateNatGatewayResponse, error)
+	deleteNatGatewayFn            func(ctx context.Context, req ocicore.DeleteNatGatewayRequest) (ocicore.DeleteNatGatewayResponse, error)
 	// Service Gateway
-	createServiceGatewayFn func(ctx context.Context, req ocicore.CreateServiceGatewayRequest) (ocicore.CreateServiceGatewayResponse, error)
-	getServiceGatewayFn    func(ctx context.Context, req ocicore.GetServiceGatewayRequest) (ocicore.GetServiceGatewayResponse, error)
-	listServiceGatewaysFn  func(ctx context.Context, req ocicore.ListServiceGatewaysRequest) (ocicore.ListServiceGatewaysResponse, error)
-	updateServiceGatewayFn func(ctx context.Context, req ocicore.UpdateServiceGatewayRequest) (ocicore.UpdateServiceGatewayResponse, error)
-	deleteServiceGatewayFn func(ctx context.Context, req ocicore.DeleteServiceGatewayRequest) (ocicore.DeleteServiceGatewayResponse, error)
+	createServiceGatewayFn            func(ctx context.Context, req ocicore.CreateServiceGatewayRequest) (ocicore.CreateServiceGatewayResponse, error)
+	getServiceGatewayFn               func(ctx context.Context, req ocicore.GetServiceGatewayRequest) (ocicore.GetServiceGatewayResponse, error)
+	listServiceGatewaysFn             func(ctx context.Context, req ocicore.ListServiceGatewaysRequest) (ocicore.ListServiceGatewaysResponse, error)
+	changeServiceGatewayCompartmentFn func(ctx context.Context, req ocicore.ChangeServiceGatewayCompartmentRequest) (ocicore.ChangeServiceGatewayCompartmentResponse, error)
+	updateServiceGatewayFn            func(ctx context.Context, req ocicore.UpdateServiceGatewayRequest) (ocicore.UpdateServiceGatewayResponse, error)
+	deleteServiceGatewayFn            func(ctx context.Context, req ocicore.DeleteServiceGatewayRequest) (ocicore.DeleteServiceGatewayResponse, error)
 	// DRG
-	createDrgFn func(ctx context.Context, req ocicore.CreateDrgRequest) (ocicore.CreateDrgResponse, error)
-	getDrgFn    func(ctx context.Context, req ocicore.GetDrgRequest) (ocicore.GetDrgResponse, error)
-	listDrgsFn  func(ctx context.Context, req ocicore.ListDrgsRequest) (ocicore.ListDrgsResponse, error)
-	updateDrgFn func(ctx context.Context, req ocicore.UpdateDrgRequest) (ocicore.UpdateDrgResponse, error)
-	deleteDrgFn func(ctx context.Context, req ocicore.DeleteDrgRequest) (ocicore.DeleteDrgResponse, error)
+	createDrgFn            func(ctx context.Context, req ocicore.CreateDrgRequest) (ocicore.CreateDrgResponse, error)
+	getDrgFn               func(ctx context.Context, req ocicore.GetDrgRequest) (ocicore.GetDrgResponse, error)
+	listDrgsFn             func(ctx context.Context, req ocicore.ListDrgsRequest) (ocicore.ListDrgsResponse, error)
+	changeDrgCompartmentFn func(ctx context.Context, req ocicore.ChangeDrgCompartmentRequest) (ocicore.ChangeDrgCompartmentResponse, error)
+	updateDrgFn            func(ctx context.Context, req ocicore.UpdateDrgRequest) (ocicore.UpdateDrgResponse, error)
+	deleteDrgFn            func(ctx context.Context, req ocicore.DeleteDrgRequest) (ocicore.DeleteDrgResponse, error)
 	// Security List
-	createSecurityListFn func(ctx context.Context, req ocicore.CreateSecurityListRequest) (ocicore.CreateSecurityListResponse, error)
-	getSecurityListFn    func(ctx context.Context, req ocicore.GetSecurityListRequest) (ocicore.GetSecurityListResponse, error)
-	listSecurityListsFn  func(ctx context.Context, req ocicore.ListSecurityListsRequest) (ocicore.ListSecurityListsResponse, error)
-	updateSecurityListFn func(ctx context.Context, req ocicore.UpdateSecurityListRequest) (ocicore.UpdateSecurityListResponse, error)
-	deleteSecurityListFn func(ctx context.Context, req ocicore.DeleteSecurityListRequest) (ocicore.DeleteSecurityListResponse, error)
+	createSecurityListFn            func(ctx context.Context, req ocicore.CreateSecurityListRequest) (ocicore.CreateSecurityListResponse, error)
+	getSecurityListFn               func(ctx context.Context, req ocicore.GetSecurityListRequest) (ocicore.GetSecurityListResponse, error)
+	listSecurityListsFn             func(ctx context.Context, req ocicore.ListSecurityListsRequest) (ocicore.ListSecurityListsResponse, error)
+	changeSecurityListCompartmentFn func(ctx context.Context, req ocicore.ChangeSecurityListCompartmentRequest) (ocicore.ChangeSecurityListCompartmentResponse, error)
+	updateSecurityListFn            func(ctx context.Context, req ocicore.UpdateSecurityListRequest) (ocicore.UpdateSecurityListResponse, error)
+	deleteSecurityListFn            func(ctx context.Context, req ocicore.DeleteSecurityListRequest) (ocicore.DeleteSecurityListResponse, error)
 	// Network Security Group
-	createNetworkSecurityGroupFn func(ctx context.Context, req ocicore.CreateNetworkSecurityGroupRequest) (ocicore.CreateNetworkSecurityGroupResponse, error)
-	getNetworkSecurityGroupFn    func(ctx context.Context, req ocicore.GetNetworkSecurityGroupRequest) (ocicore.GetNetworkSecurityGroupResponse, error)
-	listNetworkSecurityGroupsFn  func(ctx context.Context, req ocicore.ListNetworkSecurityGroupsRequest) (ocicore.ListNetworkSecurityGroupsResponse, error)
-	updateNetworkSecurityGroupFn func(ctx context.Context, req ocicore.UpdateNetworkSecurityGroupRequest) (ocicore.UpdateNetworkSecurityGroupResponse, error)
-	deleteNetworkSecurityGroupFn func(ctx context.Context, req ocicore.DeleteNetworkSecurityGroupRequest) (ocicore.DeleteNetworkSecurityGroupResponse, error)
+	createNetworkSecurityGroupFn            func(ctx context.Context, req ocicore.CreateNetworkSecurityGroupRequest) (ocicore.CreateNetworkSecurityGroupResponse, error)
+	getNetworkSecurityGroupFn               func(ctx context.Context, req ocicore.GetNetworkSecurityGroupRequest) (ocicore.GetNetworkSecurityGroupResponse, error)
+	listNetworkSecurityGroupsFn             func(ctx context.Context, req ocicore.ListNetworkSecurityGroupsRequest) (ocicore.ListNetworkSecurityGroupsResponse, error)
+	changeNetworkSecurityGroupCompartmentFn func(ctx context.Context, req ocicore.ChangeNetworkSecurityGroupCompartmentRequest) (ocicore.ChangeNetworkSecurityGroupCompartmentResponse, error)
+	updateNetworkSecurityGroupFn            func(ctx context.Context, req ocicore.UpdateNetworkSecurityGroupRequest) (ocicore.UpdateNetworkSecurityGroupResponse, error)
+	deleteNetworkSecurityGroupFn            func(ctx context.Context, req ocicore.DeleteNetworkSecurityGroupRequest) (ocicore.DeleteNetworkSecurityGroupResponse, error)
 	// Route Table
-	createRouteTableFn func(ctx context.Context, req ocicore.CreateRouteTableRequest) (ocicore.CreateRouteTableResponse, error)
-	getRouteTableFn    func(ctx context.Context, req ocicore.GetRouteTableRequest) (ocicore.GetRouteTableResponse, error)
-	listRouteTablesFn  func(ctx context.Context, req ocicore.ListRouteTablesRequest) (ocicore.ListRouteTablesResponse, error)
-	updateRouteTableFn func(ctx context.Context, req ocicore.UpdateRouteTableRequest) (ocicore.UpdateRouteTableResponse, error)
-	deleteRouteTableFn func(ctx context.Context, req ocicore.DeleteRouteTableRequest) (ocicore.DeleteRouteTableResponse, error)
+	createRouteTableFn            func(ctx context.Context, req ocicore.CreateRouteTableRequest) (ocicore.CreateRouteTableResponse, error)
+	getRouteTableFn               func(ctx context.Context, req ocicore.GetRouteTableRequest) (ocicore.GetRouteTableResponse, error)
+	listRouteTablesFn             func(ctx context.Context, req ocicore.ListRouteTablesRequest) (ocicore.ListRouteTablesResponse, error)
+	changeRouteTableCompartmentFn func(ctx context.Context, req ocicore.ChangeRouteTableCompartmentRequest) (ocicore.ChangeRouteTableCompartmentResponse, error)
+	updateRouteTableFn            func(ctx context.Context, req ocicore.UpdateRouteTableRequest) (ocicore.UpdateRouteTableResponse, error)
+	deleteRouteTableFn            func(ctx context.Context, req ocicore.DeleteRouteTableRequest) (ocicore.DeleteRouteTableResponse, error)
 }
 
 func (f *fakeVirtualNetworkClient) CreateVcn(ctx context.Context, req ocicore.CreateVcnRequest) (ocicore.CreateVcnResponse, error) {
@@ -117,6 +126,13 @@ func (f *fakeVirtualNetworkClient) ListVcns(ctx context.Context, req ocicore.Lis
 	return ocicore.ListVcnsResponse{}, nil
 }
 
+func (f *fakeVirtualNetworkClient) ChangeVcnCompartment(ctx context.Context, req ocicore.ChangeVcnCompartmentRequest) (ocicore.ChangeVcnCompartmentResponse, error) {
+	if f.changeVcnCompartmentFn != nil {
+		return f.changeVcnCompartmentFn(ctx, req)
+	}
+	return ocicore.ChangeVcnCompartmentResponse{}, nil
+}
+
 func (f *fakeVirtualNetworkClient) UpdateVcn(ctx context.Context, req ocicore.UpdateVcnRequest) (ocicore.UpdateVcnResponse, error) {
 	if f.updateVcnFn != nil {
 		return f.updateVcnFn(ctx, req)
@@ -136,6 +152,13 @@ func (f *fakeVirtualNetworkClient) CreateSubnet(ctx context.Context, req ocicore
 		return f.createSubnetFn(ctx, req)
 	}
 	return ocicore.CreateSubnetResponse{Subnet: ocicore.Subnet{Id: common.String("ocid1.subnet.oc1..new"), LifecycleState: ocicore.SubnetLifecycleStateAvailable}}, nil
+}
+
+func (f *fakeVirtualNetworkClient) ChangeSubnetCompartment(ctx context.Context, req ocicore.ChangeSubnetCompartmentRequest) (ocicore.ChangeSubnetCompartmentResponse, error) {
+	if f.changeSubnetCompartmentFn != nil {
+		return f.changeSubnetCompartmentFn(ctx, req)
+	}
+	return ocicore.ChangeSubnetCompartmentResponse{}, nil
 }
 
 func (f *fakeVirtualNetworkClient) GetSubnet(ctx context.Context, req ocicore.GetSubnetRequest) (ocicore.GetSubnetResponse, error) {
@@ -195,6 +218,13 @@ func (f *fakeVirtualNetworkClient) ListInternetGateways(ctx context.Context, req
 	return ocicore.ListInternetGatewaysResponse{}, nil
 }
 
+func (f *fakeVirtualNetworkClient) ChangeInternetGatewayCompartment(ctx context.Context, req ocicore.ChangeInternetGatewayCompartmentRequest) (ocicore.ChangeInternetGatewayCompartmentResponse, error) {
+	if f.changeInternetGatewayCompartmentFn != nil {
+		return f.changeInternetGatewayCompartmentFn(ctx, req)
+	}
+	return ocicore.ChangeInternetGatewayCompartmentResponse{}, nil
+}
+
 func (f *fakeVirtualNetworkClient) UpdateInternetGateway(ctx context.Context, req ocicore.UpdateInternetGatewayRequest) (ocicore.UpdateInternetGatewayResponse, error) {
 	if f.updateInternetGatewayFn != nil {
 		return f.updateInternetGatewayFn(ctx, req)
@@ -233,6 +263,13 @@ func (f *fakeVirtualNetworkClient) ListNatGateways(ctx context.Context, req ocic
 		return f.listNatGatewaysFn(ctx, req)
 	}
 	return ocicore.ListNatGatewaysResponse{}, nil
+}
+
+func (f *fakeVirtualNetworkClient) ChangeNatGatewayCompartment(ctx context.Context, req ocicore.ChangeNatGatewayCompartmentRequest) (ocicore.ChangeNatGatewayCompartmentResponse, error) {
+	if f.changeNatGatewayCompartmentFn != nil {
+		return f.changeNatGatewayCompartmentFn(ctx, req)
+	}
+	return ocicore.ChangeNatGatewayCompartmentResponse{}, nil
 }
 
 func (f *fakeVirtualNetworkClient) UpdateNatGateway(ctx context.Context, req ocicore.UpdateNatGatewayRequest) (ocicore.UpdateNatGatewayResponse, error) {
@@ -275,6 +312,13 @@ func (f *fakeVirtualNetworkClient) ListServiceGateways(ctx context.Context, req 
 	return ocicore.ListServiceGatewaysResponse{}, nil
 }
 
+func (f *fakeVirtualNetworkClient) ChangeServiceGatewayCompartment(ctx context.Context, req ocicore.ChangeServiceGatewayCompartmentRequest) (ocicore.ChangeServiceGatewayCompartmentResponse, error) {
+	if f.changeServiceGatewayCompartmentFn != nil {
+		return f.changeServiceGatewayCompartmentFn(ctx, req)
+	}
+	return ocicore.ChangeServiceGatewayCompartmentResponse{}, nil
+}
+
 func (f *fakeVirtualNetworkClient) UpdateServiceGateway(ctx context.Context, req ocicore.UpdateServiceGatewayRequest) (ocicore.UpdateServiceGatewayResponse, error) {
 	if f.updateServiceGatewayFn != nil {
 		return f.updateServiceGatewayFn(ctx, req)
@@ -313,6 +357,13 @@ func (f *fakeVirtualNetworkClient) ListDrgs(ctx context.Context, req ocicore.Lis
 		return f.listDrgsFn(ctx, req)
 	}
 	return ocicore.ListDrgsResponse{}, nil
+}
+
+func (f *fakeVirtualNetworkClient) ChangeDrgCompartment(ctx context.Context, req ocicore.ChangeDrgCompartmentRequest) (ocicore.ChangeDrgCompartmentResponse, error) {
+	if f.changeDrgCompartmentFn != nil {
+		return f.changeDrgCompartmentFn(ctx, req)
+	}
+	return ocicore.ChangeDrgCompartmentResponse{}, nil
 }
 
 func (f *fakeVirtualNetworkClient) UpdateDrg(ctx context.Context, req ocicore.UpdateDrgRequest) (ocicore.UpdateDrgResponse, error) {
@@ -355,6 +406,13 @@ func (f *fakeVirtualNetworkClient) ListSecurityLists(ctx context.Context, req oc
 	return ocicore.ListSecurityListsResponse{}, nil
 }
 
+func (f *fakeVirtualNetworkClient) ChangeSecurityListCompartment(ctx context.Context, req ocicore.ChangeSecurityListCompartmentRequest) (ocicore.ChangeSecurityListCompartmentResponse, error) {
+	if f.changeSecurityListCompartmentFn != nil {
+		return f.changeSecurityListCompartmentFn(ctx, req)
+	}
+	return ocicore.ChangeSecurityListCompartmentResponse{}, nil
+}
+
 func (f *fakeVirtualNetworkClient) UpdateSecurityList(ctx context.Context, req ocicore.UpdateSecurityListRequest) (ocicore.UpdateSecurityListResponse, error) {
 	if f.updateSecurityListFn != nil {
 		return f.updateSecurityListFn(ctx, req)
@@ -395,6 +453,13 @@ func (f *fakeVirtualNetworkClient) ListNetworkSecurityGroups(ctx context.Context
 	return ocicore.ListNetworkSecurityGroupsResponse{}, nil
 }
 
+func (f *fakeVirtualNetworkClient) ChangeNetworkSecurityGroupCompartment(ctx context.Context, req ocicore.ChangeNetworkSecurityGroupCompartmentRequest) (ocicore.ChangeNetworkSecurityGroupCompartmentResponse, error) {
+	if f.changeNetworkSecurityGroupCompartmentFn != nil {
+		return f.changeNetworkSecurityGroupCompartmentFn(ctx, req)
+	}
+	return ocicore.ChangeNetworkSecurityGroupCompartmentResponse{}, nil
+}
+
 func (f *fakeVirtualNetworkClient) UpdateNetworkSecurityGroup(ctx context.Context, req ocicore.UpdateNetworkSecurityGroupRequest) (ocicore.UpdateNetworkSecurityGroupResponse, error) {
 	if f.updateNetworkSecurityGroupFn != nil {
 		return f.updateNetworkSecurityGroupFn(ctx, req)
@@ -433,6 +498,13 @@ func (f *fakeVirtualNetworkClient) ListRouteTables(ctx context.Context, req ocic
 		return f.listRouteTablesFn(ctx, req)
 	}
 	return ocicore.ListRouteTablesResponse{}, nil
+}
+
+func (f *fakeVirtualNetworkClient) ChangeRouteTableCompartment(ctx context.Context, req ocicore.ChangeRouteTableCompartmentRequest) (ocicore.ChangeRouteTableCompartmentResponse, error) {
+	if f.changeRouteTableCompartmentFn != nil {
+		return f.changeRouteTableCompartmentFn(ctx, req)
+	}
+	return ocicore.ChangeRouteTableCompartmentResponse{}, nil
 }
 
 func (f *fakeVirtualNetworkClient) UpdateRouteTable(ctx context.Context, req ocicore.UpdateRouteTableRequest) (ocicore.UpdateRouteTableResponse, error) {
@@ -688,6 +760,33 @@ func TestVcn_CreateOrUpdate_WithId_Binds(t *testing.T) {
 	resp, err := mgr.CreateOrUpdate(context.Background(), v, ctrl.Request{})
 	assert.NoError(t, err)
 	assert.True(t, resp.IsSuccessful)
+}
+
+func TestVcn_CreateOrUpdate_StatusOcidUsesUpdatePath(t *testing.T) {
+	vcnID := "ocid1.vcn.oc1..tracked"
+	var updatedID string
+	fake := &fakeVirtualNetworkClient{
+		getVcnFn: func(_ context.Context, req ocicore.GetVcnRequest) (ocicore.GetVcnResponse, error) {
+			return ocicore.GetVcnResponse{Vcn: makeAvailableVcn(*req.VcnId, "old-vcn")}, nil
+		},
+		updateVcnFn: func(_ context.Context, req ocicore.UpdateVcnRequest) (ocicore.UpdateVcnResponse, error) {
+			updatedID = *req.VcnId
+			return ocicore.UpdateVcnResponse{}, nil
+		},
+	}
+	mgr := vcnMgrWithFake(fake)
+
+	v := &ociv1beta1.OciVcn{}
+	v.Name = "tracked-vcn"
+	v.Namespace = "default"
+	v.Status.OsokStatus.Ocid = ociv1beta1.OCID(vcnID)
+	v.Spec.DisplayName = "new-vcn"
+	v.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
+
+	resp, err := mgr.CreateOrUpdate(context.Background(), v, ctrl.Request{})
+	assert.NoError(t, err)
+	assert.True(t, resp.IsSuccessful)
+	assert.Equal(t, vcnID, updatedID)
 }
 
 // ---------------------------------------------------------------------------
@@ -2305,6 +2404,37 @@ func TestUpdateVcn_SendsDisplayName(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, vcnID, *capturedReq.VcnId)
 	assert.Equal(t, "new-name", *capturedReq.DisplayName)
+}
+
+func TestUpdateVcn_SendsCompartmentMove(t *testing.T) {
+	var capturedReq ocicore.ChangeVcnCompartmentRequest
+	vcnID := "ocid1.vcn.oc1..move"
+	fake := &fakeVirtualNetworkClient{
+		getVcnFn: func(_ context.Context, _ ocicore.GetVcnRequest) (ocicore.GetVcnResponse, error) {
+			return ocicore.GetVcnResponse{
+				Vcn: ocicore.Vcn{
+					Id:            common.String(vcnID),
+					DisplayName:   common.String("same-name"),
+					CompartmentId: common.String("ocid1.compartment.oc1..old"),
+				},
+			}, nil
+		},
+		changeVcnCompartmentFn: func(_ context.Context, req ocicore.ChangeVcnCompartmentRequest) (ocicore.ChangeVcnCompartmentResponse, error) {
+			capturedReq = req
+			return ocicore.ChangeVcnCompartmentResponse{}, nil
+		},
+	}
+	mgr := vcnMgrWithFake(fake)
+
+	v := &ociv1beta1.OciVcn{}
+	v.Status.OsokStatus.Ocid = ociv1beta1.OCID(vcnID)
+	v.Spec.CompartmentId = "ocid1.compartment.oc1..new"
+	v.Spec.DisplayName = "same-name"
+
+	err := mgr.UpdateVcn(context.Background(), v)
+	assert.NoError(t, err)
+	assert.Equal(t, vcnID, *capturedReq.VcnId)
+	assert.Equal(t, string(v.Spec.CompartmentId), *capturedReq.CompartmentId)
 }
 
 func TestUpdateVcn_NoUpdateNeeded(t *testing.T) {

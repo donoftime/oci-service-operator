@@ -8,6 +8,7 @@ package containerinstance
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sort"
 	"time"
 
@@ -22,6 +23,7 @@ type ContainerInstanceClientInterface interface {
 	CreateContainerInstance(ctx context.Context, request containerinstances.CreateContainerInstanceRequest) (containerinstances.CreateContainerInstanceResponse, error)
 	GetContainerInstance(ctx context.Context, request containerinstances.GetContainerInstanceRequest) (containerinstances.GetContainerInstanceResponse, error)
 	ListContainerInstances(ctx context.Context, request containerinstances.ListContainerInstancesRequest) (containerinstances.ListContainerInstancesResponse, error)
+	ChangeContainerInstanceCompartment(ctx context.Context, request containerinstances.ChangeContainerInstanceCompartmentRequest) (containerinstances.ChangeContainerInstanceCompartmentResponse, error)
 	UpdateContainerInstance(ctx context.Context, request containerinstances.UpdateContainerInstanceRequest) (containerinstances.UpdateContainerInstanceResponse, error)
 	DeleteContainerInstance(ctx context.Context, request containerinstances.DeleteContainerInstanceRequest) (containerinstances.DeleteContainerInstanceResponse, error)
 }
@@ -287,14 +289,15 @@ func (c *ContainerInstanceServiceManager) UpdateContainerInstance(ctx context.Co
 		return err
 	}
 
-	updateDetails := containerinstances.UpdateContainerInstanceDetails{}
-	updateNeeded := false
-
-	if ci.Spec.DisplayName != nil && (existing.DisplayName == nil || *existing.DisplayName != *ci.Spec.DisplayName) {
-		updateDetails.DisplayName = ci.Spec.DisplayName
-		updateNeeded = true
+	if err := validateContainerInstanceUnsupportedChanges(ci, existing); err != nil {
+		return err
 	}
 
+	if err := moveContainerInstanceCompartmentIfNeeded(ctx, client, ci, existing, targetID); err != nil {
+		return err
+	}
+
+	updateDetails, updateNeeded := buildContainerInstanceUpdateDetails(ci, existing)
 	if !updateNeeded {
 		return nil
 	}
@@ -306,6 +309,120 @@ func (c *ContainerInstanceServiceManager) UpdateContainerInstance(ctx context.Co
 
 	_, err = client.UpdateContainerInstance(ctx, req)
 	return err
+}
+
+func moveContainerInstanceCompartmentIfNeeded(ctx context.Context, client ContainerInstanceClientInterface,
+	ci *ociv1beta1.ContainerInstance, existing *containerinstances.ContainerInstance, targetID ociv1beta1.OCID) error {
+	if ci.Spec.CompartmentId == "" || (existing.CompartmentId != nil && *existing.CompartmentId == string(ci.Spec.CompartmentId)) {
+		return nil
+	}
+
+	_, err := client.ChangeContainerInstanceCompartment(ctx, containerinstances.ChangeContainerInstanceCompartmentRequest{
+		ContainerInstanceId: common.String(string(targetID)),
+		ChangeContainerInstanceCompartmentDetails: containerinstances.ChangeContainerInstanceCompartmentDetails{
+			CompartmentId: common.String(string(ci.Spec.CompartmentId)),
+		},
+	})
+	return err
+}
+
+func buildContainerInstanceUpdateDetails(ci *ociv1beta1.ContainerInstance, existing *containerinstances.ContainerInstance) (containerinstances.UpdateContainerInstanceDetails, bool) {
+	updateDetails := containerinstances.UpdateContainerInstanceDetails{}
+	updateNeeded := applyContainerInstanceDisplayNameUpdate(&updateDetails, ci, existing)
+	if applyContainerInstanceFreeformTagUpdate(&updateDetails, ci, existing) {
+		updateNeeded = true
+	}
+	if applyContainerInstanceDefinedTagUpdate(&updateDetails, ci, existing) {
+		updateNeeded = true
+	}
+
+	return updateDetails, updateNeeded
+}
+
+func applyContainerInstanceDisplayNameUpdate(updateDetails *containerinstances.UpdateContainerInstanceDetails,
+	ci *ociv1beta1.ContainerInstance, existing *containerinstances.ContainerInstance) bool {
+	if ci.Spec.DisplayName == nil || (existing.DisplayName != nil && *existing.DisplayName == *ci.Spec.DisplayName) {
+		return false
+	}
+	updateDetails.DisplayName = ci.Spec.DisplayName
+	return true
+}
+
+func applyContainerInstanceFreeformTagUpdate(updateDetails *containerinstances.UpdateContainerInstanceDetails,
+	ci *ociv1beta1.ContainerInstance, existing *containerinstances.ContainerInstance) bool {
+	if ci.Spec.FreeFormTags == nil || reflect.DeepEqual(existing.FreeformTags, ci.Spec.FreeFormTags) {
+		return false
+	}
+	updateDetails.FreeformTags = ci.Spec.FreeFormTags
+	return true
+}
+
+func applyContainerInstanceDefinedTagUpdate(updateDetails *containerinstances.UpdateContainerInstanceDetails,
+	ci *ociv1beta1.ContainerInstance, existing *containerinstances.ContainerInstance) bool {
+	if ci.Spec.DefinedTags == nil {
+		return false
+	}
+	desiredDefinedTags := *util.ConvertToOciDefinedTags(&ci.Spec.DefinedTags)
+	if reflect.DeepEqual(existing.DefinedTags, desiredDefinedTags) {
+		return false
+	}
+	updateDetails.DefinedTags = desiredDefinedTags
+	return true
+}
+
+func validateContainerInstanceUnsupportedChanges(ci *ociv1beta1.ContainerInstance, existing *containerinstances.ContainerInstance) error {
+	if err := validateContainerAvailabilityDomain(ci, existing); err != nil {
+		return err
+	}
+	if err := validateContainerShape(ci, existing); err != nil {
+		return err
+	}
+	if err := validateContainerFaultDomain(ci, existing); err != nil {
+		return err
+	}
+	if err := validateContainerShutdownTimeout(ci, existing); err != nil {
+		return err
+	}
+	return validateContainerRestartPolicy(ci, existing)
+}
+
+func validateContainerAvailabilityDomain(ci *ociv1beta1.ContainerInstance, existing *containerinstances.ContainerInstance) error {
+	if ci.Spec.AvailabilityDomain != "" && existing.AvailabilityDomain != nil && *existing.AvailabilityDomain != ci.Spec.AvailabilityDomain {
+		return fmt.Errorf("availabilityDomain cannot be updated in place")
+	}
+	return nil
+}
+
+func validateContainerShape(ci *ociv1beta1.ContainerInstance, existing *containerinstances.ContainerInstance) error {
+	if ci.Spec.Shape != "" && existing.Shape != nil && *existing.Shape != ci.Spec.Shape {
+		return fmt.Errorf("shape cannot be updated in place")
+	}
+	return nil
+}
+
+func validateContainerFaultDomain(ci *ociv1beta1.ContainerInstance, existing *containerinstances.ContainerInstance) error {
+	if ci.Spec.FaultDomain != nil && existing.FaultDomain != nil && *existing.FaultDomain != *ci.Spec.FaultDomain {
+		return fmt.Errorf("faultDomain cannot be updated in place")
+	}
+	return nil
+}
+
+func validateContainerShutdownTimeout(ci *ociv1beta1.ContainerInstance, existing *containerinstances.ContainerInstance) error {
+	if ci.Spec.GracefulShutdownTimeoutInSeconds != nil &&
+		existing.GracefulShutdownTimeoutInSeconds != nil &&
+		*existing.GracefulShutdownTimeoutInSeconds != *ci.Spec.GracefulShutdownTimeoutInSeconds {
+		return fmt.Errorf("gracefulShutdownTimeoutInSeconds cannot be updated in place")
+	}
+	return nil
+}
+
+func validateContainerRestartPolicy(ci *ociv1beta1.ContainerInstance, existing *containerinstances.ContainerInstance) error {
+	if ci.Spec.ContainerRestartPolicy != nil &&
+		existing.ContainerRestartPolicy != "" &&
+		string(existing.ContainerRestartPolicy) != *ci.Spec.ContainerRestartPolicy {
+		return fmt.Errorf("containerRestartPolicy cannot be updated in place")
+	}
+	return nil
 }
 
 // DeleteContainerInstance deletes the container instance for the given OCID.

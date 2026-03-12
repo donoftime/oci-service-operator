@@ -27,7 +27,7 @@ func makeOpenSearchSpec(name string) *ociv1beta1.OpenSearchCluster {
 	cluster.Name = name
 	cluster.Namespace = "default"
 	cluster.Spec.DisplayName = name
-	cluster.Spec.CompartmentId = "ocid1.compartment.oc1..x"
+	cluster.Spec.CompartmentId = "ocid1.compartment.oc1..xxx"
 	cluster.Spec.SoftwareVersion = "2.3.0"
 	cluster.Spec.MasterNodeCount = 3
 	cluster.Spec.MasterNodeHostType = "FLEX"
@@ -43,8 +43,8 @@ func makeOpenSearchSpec(name string) *ociv1beta1.OpenSearchCluster {
 	cluster.Spec.OpendashboardNodeHostMemoryGB = 8
 	cluster.Spec.VcnId = "ocid1.vcn.oc1..x"
 	cluster.Spec.SubnetId = "ocid1.subnet.oc1..x"
-	cluster.Spec.VcnCompartmentId = "ocid1.compartment.oc1..x"
-	cluster.Spec.SubnetCompartmentId = "ocid1.compartment.oc1..x"
+	cluster.Spec.VcnCompartmentId = "ocid1.compartment.oc1..xxx"
+	cluster.Spec.SubnetCompartmentId = "ocid1.compartment.oc1..xxx"
 	return cluster
 }
 

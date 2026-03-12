@@ -8,6 +8,7 @@ package redis
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
@@ -21,6 +22,7 @@ type RedisClusterClientInterface interface {
 	CreateRedisCluster(ctx context.Context, request redis.CreateRedisClusterRequest) (redis.CreateRedisClusterResponse, error)
 	GetRedisCluster(ctx context.Context, request redis.GetRedisClusterRequest) (redis.GetRedisClusterResponse, error)
 	ListRedisClusters(ctx context.Context, request redis.ListRedisClustersRequest) (redis.ListRedisClustersResponse, error)
+	ChangeRedisClusterCompartment(ctx context.Context, request redis.ChangeRedisClusterCompartmentRequest) (redis.ChangeRedisClusterCompartmentResponse, error)
 	UpdateRedisCluster(ctx context.Context, request redis.UpdateRedisClusterRequest) (redis.UpdateRedisClusterResponse, error)
 	DeleteRedisCluster(ctx context.Context, request redis.DeleteRedisClusterRequest) (redis.DeleteRedisClusterResponse, error)
 }
@@ -139,9 +141,16 @@ func (c *RedisClusterServiceManager) UpdateRedisCluster(ctx context.Context, clu
 		return err
 	}
 
-	updateNeeded := applyRedisDisplayNameUpdate(&updateDetails, cluster, existing)
-	updateNeeded = applyRedisNodeCountUpdate(&updateDetails, cluster, existing) || updateNeeded
-	updateNeeded = applyRedisNodeMemoryUpdate(&updateDetails, cluster, existing) || updateNeeded
+	if err := validateRedisImmutableUpdate(cluster, existing); err != nil {
+		return err
+	}
+
+	err = c.updateRedisClusterCompartment(ctx, client, cluster, existing, targetID)
+	if err != nil {
+		return err
+	}
+
+	updateNeeded := buildRedisUpdateDetails(&updateDetails, cluster, existing)
 
 	if !updateNeeded {
 		return nil
@@ -153,6 +162,43 @@ func (c *RedisClusterServiceManager) UpdateRedisCluster(ctx context.Context, clu
 	}
 
 	_, err = client.UpdateRedisCluster(ctx, req)
+	return err
+}
+
+func buildRedisUpdateDetails(updateDetails *redis.UpdateRedisClusterDetails, cluster *ociv1beta1.RedisCluster, existing *redis.RedisCluster) bool {
+	updateNeeded := applyRedisDisplayNameUpdate(updateDetails, cluster, existing)
+	if applyRedisNodeCountUpdate(updateDetails, cluster, existing) {
+		updateNeeded = true
+	}
+	if applyRedisNodeMemoryUpdate(updateDetails, cluster, existing) {
+		updateNeeded = true
+	}
+	if applyRedisFreeformTagUpdate(updateDetails, cluster, existing) {
+		updateNeeded = true
+	}
+	if applyRedisDefinedTagUpdate(updateDetails, cluster, existing) {
+		updateNeeded = true
+	}
+	return updateNeeded
+}
+
+func (c *RedisClusterServiceManager) updateRedisClusterCompartment(ctx context.Context,
+	client RedisClusterClientInterface, cluster *ociv1beta1.RedisCluster,
+	existing *redis.RedisCluster, targetID ociv1beta1.OCID) error {
+	if cluster.Spec.CompartmentId == "" {
+		return nil
+	}
+
+	if existing.CompartmentId != nil && *existing.CompartmentId == string(cluster.Spec.CompartmentId) {
+		return nil
+	}
+
+	_, err := client.ChangeRedisClusterCompartment(ctx, redis.ChangeRedisClusterCompartmentRequest{
+		RedisClusterId: common.String(string(targetID)),
+		ChangeRedisClusterCompartmentDetails: redis.ChangeRedisClusterCompartmentDetails{
+			CompartmentId: common.String(string(cluster.Spec.CompartmentId)),
+		},
+	})
 	return err
 }
 
@@ -184,6 +230,41 @@ func applyRedisNodeMemoryUpdate(updateDetails *redis.UpdateRedisClusterDetails,
 
 	updateDetails.NodeMemoryInGBs = common.Float32(cluster.Spec.NodeMemoryInGBs)
 	return true
+}
+
+func applyRedisFreeformTagUpdate(updateDetails *redis.UpdateRedisClusterDetails,
+	cluster *ociv1beta1.RedisCluster, existing *redis.RedisCluster) bool {
+	if cluster.Spec.FreeFormTags == nil || reflect.DeepEqual(existing.FreeformTags, cluster.Spec.FreeFormTags) {
+		return false
+	}
+
+	updateDetails.FreeformTags = cluster.Spec.FreeFormTags
+	return true
+}
+
+func applyRedisDefinedTagUpdate(updateDetails *redis.UpdateRedisClusterDetails,
+	cluster *ociv1beta1.RedisCluster, existing *redis.RedisCluster) bool {
+	if cluster.Spec.DefinedTags == nil {
+		return false
+	}
+
+	desiredDefinedTags := *util.ConvertToOciDefinedTags(&cluster.Spec.DefinedTags)
+	if reflect.DeepEqual(existing.DefinedTags, desiredDefinedTags) {
+		return false
+	}
+
+	updateDetails.DefinedTags = desiredDefinedTags
+	return true
+}
+
+func validateRedisImmutableUpdate(cluster *ociv1beta1.RedisCluster, existing *redis.RedisCluster) error {
+	if cluster.Spec.SoftwareVersion != "" && string(existing.SoftwareVersion) != cluster.Spec.SoftwareVersion {
+		return fmt.Errorf("softwareVersion cannot be updated in place")
+	}
+	if cluster.Spec.SubnetId != "" && existing.SubnetId != nil && *existing.SubnetId != string(cluster.Spec.SubnetId) {
+		return fmt.Errorf("subnetId cannot be updated in place")
+	}
+	return nil
 }
 
 // DeleteRedisCluster deletes the Redis cluster for the given OCID.

@@ -124,10 +124,12 @@ type ContainerInstanceSpec struct {
 
 	// AvailabilityDomain is the availability domain where the container instance runs.
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="availabilityDomain is immutable"
 	AvailabilityDomain string `json:"availabilityDomain"`
 
 	// Shape is the OCI shape for the container instance (e.g. "CI.Standard.E4.Flex").
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="shape is immutable"
 	Shape string `json:"shape"`
 
 	// ShapeConfig specifies the OCPUs and memory for the shape.
@@ -137,26 +139,32 @@ type ContainerInstanceSpec struct {
 	// Containers is the list of containers to run in this instance.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="containers is immutable"
 	Containers []ContainerDetails `json:"containers"`
 
 	// Vnics defines the networking configuration for the container instance.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="vnics is immutable"
 	Vnics []ContainerVnicDetails `json:"vnics"`
 
 	// DisplayName is a user-friendly name for the container instance.
 	DisplayName *string `json:"displayName,omitempty"`
 
 	// FaultDomain places the container instance in a specific fault domain.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="faultDomain is immutable"
 	FaultDomain *string `json:"faultDomain,omitempty"`
 
 	// GracefulShutdownTimeoutInSeconds is the time in seconds for graceful shutdown.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="gracefulShutdownTimeoutInSeconds is immutable"
 	GracefulShutdownTimeoutInSeconds *int64 `json:"gracefulShutdownTimeoutInSeconds,omitempty"`
 
 	// ContainerRestartPolicy controls container restart behaviour (ALWAYS, NEVER, ON_FAILURE).
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="containerRestartPolicy is immutable"
 	ContainerRestartPolicy *string `json:"containerRestartPolicy,omitempty"`
 
 	// ImagePullSecrets provides credentials for pulling images from private registries.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="imagePullSecrets is immutable"
 	ImagePullSecrets []ContainerImagePullSecret `json:"imagePullSecrets,omitempty"`
 
 	// GCPolicy controls garbage collection of old container instances.

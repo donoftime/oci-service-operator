@@ -7,6 +7,7 @@ package dataflow
 
 import (
 	"fmt"
+	"reflect"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	ocidataflow "github.com/oracle/oci-go-sdk/v65/dataflow"
@@ -44,6 +45,7 @@ func dataFlowUpdateNeeded(app *ociv1beta1.DataFlowApplication, existing *ocidata
 	updateNeeded := applyDataFlowBasicUpdates(&updateDetails, app, existing)
 	updateNeeded = applyDataFlowExecutorUpdates(&updateDetails, app, existing) || updateNeeded
 	updateNeeded = applyDataFlowArtifactUpdates(&updateDetails, app, existing) || updateNeeded
+	updateNeeded = applyDataFlowTagUpdates(&updateDetails, app, existing) || updateNeeded
 
 	return updateDetails, updateNeeded
 }
@@ -74,20 +76,77 @@ func sliceEquals(left, right []string) bool {
 
 func applyDataFlowBasicUpdates(updateDetails *ocidataflow.UpdateApplicationDetails,
 	app *ociv1beta1.DataFlowApplication, existing *ocidataflow.Application) bool {
-	updateNeeded := false
-	if app.Spec.DisplayName != "" && safeString(existing.DisplayName) != app.Spec.DisplayName {
-		updateDetails.DisplayName = common.String(app.Spec.DisplayName)
+	updateNeeded := applyDataFlowDisplayNameUpdate(updateDetails, app, existing)
+	if applyDataFlowDescriptionUpdate(updateDetails, app, existing) {
 		updateNeeded = true
 	}
-	if app.Spec.Description != "" && safeString(existing.Description) != app.Spec.Description {
-		updateDetails.Description = common.String(app.Spec.Description)
+	if applyDataFlowSparkVersionUpdate(updateDetails, app, existing) {
 		updateNeeded = true
 	}
-	if app.Spec.SparkVersion != "" && safeString(existing.SparkVersion) != app.Spec.SparkVersion {
-		updateDetails.SparkVersion = common.String(app.Spec.SparkVersion)
+	if applyDataFlowLanguageUpdate(updateDetails, app, existing) {
+		updateNeeded = true
+	}
+	if applyDataFlowLogsBucketUpdate(updateDetails, app, existing) {
+		updateNeeded = true
+	}
+	if applyDataFlowWarehouseBucketUpdate(updateDetails, app, existing) {
 		updateNeeded = true
 	}
 	return updateNeeded
+}
+
+func applyDataFlowDisplayNameUpdate(updateDetails *ocidataflow.UpdateApplicationDetails,
+	app *ociv1beta1.DataFlowApplication, existing *ocidataflow.Application) bool {
+	if app.Spec.DisplayName == "" || safeString(existing.DisplayName) == app.Spec.DisplayName {
+		return false
+	}
+	updateDetails.DisplayName = common.String(app.Spec.DisplayName)
+	return true
+}
+
+func applyDataFlowDescriptionUpdate(updateDetails *ocidataflow.UpdateApplicationDetails,
+	app *ociv1beta1.DataFlowApplication, existing *ocidataflow.Application) bool {
+	if app.Spec.Description == "" || safeString(existing.Description) == app.Spec.Description {
+		return false
+	}
+	updateDetails.Description = common.String(app.Spec.Description)
+	return true
+}
+
+func applyDataFlowSparkVersionUpdate(updateDetails *ocidataflow.UpdateApplicationDetails,
+	app *ociv1beta1.DataFlowApplication, existing *ocidataflow.Application) bool {
+	if app.Spec.SparkVersion == "" || safeString(existing.SparkVersion) == app.Spec.SparkVersion {
+		return false
+	}
+	updateDetails.SparkVersion = common.String(app.Spec.SparkVersion)
+	return true
+}
+
+func applyDataFlowLanguageUpdate(updateDetails *ocidataflow.UpdateApplicationDetails,
+	app *ociv1beta1.DataFlowApplication, existing *ocidataflow.Application) bool {
+	if app.Spec.Language == "" || string(existing.Language) == app.Spec.Language {
+		return false
+	}
+	updateDetails.Language = ocidataflow.ApplicationLanguageEnum(app.Spec.Language)
+	return true
+}
+
+func applyDataFlowLogsBucketUpdate(updateDetails *ocidataflow.UpdateApplicationDetails,
+	app *ociv1beta1.DataFlowApplication, existing *ocidataflow.Application) bool {
+	if app.Spec.LogsBucketUri == "" || safeString(existing.LogsBucketUri) == app.Spec.LogsBucketUri {
+		return false
+	}
+	updateDetails.LogsBucketUri = common.String(app.Spec.LogsBucketUri)
+	return true
+}
+
+func applyDataFlowWarehouseBucketUpdate(updateDetails *ocidataflow.UpdateApplicationDetails,
+	app *ociv1beta1.DataFlowApplication, existing *ocidataflow.Application) bool {
+	if app.Spec.WarehouseBucketUri == "" || safeString(existing.WarehouseBucketUri) == app.Spec.WarehouseBucketUri {
+		return false
+	}
+	updateDetails.WarehouseBucketUri = common.String(app.Spec.WarehouseBucketUri)
+	return true
 }
 
 func applyDataFlowExecutorUpdates(updateDetails *ocidataflow.UpdateApplicationDetails,
@@ -157,6 +216,23 @@ func applyDataFlowShapeUpdates(updateDetails *ocidataflow.UpdateApplicationDetai
 	if app.Spec.ExecutorShape != "" && safeString(existing.ExecutorShape) != app.Spec.ExecutorShape {
 		updateDetails.ExecutorShape = common.String(app.Spec.ExecutorShape)
 		updateNeeded = true
+	}
+	return updateNeeded
+}
+
+func applyDataFlowTagUpdates(updateDetails *ocidataflow.UpdateApplicationDetails,
+	app *ociv1beta1.DataFlowApplication, existing *ocidataflow.Application) bool {
+	updateNeeded := false
+	if app.Spec.FreeFormTags != nil && !mapStringEquals(existing.FreeformTags, app.Spec.FreeFormTags) {
+		updateDetails.FreeformTags = app.Spec.FreeFormTags
+		updateNeeded = true
+	}
+	if app.Spec.DefinedTags != nil {
+		desiredDefinedTags := *util.ConvertToOciDefinedTags(&app.Spec.DefinedTags)
+		if !reflect.DeepEqual(existing.DefinedTags, desiredDefinedTags) {
+			updateDetails.DefinedTags = desiredDefinedTags
+			updateNeeded = true
+		}
 	}
 	return updateNeeded
 }

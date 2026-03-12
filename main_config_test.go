@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	ctrlcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/config"
-	"sigs.k8s.io/controller-runtime/pkg/webhook"
 )
 
 func TestLoadControllerManagerConfig(t *testing.T) {
@@ -31,12 +30,6 @@ metrics:
   certDir: /metrics/certs
   certName: metrics.crt
   keyName: metrics.key
-webhook:
-  port: 9444
-  host: webhook.example
-  certDir: /webhook/certs
-  certName: webhook.crt
-  keyName: webhook.key
 leaderElection:
   leaderElect: false
   leaseDuration: 20s
@@ -68,13 +61,6 @@ controller:
 	assert.Equal(t, "/metrics/certs", config.Metrics.CertDir)
 	assert.Equal(t, "metrics.crt", config.Metrics.CertName)
 	assert.Equal(t, "metrics.key", config.Metrics.KeyName)
-	if assert.NotNil(t, config.Webhook.Port) {
-		assert.Equal(t, 9444, *config.Webhook.Port)
-	}
-	assert.Equal(t, "webhook.example", config.Webhook.Host)
-	assert.Equal(t, "/webhook/certs", config.Webhook.CertDir)
-	assert.Equal(t, "webhook.crt", config.Webhook.CertName)
-	assert.Equal(t, "webhook.key", config.Webhook.KeyName)
 	if assert.NotNil(t, config.LeaderElection) && assert.NotNil(t, config.LeaderElection.LeaderElect) {
 		assert.False(t, *config.LeaderElection.LeaderElect)
 	}
@@ -132,11 +118,6 @@ func TestMergeManagerOptionsUsesConfigWhenFlagsAreNotExplicit(t *testing.T) {
 	config.Health.HealthProbeBindAddress = ":8082"
 	config.Health.ReadinessEndpointName = "ready"
 	config.Health.LivenessEndpointName = "live"
-	config.Webhook.Port = intPtr(9444)
-	config.Webhook.Host = "webhook.example"
-	config.Webhook.CertDir = "/webhook/certs"
-	config.Webhook.CertName = "webhook.crt"
-	config.Webhook.KeyName = "webhook.key"
 	config.LeaderElection = &controllerManagerLeaderElection{
 		LeaderElect:       &leaderElect,
 		ResourceLock:      "configmapsleases",
@@ -181,14 +162,6 @@ func TestMergeManagerOptionsUsesConfigWhenFlagsAreNotExplicit(t *testing.T) {
 	if assert.NotNil(t, merged.Controller.RecoverPanic) {
 		assert.True(t, *merged.Controller.RecoverPanic)
 	}
-	if assert.IsType(t, &webhook.DefaultServer{}, merged.WebhookServer) {
-		server := merged.WebhookServer.(*webhook.DefaultServer)
-		assert.Equal(t, 9444, server.Options.Port)
-		assert.Equal(t, "webhook.example", server.Options.Host)
-		assert.Equal(t, "/webhook/certs", server.Options.CertDir)
-		assert.Equal(t, "webhook.crt", server.Options.CertName)
-		assert.Equal(t, "webhook.key", server.Options.KeyName)
-	}
 }
 
 func TestMergeManagerOptionsPrefersExplicitFlags(t *testing.T) {
@@ -225,7 +198,6 @@ func TestMergeManagerOptionsDoesNotOverrideExistingNonFlagOptions(t *testing.T) 
 	existingNamespace := "existing"
 	options.Cache.DefaultNamespaces = map[string]ctrlcache.Config{existingNamespace: {}}
 	options.Controller = config.Controller{CacheSyncTimeout: 3 * time.Second}
-	options.WebhookServer = webhook.NewServer(webhook.Options{Port: 9443, Host: "existing-host"})
 
 	configFile := controllerManagerConfig{
 		CacheNamespace: "from-config",
@@ -233,16 +205,11 @@ func TestMergeManagerOptionsDoesNotOverrideExistingNonFlagOptions(t *testing.T) 
 			GroupKindConcurrency: map[string]int{"ReplicaSet.apps": 3},
 			CacheSyncTimeout:     durationPtr(12 * time.Second),
 		},
-		Webhook: controllerManagerWebhook{Port: intPtr(9444), Host: "webhook.example"},
 	}
 
 	merged := mergeManagerOptions(options, configFile, map[string]bool{})
 	assert.Equal(t, map[string]ctrlcache.Config{existingNamespace: {}}, merged.Cache.DefaultNamespaces)
 	assert.Equal(t, 3*time.Second, merged.Controller.CacheSyncTimeout)
-	assert.IsType(t, &webhook.DefaultServer{}, merged.WebhookServer)
-	server := merged.WebhookServer.(*webhook.DefaultServer)
-	assert.Equal(t, 9443, server.Options.Port)
-	assert.Equal(t, "existing-host", server.Options.Host)
 	assert.Equal(t, map[string]int{"ReplicaSet.apps": 3}, merged.Controller.GroupKindConcurrency)
 }
 
@@ -251,9 +218,5 @@ func durationPtr(value time.Duration) *controllerManagerDuration {
 }
 
 func boolPtr(value bool) *bool {
-	return &value
-}
-
-func intPtr(value int) *int {
 	return &value
 }

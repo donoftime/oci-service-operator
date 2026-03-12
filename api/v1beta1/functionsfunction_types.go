@@ -16,10 +16,12 @@ type FunctionsFunctionSpec struct {
 
 	// ApplicationId is the OCID of the application this function belongs to
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="applicationId is immutable"
 	ApplicationId OCID `json:"applicationId"`
 
 	// DisplayName is a user-friendly name for the function
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="displayName is immutable"
 	DisplayName string `json:"displayName"`
 
 	// Image is the qualified name of the Docker image to use in the function

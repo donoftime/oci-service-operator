@@ -76,18 +76,20 @@ func (c *AdbServiceManager) CreateOrUpdate(ctx context.Context, obj runtime.Obje
 
 func isValidUpdate(autonomousDatabases ociv1beta1.AutonomousDatabases, adbInstance database.AutonomousDatabase) bool {
 	return hasAdbFieldUpdates(autonomousDatabases, adbInstance) ||
+		adbAdminPasswordConfigured(autonomousDatabases) ||
 		hasAdbOptionalBoolUpdates(autonomousDatabases, adbInstance) ||
 		hasAdbTagUpdates(autonomousDatabases, adbInstance)
 }
 
 func hasAdbFieldUpdates(autonomousDatabases ociv1beta1.AutonomousDatabases, adbInstance database.AutonomousDatabase) bool {
 	return adbDisplayNameUpdated(autonomousDatabases, adbInstance) ||
-		adbDbNameUpdated(autonomousDatabases, adbInstance) ||
 		adbCpuCoreCountUpdated(autonomousDatabases, adbInstance) ||
 		adbStorageUpdated(autonomousDatabases, adbInstance) ||
 		adbDbWorkloadUpdated(autonomousDatabases, adbInstance) ||
 		adbDbVersionUpdated(autonomousDatabases, adbInstance) ||
-		adbLicenseModelUpdated(autonomousDatabases, adbInstance)
+		adbLicenseModelUpdated(autonomousDatabases, adbInstance) ||
+		adbComputeModelUpdated(autonomousDatabases, adbInstance) ||
+		adbComputeCountUpdated(autonomousDatabases, adbInstance)
 }
 
 func hasAdbOptionalBoolUpdates(autonomousDatabases ociv1beta1.AutonomousDatabases, adbInstance database.AutonomousDatabase) bool {
@@ -112,10 +114,6 @@ func adbDisplayNameUpdated(autonomousDatabases ociv1beta1.AutonomousDatabases, a
 	return autonomousDatabases.Spec.DisplayName != "" && autonomousDatabases.Spec.DisplayName != *adbInstance.DisplayName
 }
 
-func adbDbNameUpdated(autonomousDatabases ociv1beta1.AutonomousDatabases, adbInstance database.AutonomousDatabase) bool {
-	return autonomousDatabases.Spec.DbName != "" && autonomousDatabases.Spec.DbName != *adbInstance.DbName
-}
-
 func adbCpuCoreCountUpdated(autonomousDatabases ociv1beta1.AutonomousDatabases, adbInstance database.AutonomousDatabase) bool {
 	return autonomousDatabases.Spec.CpuCoreCount != 0 && autonomousDatabases.Spec.CpuCoreCount != *adbInstance.CpuCoreCount
 }
@@ -137,6 +135,20 @@ func adbLicenseModelUpdated(autonomousDatabases ociv1beta1.AutonomousDatabases, 
 	return autonomousDatabases.Spec.LicenseModel != "" && autonomousDatabases.Spec.LicenseModel != string(adbInstance.LicenseModel)
 }
 
+func adbAdminPasswordConfigured(autonomousDatabases ociv1beta1.AutonomousDatabases) bool {
+	return autonomousDatabases.Spec.AdminPassword.Secret.SecretName != ""
+}
+
+func adbComputeModelUpdated(autonomousDatabases ociv1beta1.AutonomousDatabases, adbInstance database.AutonomousDatabase) bool {
+	return autonomousDatabases.Spec.ComputeModel != "" && autonomousDatabases.Spec.ComputeModel != string(adbInstance.ComputeModel)
+}
+
+func adbComputeCountUpdated(autonomousDatabases ociv1beta1.AutonomousDatabases, adbInstance database.AutonomousDatabase) bool {
+	return autonomousDatabases.Spec.ComputeModel != "" &&
+		adbInstance.ComputeCount != nil &&
+		autonomousDatabases.Spec.ComputeCount != *adbInstance.ComputeCount
+}
+
 func (c *AdbServiceManager) resolveAdbInstance(ctx context.Context, autonomousDatabases *ociv1beta1.AutonomousDatabases,
 	req ctrl.Request) (*database.AutonomousDatabase, servicemanager.OSOKResponse, bool, error) {
 	if strings.TrimSpace(string(autonomousDatabases.Spec.AdbId)) == "" {
@@ -149,6 +161,19 @@ func (c *AdbServiceManager) resolveAdbInstance(ctx context.Context, autonomousDa
 
 func (c *AdbServiceManager) resolveManagedAdb(ctx context.Context, autonomousDatabases *ociv1beta1.AutonomousDatabases,
 	req ctrl.Request) (*database.AutonomousDatabase, servicemanager.OSOKResponse, bool, error) {
+	if strings.TrimSpace(string(autonomousDatabases.Status.OsokStatus.Ocid)) != "" {
+		adbInstance, err := c.GetAdb(ctx, autonomousDatabases.Status.OsokStatus.Ocid, nil)
+		if err != nil {
+			c.Log.ErrorLog(err, "Error while getting Autonomous database from status OCID")
+			return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
+		}
+		if err = c.UpdateAdb(ctx, autonomousDatabases); err != nil {
+			c.Log.ErrorLog(err, "Error while updating Autonomous database from status OCID")
+			return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
+		}
+		return adbInstance, servicemanager.OSOKResponse{}, false, nil
+	}
+
 	adbOcid, err := c.GetAdbOcid(ctx, *autonomousDatabases)
 	if err != nil {
 		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
@@ -164,6 +189,12 @@ func (c *AdbServiceManager) resolveManagedAdb(ctx context.Context, autonomousDat
 		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
 	}
 
+	autonomousDatabases.Status.OsokStatus.Ocid = *adbOcid
+	if err = c.UpdateAdb(ctx, autonomousDatabases); err != nil {
+		c.Log.ErrorLog(err, "Error while updating Autonomous database by resolved OCID")
+		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
+	}
+
 	return adbInstance, servicemanager.OSOKResponse{}, false, nil
 }
 
@@ -174,6 +205,7 @@ func (c *AdbServiceManager) resolveBoundAdb(ctx context.Context, autonomousDatab
 		return nil, servicemanager.OSOKResponse{IsSuccessful: false}, true, err
 	}
 
+	autonomousDatabases.Status.OsokStatus.Ocid = autonomousDatabases.Spec.AdbId
 	if isValidUpdate(*autonomousDatabases, *adbInstance) {
 		if err = c.UpdateAdb(ctx, autonomousDatabases); err != nil {
 			c.Log.ErrorLog(err, "Error while updating Autonomous database")

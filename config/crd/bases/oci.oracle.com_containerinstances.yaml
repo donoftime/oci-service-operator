@@ -60,6 +60,9 @@ spec:
                 description: AvailabilityDomain is the availability domain where the
                   container instance runs.
                 type: string
+                x-kubernetes-validations:
+                - message: availabilityDomain is immutable
+                  rule: self == oldSelf
               compartmentId:
                 description: CompartmentId is the OCID of the compartment in which
                   to create the container instance.
@@ -70,6 +73,9 @@ spec:
                 description: ContainerRestartPolicy controls container restart behaviour
                   (ALWAYS, NEVER, ON_FAILURE).
                 type: string
+                x-kubernetes-validations:
+                - message: containerRestartPolicy is immutable
+                  rule: self == oldSelf
               containers:
                 description: Containers is the list of containers to run in this instance.
                 items:
@@ -146,6 +152,9 @@ spec:
                   type: object
                 minItems: 1
                 type: array
+                x-kubernetes-validations:
+                - message: containers is immutable
+                  rule: self == oldSelf
               definedTags:
                 additionalProperties:
                   additionalProperties:
@@ -160,6 +169,9 @@ spec:
                 description: FaultDomain places the container instance in a specific
                   fault domain.
                 type: string
+                x-kubernetes-validations:
+                - message: faultDomain is immutable
+                  rule: self == oldSelf
               freeformTags:
                 additionalProperties:
                   type: string
@@ -183,6 +195,9 @@ spec:
                   for graceful shutdown.
                 format: int64
                 type: integer
+                x-kubernetes-validations:
+                - message: gracefulShutdownTimeoutInSeconds is immutable
+                  rule: self == oldSelf
               id:
                 description: ContainerInstanceId is the OCID of an existing ContainerInstance
                   to bind to (optional).
@@ -212,10 +227,16 @@ spec:
                   - username
                   type: object
                 type: array
+                x-kubernetes-validations:
+                - message: imagePullSecrets is immutable
+                  rule: self == oldSelf
               shape:
                 description: Shape is the OCI shape for the container instance (e.g.
                   "CI.Standard.E4.Flex").
                 type: string
+                x-kubernetes-validations:
+                - message: shape is immutable
+                  rule: self == oldSelf
               shapeConfig:
                 description: ShapeConfig specifies the OCPUs and memory for the shape.
                 properties:
@@ -257,6 +278,9 @@ spec:
                   type: object
                 minItems: 1
                 type: array
+                x-kubernetes-validations:
+                - message: vnics is immutable
+                  rule: self == oldSelf
             required:
             - availabilityDomain
             - compartmentId

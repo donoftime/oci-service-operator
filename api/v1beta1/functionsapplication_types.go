@@ -20,10 +20,12 @@ type FunctionsApplicationSpec struct {
 
 	// DisplayName is a user-friendly name for the application
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="displayName is immutable"
 	DisplayName string `json:"displayName"`
 
 	// SubnetIds is the list of subnet OCIDs in which to run functions in the application
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="subnetIds is immutable"
 	SubnetIds []string `json:"subnetIds"`
 
 	// Config is the application configuration passed to functions as environment variables
@@ -36,6 +38,7 @@ type FunctionsApplicationSpec struct {
 	SyslogUrl string `json:"syslogUrl,omitempty"`
 
 	// Shape is the processor shape for functions in the application (GENERIC_X86, GENERIC_ARM, GENERIC_X86_ARM)
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="shape is immutable"
 	Shape string `json:"shape,omitempty"`
 
 	TagResources `json:",inline,omitempty"`

@@ -20,15 +20,18 @@ type ObjectStorageBucketSpec struct {
 
 	// Name is the name of the bucket
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="name is immutable"
 	Name string `json:"name"`
 
 	// Namespace is the OCI Object Storage namespace (auto-resolved from tenancy if empty)
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="namespace is immutable"
 	Namespace string `json:"namespace,omitempty"`
 
 	// AccessType controls public access: NoPublicAccess, ObjectRead, ObjectReadWithoutList, ObjectWrite
 	AccessType string `json:"accessType,omitempty"`
 
 	// StorageType is the storage tier: Standard or Archive (default: Standard)
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="storageType is immutable"
 	StorageType string `json:"storageType,omitempty"`
 
 	// Versioning controls object versioning: Enabled or Suspended

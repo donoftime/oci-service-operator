@@ -24,17 +24,21 @@ type PostgresDbSystemSpec struct {
 
 	// DbVersion is the PostgreSQL version (e.g. "14.10")
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="dbVersion is immutable"
 	DbVersion string `json:"dbVersion"`
 
 	// Shape is the instance shape for the DB system nodes (e.g. "VM.Standard.E4.Flex")
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="shape is immutable"
 	Shape string `json:"shape"`
 
 	// SubnetId is the OCID of the subnet for the DB system
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="subnetId is immutable"
 	SubnetId OCID `json:"subnetId"`
 
 	// StorageType is an optional hint for storage selection; currently the OCI Optimized storage tier is always used
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="storageType is immutable"
 	StorageType string `json:"storageType,omitempty"`
 
 	// Description is an optional user-provided description of the DB system
@@ -42,18 +46,23 @@ type PostgresDbSystemSpec struct {
 
 	// InstanceCount is the number of database instance nodes (defaults to 1)
 	// +kubebuilder:validation:Minimum:=1
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="instanceCount is immutable"
 	InstanceCount int `json:"instanceCount,omitempty"`
 
 	// InstanceOcpuCount is the total OCPUs available to each instance node
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="instanceOcpuCount is immutable"
 	InstanceOcpuCount int `json:"instanceOcpuCount,omitempty"`
 
 	// InstanceMemoryInGBs is the total memory available to each instance node, in gigabytes
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="instanceMemoryInGBs is immutable"
 	InstanceMemoryInGBs int `json:"instanceMemoryInGBs,omitempty"`
 
 	// AdminUsername is the admin username for the PostgreSQL DB system, read from a Kubernetes secret
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="adminUsername is immutable"
 	AdminUsername UsernameSource `json:"adminUsername,omitempty"`
 
 	// AdminPassword is the admin password for the PostgreSQL DB system, read from a Kubernetes secret
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="adminPassword is immutable"
 	AdminPassword PasswordSource `json:"adminPassword,omitempty"`
 
 	TagResources `json:",inline,omitempty"`

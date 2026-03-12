@@ -8,7 +8,6 @@ package networking
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	ocicore "github.com/oracle/oci-go-sdk/v65/core"
@@ -53,43 +52,34 @@ func (c *OciSubnetServiceManager) CreateOrUpdate(ctx context.Context, obj runtim
 		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
-	var subnetInstance *ocicore.Subnet
-
-	if strings.TrimSpace(string(subnet.Spec.SubnetId)) == "" {
-		// No explicit ID — look up by display name or create.
-		subnetOcid, err := c.GetSubnetOcid(ctx, *subnet)
-		if err != nil {
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		if subnetOcid == nil {
-			subnetInstance, err = c.CreateSubnet(ctx, *subnet)
-			if err != nil {
-				subnet.Status.OsokStatus = util.UpdateOSOKStatusCondition(subnet.Status.OsokStatus,
-					ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), c.Log)
-				c.Log.ErrorLog(err, "Create OciSubnet failed")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		} else {
-			subnetInstance, err = c.GetSubnet(ctx, *subnetOcid)
-			if err != nil {
-				c.Log.ErrorLog(err, "Error while getting OciSubnet by OCID")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		}
-	} else {
-		// Bind to an existing subnet by ID.
-		subnetInstance, err = c.GetSubnet(ctx, subnet.Spec.SubnetId)
-		if err != nil {
-			c.Log.ErrorLog(err, "Error while getting existing OciSubnet")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		subnet.Status.OsokStatus.Ocid = subnet.Spec.SubnetId
-		if err = c.UpdateSubnet(ctx, subnet); err != nil {
-			c.Log.ErrorLog(err, "Error while updating OciSubnet")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
+	subnetInstance, err := reconcileNetworkingResource(networkingCreateOrUpdateOps[ocicore.Subnet]{
+		SpecID: subnet.Spec.SubnetId,
+		Status: &subnet.Status.OsokStatus,
+		Get: func(id ociv1beta1.OCID) (*ocicore.Subnet, error) {
+			return c.GetSubnet(ctx, id)
+		},
+		Update: func() error {
+			return c.UpdateSubnet(ctx, subnet)
+		},
+		Lookup: func() (*ociv1beta1.OCID, error) {
+			return c.GetSubnetOcid(ctx, *subnet)
+		},
+		Create: func() (*ocicore.Subnet, error) {
+			return c.CreateSubnet(ctx, *subnet)
+		},
+		OnCreateError: func(err error) {
+			subnet.Status.OsokStatus = util.UpdateOSOKStatusCondition(subnet.Status.OsokStatus,
+				ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), c.Log)
+			c.Log.ErrorLog(err, "Create OciSubnet failed")
+		},
+		Log:            c.Log,
+		GetExistingMsg: "Error while getting existing OciSubnet",
+		GetStatusMsg:   "Error while getting existing OciSubnet from status OCID",
+		GetByOCIDMsg:   "Error while getting OciSubnet by OCID",
+		UpdateMsg:      "Error while updating OciSubnet",
+	})
+	if err != nil {
+		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
 	return reconcileLifecycleStatus(&subnet.Status.OsokStatus, "OciSubnet", safeString(subnetInstance.DisplayName),

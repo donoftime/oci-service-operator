@@ -61,12 +61,18 @@ spec:
                 maxLength: 255
                 minLength: 1
                 type: string
+                x-kubernetes-validations:
+                - message: compartmentId is immutable
+                  rule: self == oldSelf
               dataNodeCount:
                 description: Data node configuration
                 minimum: 1
                 type: integer
               dataNodeHostBareMetalShape:
                 type: string
+                x-kubernetes-validations:
+                - message: dataNodeHostBareMetalShape is immutable
+                  rule: self == oldSelf
               dataNodeHostMemoryGB:
                 minimum: 1
                 type: integer
@@ -79,6 +85,9 @@ spec:
                 - BM
                 - DENSE_IO
                 type: string
+                x-kubernetes-validations:
+                - message: dataNodeHostType is immutable
+                  rule: self == oldSelf
               dataNodeStorageGB:
                 minimum: 1
                 type: integer
@@ -107,6 +116,9 @@ spec:
                 type: integer
               masterNodeHostBareMetalShape:
                 type: string
+                x-kubernetes-validations:
+                - message: masterNodeHostBareMetalShape is immutable
+                  rule: self == oldSelf
               masterNodeHostMemoryGB:
                 minimum: 1
                 type: integer
@@ -118,6 +130,9 @@ spec:
                 - FLEX
                 - BM
                 type: string
+                x-kubernetes-validations:
+                - message: masterNodeHostType is immutable
+                  rule: self == oldSelf
               opendashboardNodeCount:
                 description: OpenSearch Dashboard node configuration
                 minimum: 1
@@ -146,19 +161,31 @@ spec:
                 maxLength: 255
                 minLength: 1
                 type: string
+                x-kubernetes-validations:
+                - message: subnetCompartmentId is immutable
+                  rule: self == oldSelf
               subnetId:
                 maxLength: 255
                 minLength: 1
                 type: string
+                x-kubernetes-validations:
+                - message: subnetId is immutable
+                  rule: self == oldSelf
               vcnCompartmentId:
                 maxLength: 255
                 minLength: 1
                 type: string
+                x-kubernetes-validations:
+                - message: vcnCompartmentId is immutable
+                  rule: self == oldSelf
               vcnId:
                 description: Networking
                 maxLength: 255
                 minLength: 1
                 type: string
+                x-kubernetes-validations:
+                - message: vcnId is immutable
+                  rule: self == oldSelf
             type: object
           status:
             description: OpenSearchClusterStatus defines the observed state of OpenSearchCluster

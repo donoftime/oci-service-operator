@@ -23,12 +23,13 @@ import (
 // --- mock gateway client ---
 
 type mockGatewayClient struct {
-	createGatewayFn func(ctx context.Context, req apigateway.CreateGatewayRequest) (apigateway.CreateGatewayResponse, error)
-	getGatewayFn    func(ctx context.Context, req apigateway.GetGatewayRequest) (apigateway.GetGatewayResponse, error)
-	listGatewaysFn  func(ctx context.Context, req apigateway.ListGatewaysRequest) (apigateway.ListGatewaysResponse, error)
-	updateGatewayFn func(ctx context.Context, req apigateway.UpdateGatewayRequest) (apigateway.UpdateGatewayResponse, error)
-	deleteGatewayFn func(ctx context.Context, req apigateway.DeleteGatewayRequest) (apigateway.DeleteGatewayResponse, error)
-	deleteCalled    bool
+	createGatewayFn            func(ctx context.Context, req apigateway.CreateGatewayRequest) (apigateway.CreateGatewayResponse, error)
+	getGatewayFn               func(ctx context.Context, req apigateway.GetGatewayRequest) (apigateway.GetGatewayResponse, error)
+	listGatewaysFn             func(ctx context.Context, req apigateway.ListGatewaysRequest) (apigateway.ListGatewaysResponse, error)
+	changeGatewayCompartmentFn func(ctx context.Context, req apigateway.ChangeGatewayCompartmentRequest) (apigateway.ChangeGatewayCompartmentResponse, error)
+	updateGatewayFn            func(ctx context.Context, req apigateway.UpdateGatewayRequest) (apigateway.UpdateGatewayResponse, error)
+	deleteGatewayFn            func(ctx context.Context, req apigateway.DeleteGatewayRequest) (apigateway.DeleteGatewayResponse, error)
+	deleteCalled               bool
 }
 
 func (m *mockGatewayClient) CreateGateway(ctx context.Context, req apigateway.CreateGatewayRequest) (apigateway.CreateGatewayResponse, error) {
@@ -52,6 +53,13 @@ func (m *mockGatewayClient) ListGateways(ctx context.Context, req apigateway.Lis
 	return apigateway.ListGatewaysResponse{}, nil
 }
 
+func (m *mockGatewayClient) ChangeGatewayCompartment(ctx context.Context, req apigateway.ChangeGatewayCompartmentRequest) (apigateway.ChangeGatewayCompartmentResponse, error) {
+	if m.changeGatewayCompartmentFn != nil {
+		return m.changeGatewayCompartmentFn(ctx, req)
+	}
+	return apigateway.ChangeGatewayCompartmentResponse{}, nil
+}
+
 func (m *mockGatewayClient) UpdateGateway(ctx context.Context, req apigateway.UpdateGatewayRequest) (apigateway.UpdateGatewayResponse, error) {
 	if m.updateGatewayFn != nil {
 		return m.updateGatewayFn(ctx, req)
@@ -70,12 +78,13 @@ func (m *mockGatewayClient) DeleteGateway(ctx context.Context, req apigateway.De
 // --- mock deployment client ---
 
 type mockDeploymentClient struct {
-	createDeploymentFn func(ctx context.Context, req apigateway.CreateDeploymentRequest) (apigateway.CreateDeploymentResponse, error)
-	getDeploymentFn    func(ctx context.Context, req apigateway.GetDeploymentRequest) (apigateway.GetDeploymentResponse, error)
-	listDeploymentsFn  func(ctx context.Context, req apigateway.ListDeploymentsRequest) (apigateway.ListDeploymentsResponse, error)
-	updateDeploymentFn func(ctx context.Context, req apigateway.UpdateDeploymentRequest) (apigateway.UpdateDeploymentResponse, error)
-	deleteDeploymentFn func(ctx context.Context, req apigateway.DeleteDeploymentRequest) (apigateway.DeleteDeploymentResponse, error)
-	deleteCalled       bool
+	createDeploymentFn            func(ctx context.Context, req apigateway.CreateDeploymentRequest) (apigateway.CreateDeploymentResponse, error)
+	getDeploymentFn               func(ctx context.Context, req apigateway.GetDeploymentRequest) (apigateway.GetDeploymentResponse, error)
+	listDeploymentsFn             func(ctx context.Context, req apigateway.ListDeploymentsRequest) (apigateway.ListDeploymentsResponse, error)
+	changeDeploymentCompartmentFn func(ctx context.Context, req apigateway.ChangeDeploymentCompartmentRequest) (apigateway.ChangeDeploymentCompartmentResponse, error)
+	updateDeploymentFn            func(ctx context.Context, req apigateway.UpdateDeploymentRequest) (apigateway.UpdateDeploymentResponse, error)
+	deleteDeploymentFn            func(ctx context.Context, req apigateway.DeleteDeploymentRequest) (apigateway.DeleteDeploymentResponse, error)
+	deleteCalled                  bool
 }
 
 func (m *mockDeploymentClient) CreateDeployment(ctx context.Context, req apigateway.CreateDeploymentRequest) (apigateway.CreateDeploymentResponse, error) {
@@ -97,6 +106,13 @@ func (m *mockDeploymentClient) ListDeployments(ctx context.Context, req apigatew
 		return m.listDeploymentsFn(ctx, req)
 	}
 	return apigateway.ListDeploymentsResponse{}, nil
+}
+
+func (m *mockDeploymentClient) ChangeDeploymentCompartment(ctx context.Context, req apigateway.ChangeDeploymentCompartmentRequest) (apigateway.ChangeDeploymentCompartmentResponse, error) {
+	if m.changeDeploymentCompartmentFn != nil {
+		return m.changeDeploymentCompartmentFn(ctx, req)
+	}
+	return apigateway.ChangeDeploymentCompartmentResponse{}, nil
 }
 
 func (m *mockDeploymentClient) UpdateDeployment(ctx context.Context, req apigateway.UpdateDeploymentRequest) (apigateway.UpdateDeploymentResponse, error) {

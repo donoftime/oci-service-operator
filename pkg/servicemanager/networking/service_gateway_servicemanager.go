@@ -8,7 +8,6 @@ package networking
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	ocicore "github.com/oracle/oci-go-sdk/v65/core"
@@ -53,43 +52,34 @@ func (c *OciServiceGatewayServiceManager) CreateOrUpdate(ctx context.Context, ob
 		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
-	var sgwInstance *ocicore.ServiceGateway
-
-	if strings.TrimSpace(string(sgw.Spec.ServiceGatewayId)) == "" {
-		// No explicit ID — look up by display name or create.
-		sgwOcid, err := c.GetServiceGatewayOcid(ctx, *sgw)
-		if err != nil {
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		if sgwOcid == nil {
-			sgwInstance, err = c.CreateServiceGateway(ctx, *sgw)
-			if err != nil {
-				sgw.Status.OsokStatus = util.UpdateOSOKStatusCondition(sgw.Status.OsokStatus,
-					ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), c.Log)
-				c.Log.ErrorLog(err, "Create OciServiceGateway failed")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		} else {
-			sgwInstance, err = c.GetServiceGateway(ctx, *sgwOcid)
-			if err != nil {
-				c.Log.ErrorLog(err, "Error while getting OciServiceGateway by OCID")
-				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-		}
-	} else {
-		// Bind to an existing Service Gateway by ID.
-		sgwInstance, err = c.GetServiceGateway(ctx, sgw.Spec.ServiceGatewayId)
-		if err != nil {
-			c.Log.ErrorLog(err, "Error while getting existing OciServiceGateway")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
-
-		sgw.Status.OsokStatus.Ocid = sgw.Spec.ServiceGatewayId
-		if err = c.UpdateServiceGateway(ctx, sgw); err != nil {
-			c.Log.ErrorLog(err, "Error while updating OciServiceGateway")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
-		}
+	sgwInstance, err := reconcileNetworkingResource(networkingCreateOrUpdateOps[ocicore.ServiceGateway]{
+		SpecID: sgw.Spec.ServiceGatewayId,
+		Status: &sgw.Status.OsokStatus,
+		Get: func(id ociv1beta1.OCID) (*ocicore.ServiceGateway, error) {
+			return c.GetServiceGateway(ctx, id)
+		},
+		Update: func() error {
+			return c.UpdateServiceGateway(ctx, sgw)
+		},
+		Lookup: func() (*ociv1beta1.OCID, error) {
+			return c.GetServiceGatewayOcid(ctx, *sgw)
+		},
+		Create: func() (*ocicore.ServiceGateway, error) {
+			return c.CreateServiceGateway(ctx, *sgw)
+		},
+		OnCreateError: func(err error) {
+			sgw.Status.OsokStatus = util.UpdateOSOKStatusCondition(sgw.Status.OsokStatus,
+				ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), c.Log)
+			c.Log.ErrorLog(err, "Create OciServiceGateway failed")
+		},
+		Log:            c.Log,
+		GetExistingMsg: "Error while getting existing OciServiceGateway",
+		GetStatusMsg:   "Error while getting existing OciServiceGateway from status OCID",
+		GetByOCIDMsg:   "Error while getting OciServiceGateway by OCID",
+		UpdateMsg:      "Error while updating OciServiceGateway",
+	})
+	if err != nil {
+		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
 	return reconcileLifecycleStatus(&sgw.Status.OsokStatus, "OciServiceGateway", safeString(sgwInstance.DisplayName),
