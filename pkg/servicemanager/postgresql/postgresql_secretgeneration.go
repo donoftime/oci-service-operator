@@ -11,6 +11,7 @@ import (
 	"strconv"
 
 	"github.com/oracle/oci-go-sdk/v65/psql"
+	"github.com/oracle/oci-service-operator/pkg/servicemanager"
 )
 
 func (c *PostgresDbSystemServiceManager) addToSecret(ctx context.Context, namespace string, dbSystemName string,
@@ -20,7 +21,7 @@ func (c *PostgresDbSystemServiceManager) addToSecret(ctx context.Context, namesp
 	credMap := getCredentialMap(dbSystem)
 
 	c.Log.InfoLog(fmt.Sprintf("Creating secret for PostgresDbSystem %s in namespace %s", dbSystemName, namespace))
-	return c.CredentialClient.CreateSecret(ctx, dbSystemName, namespace, nil, credMap)
+	return servicemanager.EnsureOwnedSecret(ctx, c.CredentialClient, dbSystemName, namespace, "PostgresDbSystem", dbSystemName, credMap)
 }
 
 func getCredentialMap(dbSystem psql.DbSystem) map[string][]byte {

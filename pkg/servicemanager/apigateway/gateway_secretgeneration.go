@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	"github.com/oracle/oci-go-sdk/v65/apigateway"
+	"github.com/oracle/oci-service-operator/pkg/servicemanager"
 )
 
 func (c *GatewayServiceManager) addToSecret(ctx context.Context, namespace string, gatewayName string,
@@ -19,7 +20,7 @@ func (c *GatewayServiceManager) addToSecret(ctx context.Context, namespace strin
 	credMap := getGatewayCredentialMap(gw)
 
 	c.Log.InfoLog(fmt.Sprintf("Creating secret for ApiGateway %s in namespace %s", gatewayName, namespace))
-	return c.CredentialClient.CreateSecret(ctx, gatewayName, namespace, nil, credMap)
+	return servicemanager.EnsureOwnedSecret(ctx, c.CredentialClient, gatewayName, namespace, "ApiGateway", gatewayName, credMap)
 }
 
 func getGatewayCredentialMap(gw apigateway.Gateway) map[string][]byte {

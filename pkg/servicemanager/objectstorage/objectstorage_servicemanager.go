@@ -167,16 +167,18 @@ func (m *ObjectStorageBucketServiceManager) Delete(ctx context.Context, obj runt
 		return false, err
 	}
 
-	if strings.TrimSpace(string(resource.Status.OsokStatus.Ocid)) == "" {
+	compositeId := string(resource.Status.OsokStatus.Ocid)
+	if strings.TrimSpace(compositeId) == "" {
+		compositeId = string(resource.Spec.BucketId)
+	}
+	if strings.TrimSpace(compositeId) == "" {
 		m.Log.InfoLog("ObjectStorageBucket has no composite ID, nothing to delete")
 		return true, nil
 	}
 
-	compositeId := string(resource.Status.OsokStatus.Ocid)
 	parts := strings.SplitN(compositeId, "/", 2)
 	if len(parts) != 2 {
-		m.Log.InfoLog(fmt.Sprintf("ObjectStorageBucket status.ocid malformed: %s, skipping OCI delete", compositeId))
-		return true, nil
+		return false, fmt.Errorf("objectstoragebucket status.ocid is malformed: %s", compositeId)
 	}
 	ns, bucketName := parts[0], parts[1]
 
@@ -196,17 +198,22 @@ func (m *ObjectStorageBucketServiceManager) Delete(ctx context.Context, obj runt
 		// 404 means already deleted — treat as success.
 		if isNotFound(err) {
 			m.Log.InfoLog(fmt.Sprintf("ObjectStorageBucket %s/%s already deleted", ns, bucketName))
+			return m.deleteBucketSecret(ctx, resource)
 		} else {
 			m.Log.ErrorLog(err, "Error while deleting ObjectStorageBucket")
 			return false, err
 		}
 	}
 
-	if _, err := m.CredentialClient.DeleteSecret(ctx, resource.Name, resource.Namespace); err != nil {
-		m.Log.ErrorLog(err, "Error while deleting ObjectStorageBucket secret")
+	if err := m.getBucket(ctx, ns, bucketName); err != nil {
+		if isNotFound(err) {
+			return m.deleteBucketSecret(ctx, resource)
+		}
+		m.Log.ErrorLog(err, "Error while checking ObjectStorageBucket deletion")
+		return false, err
 	}
 
-	return true, nil
+	return false, nil
 }
 
 // GetCrdStatus returns the OSOK status from the resource.
@@ -219,7 +226,7 @@ func (m *ObjectStorageBucketServiceManager) GetCrdStatus(obj runtime.Object) (*o
 }
 
 // resolveNamespace returns spec.namespace if set, otherwise calls GetNamespace to retrieve
-// the tenancy Object Storage namespace and caches it in spec.
+// the tenancy Object Storage namespace for this reconcile.
 func (m *ObjectStorageBucketServiceManager) resolveNamespace(ctx context.Context, resource *ociv1beta1.ObjectStorageBucket) (string, error) {
 	if resource.Spec.Namespace != "" {
 		return resource.Spec.Namespace, nil
@@ -240,9 +247,6 @@ func (m *ObjectStorageBucketServiceManager) resolveNamespace(ctx context.Context
 	if resp.Value == nil {
 		return "", fmt.Errorf("GetNamespace returned nil namespace")
 	}
-
-	// Cache in spec so subsequent reconciles don't need to call GetNamespace again.
-	resource.Spec.Namespace = *resp.Value
 	return *resp.Value, nil
 }
 
@@ -336,6 +340,10 @@ func (m *ObjectStorageBucketServiceManager) convert(obj runtime.Object) (*ociv1b
 		return nil, fmt.Errorf("failed type assertion for ObjectStorageBucket")
 	}
 	return resource, nil
+}
+
+func (m *ObjectStorageBucketServiceManager) deleteBucketSecret(ctx context.Context, resource *ociv1beta1.ObjectStorageBucket) (bool, error) {
+	return servicemanager.DeleteOwnedSecretIfPresent(ctx, m.CredentialClient, resource.Name, resource.Namespace, "ObjectStorageBucket", resource.Name)
 }
 
 // isNotFound checks whether an OCI error is a 404 Not Found.

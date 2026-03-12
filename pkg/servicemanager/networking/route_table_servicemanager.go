@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	ocicore "github.com/oracle/oci-go-sdk/v65/core"
@@ -19,7 +18,6 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/servicemanager"
 	"github.com/oracle/oci-service-operator/pkg/util"
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -71,26 +69,11 @@ func (c *OciRouteTableServiceManager) CreateOrUpdate(ctx context.Context, obj ru
 				c.Log.ErrorLog(err, "Create OciRouteTable failed")
 				return servicemanager.OSOKResponse{IsSuccessful: false}, err
 			}
-
-			if rtInstance.LifecycleState == ocicore.RouteTableLifecycleStateProvisioning {
-				rt.Status.OsokStatus = util.UpdateOSOKStatusCondition(rt.Status.OsokStatus,
-					ociv1beta1.Provisioning, v1.ConditionTrue, "", "OciRouteTable Provisioning", c.Log)
-				rt.Status.OsokStatus.Ocid = ociv1beta1.OCID(*rtInstance.Id)
-				return servicemanager.OSOKResponse{IsSuccessful: false}, nil
-			}
 		} else {
 			rtInstance, err = c.GetRouteTable(ctx, *rtOcid)
 			if err != nil {
 				c.Log.ErrorLog(err, "Error while getting OciRouteTable by OCID")
 				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-
-			if rtInstance.LifecycleState == ocicore.RouteTableLifecycleStateProvisioning {
-				c.Log.InfoLog(fmt.Sprintf("OciRouteTable %s is still PROVISIONING", safeString(rtInstance.DisplayName)))
-				rt.Status.OsokStatus = util.UpdateOSOKStatusCondition(rt.Status.OsokStatus,
-					ociv1beta1.Provisioning, v1.ConditionTrue, "", "OciRouteTable Provisioning", c.Log)
-				rt.Status.OsokStatus.Ocid = ociv1beta1.OCID(*rtInstance.Id)
-				return servicemanager.OSOKResponse{IsSuccessful: false}, nil
 			}
 		}
 	} else {
@@ -100,24 +83,15 @@ func (c *OciRouteTableServiceManager) CreateOrUpdate(ctx context.Context, obj ru
 			return servicemanager.OSOKResponse{IsSuccessful: false}, err
 		}
 
+		rt.Status.OsokStatus.Ocid = rt.Spec.RouteTableId
 		if err = c.UpdateRouteTable(ctx, rt); err != nil {
 			c.Log.ErrorLog(err, "Error while updating OciRouteTable")
 			return servicemanager.OSOKResponse{IsSuccessful: false}, err
 		}
 	}
 
-	rt.Status.OsokStatus.Ocid = ociv1beta1.OCID(*rtInstance.Id)
-	if rt.Status.OsokStatus.CreatedAt == nil {
-		now := metav1.NewTime(time.Now())
-		rt.Status.OsokStatus.CreatedAt = &now
-	}
-
-	rt.Status.OsokStatus = util.UpdateOSOKStatusCondition(rt.Status.OsokStatus,
-		ociv1beta1.Active, v1.ConditionTrue, "",
-		fmt.Sprintf("OciRouteTable %s is %s", safeString(rtInstance.DisplayName), rtInstance.LifecycleState), c.Log)
-	c.Log.InfoLog(fmt.Sprintf("OciRouteTable %s is %s", safeString(rtInstance.DisplayName), rtInstance.LifecycleState))
-
-	return servicemanager.OSOKResponse{IsSuccessful: true}, nil
+	return reconcileLifecycleStatus(&rt.Status.OsokStatus, "OciRouteTable", safeString(rtInstance.DisplayName),
+		string(rtInstance.LifecycleState), ociv1beta1.OCID(*rtInstance.Id), c.Log), nil
 }
 
 // Delete handles deletion of the Route Table (called by the finalizer).
@@ -127,18 +101,29 @@ func (c *OciRouteTableServiceManager) Delete(ctx context.Context, obj runtime.Ob
 		return false, err
 	}
 
-	if rt.Status.OsokStatus.Ocid == "" {
+	resourceID := rt.Status.OsokStatus.Ocid
+	if resourceID == "" {
+		resourceID = rt.Spec.RouteTableId
+	}
+	if resourceID == "" {
 		c.Log.InfoLog("OciRouteTable has no OCID, nothing to delete")
 		return true, nil
 	}
 
-	c.Log.InfoLog(fmt.Sprintf("Deleting OciRouteTable %s", rt.Status.OsokStatus.Ocid))
-	if err := c.DeleteRouteTable(ctx, rt.Status.OsokStatus.Ocid); err != nil {
+	c.Log.InfoLog(fmt.Sprintf("Deleting OciRouteTable %s", resourceID))
+	done, err := deleteResourceAndWait(
+		func() error { return c.DeleteRouteTable(ctx, resourceID) },
+		func() error {
+			_, getErr := c.GetRouteTable(ctx, resourceID)
+			return getErr
+		},
+	)
+	if err != nil {
 		c.Log.ErrorLog(err, "Error while deleting OciRouteTable")
 		return false, err
 	}
 
-	return true, nil
+	return done, nil
 }
 
 // GetCrdStatus returns the OSOK status from the resource.

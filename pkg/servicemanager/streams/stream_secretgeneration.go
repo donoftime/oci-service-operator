@@ -8,7 +8,9 @@ package streams
 import (
 	"context"
 	"fmt"
+
 	"github.com/oracle/oci-go-sdk/v65/streaming"
+	"github.com/oracle/oci-service-operator/pkg/servicemanager"
 )
 
 func (c *StreamServiceManager) addToSecret(ctx context.Context, namespace string, streamName string,
@@ -23,10 +25,13 @@ func (c *StreamServiceManager) addToSecret(ctx context.Context, namespace string
 
 	c.Log.InfoLog("Creating the Stream MessageEndpoint secret")
 	c.Log.InfoLog(fmt.Sprintf("Received information for secret creation - namespace: %s streamName: %s ", namespace, streamName))
-	return c.CredentialClient.CreateSecret(ctx, streamName, namespace, nil, credMap)
+	return servicemanager.EnsureOwnedSecret(ctx, c.CredentialClient, streamName, namespace, "Stream", streamName, credMap)
 }
 
 func getCredentialMap(resp streaming.Stream) (map[string][]byte, error) {
+	if resp.MessagesEndpoint == nil {
+		return nil, fmt.Errorf("stream messages endpoint is not available")
+	}
 	credMap := make(map[string][]byte)
 	credMap["endpoint"] = []byte(*resp.MessagesEndpoint)
 	return credMap, nil
@@ -34,5 +39,5 @@ func getCredentialMap(resp streaming.Stream) (map[string][]byte, error) {
 
 func (c *StreamServiceManager) deleteFromSecret(ctx context.Context, namespace string, streamName string) (bool, error) {
 	c.Log.InfoLog(fmt.Sprintf("Received information for secret deletion - namespace: %s streamName: %s ", namespace, streamName))
-	return c.CredentialClient.DeleteSecret(ctx, streamName, namespace)
+	return servicemanager.DeleteOwnedSecretIfPresent(ctx, c.CredentialClient, streamName, namespace, "Stream", streamName)
 }

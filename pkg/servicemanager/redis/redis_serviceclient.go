@@ -131,7 +131,12 @@ func (c *RedisClusterServiceManager) UpdateRedisCluster(ctx context.Context, clu
 	updateDetails := redis.UpdateRedisClusterDetails{}
 	updateNeeded := false
 
-	existing, err := c.GetRedisCluster(ctx, cluster.Status.OsokStatus.Ocid, nil)
+	targetID, err := resolveClusterID(cluster.Status.OsokStatus.Ocid, cluster.Spec.RedisClusterId)
+	if err != nil {
+		return err
+	}
+
+	existing, err := c.GetRedisCluster(ctx, targetID, nil)
 	if err != nil {
 		return err
 	}
@@ -156,7 +161,7 @@ func (c *RedisClusterServiceManager) UpdateRedisCluster(ctx context.Context, clu
 	}
 
 	req := redis.UpdateRedisClusterRequest{
-		RedisClusterId:            common.String(string(cluster.Status.OsokStatus.Ocid)),
+		RedisClusterId:            common.String(string(targetID)),
 		UpdateRedisClusterDetails: updateDetails,
 	}
 

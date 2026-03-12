@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	"github.com/oracle/oci-go-sdk/v65/psql"
@@ -20,7 +19,6 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/servicemanager"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 
@@ -101,12 +99,6 @@ func (c *PostgresDbSystemServiceManager) CreateOrUpdate(ctx context.Context, obj
 			}
 		}
 
-		dbSystem.Status.OsokStatus.Ocid = ociv1beta1.OCID(*dbSystemInstance.Id)
-		dbSystem.Status.OsokStatus = util.UpdateOSOKStatusCondition(dbSystem.Status.OsokStatus,
-			ociv1beta1.Active, v1.ConditionTrue, "",
-			fmt.Sprintf("PostgresDbSystem %s is %s", *dbSystemInstance.DisplayName, dbSystemInstance.LifecycleState), c.Log)
-		c.Log.InfoLog(fmt.Sprintf("PostgresDbSystem %s is %s", *dbSystemInstance.DisplayName, dbSystemInstance.LifecycleState))
-
 	} else {
 		// Bind to an existing DB system by ID
 		dbSystemInstance, err = c.GetPostgresDbSystem(ctx, dbSystem.Spec.PostgresDbSystemId)
@@ -119,24 +111,11 @@ func (c *PostgresDbSystemServiceManager) CreateOrUpdate(ctx context.Context, obj
 			c.Log.ErrorLog(err, "Error while updating PostgresDbSystem")
 			return servicemanager.OSOKResponse{IsSuccessful: false}, err
 		}
-
-		dbSystem.Status.OsokStatus = util.UpdateOSOKStatusCondition(dbSystem.Status.OsokStatus,
-			ociv1beta1.Active, v1.ConditionTrue, "", "PostgresDbSystem Bound/Updated", c.Log)
-		c.Log.InfoLog(fmt.Sprintf("PostgresDbSystem %s is bound/updated", *dbSystemInstance.DisplayName))
 	}
 
-	dbSystem.Status.OsokStatus.Ocid = ociv1beta1.OCID(*dbSystemInstance.Id)
-	if dbSystem.Status.OsokStatus.CreatedAt == nil {
-		now := metav1.NewTime(time.Now())
-		dbSystem.Status.OsokStatus.CreatedAt = &now
-	}
-
-	if dbSystemInstance.LifecycleState == psql.DbSystemLifecycleStateFailed {
-		dbSystem.Status.OsokStatus = util.UpdateOSOKStatusCondition(dbSystem.Status.OsokStatus,
-			ociv1beta1.Failed, v1.ConditionFalse, "",
-			fmt.Sprintf("PostgresDbSystem %s creation Failed", *dbSystemInstance.DisplayName), c.Log)
-		c.Log.InfoLog(fmt.Sprintf("PostgresDbSystem %s creation Failed", *dbSystemInstance.DisplayName))
-		return servicemanager.OSOKResponse{IsSuccessful: false}, nil
+	response := reconcileLifecycleStatus(&dbSystem.Status.OsokStatus, dbSystemInstance, c.Log)
+	if !response.IsSuccessful {
+		return response, nil
 	}
 
 	_, err = c.addToSecret(ctx, dbSystem.Namespace, dbSystem.Name, *dbSystemInstance)
@@ -148,7 +127,7 @@ func (c *PostgresDbSystemServiceManager) CreateOrUpdate(ctx context.Context, obj
 		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
-	return servicemanager.OSOKResponse{IsSuccessful: true}, nil
+	return response, nil
 }
 
 // Delete handles deletion of the PostgreSQL DB system (called by the finalizer).
@@ -158,15 +137,16 @@ func (c *PostgresDbSystemServiceManager) Delete(ctx context.Context, obj runtime
 		return false, err
 	}
 
-	if dbSystem.Status.OsokStatus.Ocid == "" {
+	targetID, err := resolveDbSystemID(dbSystem.Status.OsokStatus.Ocid, dbSystem.Spec.PostgresDbSystemId)
+	if err != nil {
 		c.Log.InfoLog("PostgresDbSystem has no OCID, nothing to delete")
 		return true, nil
 	}
 
-	c.Log.InfoLog(fmt.Sprintf("Deleting PostgresDbSystem %s", dbSystem.Status.OsokStatus.Ocid))
-	if err := c.DeletePostgresDbSystem(ctx, dbSystem.Status.OsokStatus.Ocid); err != nil {
+	c.Log.InfoLog(fmt.Sprintf("Deleting PostgresDbSystem %s", targetID))
+	if err := c.DeletePostgresDbSystem(ctx, targetID); err != nil {
 		// Treat 404 as already deleted
-		if serviceErr, ok := err.(common.ServiceError); ok && serviceErr.GetHTTPStatusCode() == 404 {
+		if isNotFoundServiceError(err) {
 			c.Log.InfoLog("PostgresDbSystem not found, treating as already deleted")
 		} else {
 			c.Log.ErrorLog(err, "Error while deleting PostgresDbSystem")
@@ -174,11 +154,18 @@ func (c *PostgresDbSystemServiceManager) Delete(ctx context.Context, obj runtime
 		}
 	}
 
-	if _, err := c.CredentialClient.DeleteSecret(ctx, dbSystem.Name, dbSystem.Namespace); err != nil {
-		c.Log.ErrorLog(err, "Error while deleting PostgresDbSystem secret")
+	if _, err := c.GetPostgresDbSystem(ctx, targetID); err != nil {
+		if !isNotFoundServiceError(err) {
+			return false, err
+		}
+		if _, err := servicemanager.DeleteOwnedSecretIfPresent(ctx, c.CredentialClient, dbSystem.Name, dbSystem.Namespace, "PostgresDbSystem", dbSystem.Name); err != nil {
+			c.Log.ErrorLog(err, "Error while deleting PostgresDbSystem secret")
+			return false, err
+		}
+		return true, nil
 	}
 
-	return true, nil
+	return false, nil
 }
 
 // GetCrdStatus returns the OSOK status from the resource.

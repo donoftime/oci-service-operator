@@ -149,7 +149,7 @@ func (r *BaseReconciler) ReconcileResource(ctx context.Context, obj client.Objec
 			"Create or Update of resource succeeded", req.Name, req.Namespace)
 		r.Recorder.Event(obj, v1.EventTypeNormal, "Success", "Create or Update of resource succeeded")
 		if OSOKResponse.ShouldRequeue {
-			return util.RequeueWithoutError(ctx, OSOKResponse.RequeueDuration, r.Log)
+			return r.requeueResult(ctx, OSOKResponse, nil)
 		}
 		return util.DoNotRequeue()
 	} else {
@@ -158,10 +158,27 @@ func (r *BaseReconciler) ReconcileResource(ctx context.Context, obj client.Objec
 			"Failed to create or update resource", req.Name, req.Namespace)
 		r.Recorder.Event(obj, v1.EventTypeWarning, "Failed", "Failed to create or update resource")
 		if OSOKResponse.ShouldRequeue {
-			return ctrl.Result{Requeue: true}, err
+			return r.requeueResult(ctx, OSOKResponse, err)
 		}
 		return util.DoNotRequeue()
 	}
+}
+
+func (r *BaseReconciler) requeueResult(ctx context.Context, response servicemanager.OSOKResponse, err error) (ctrl.Result, error) {
+	duration := response.RequeueDuration
+	if duration <= 0 {
+		duration = defaultRequeueTime
+	}
+
+	if err != nil {
+		return util.RequeueWithError(ctx, err, duration, r.Log)
+	}
+
+	if duration > 0 {
+		return util.RequeueWithoutError(ctx, duration, r.Log)
+	}
+
+	return ctrl.Result{Requeue: true}, nil
 }
 
 func (r *BaseReconciler) DeleteResource(ctx context.Context, obj client.Object, req ctrl.Request) (bool, error) {

@@ -14,8 +14,10 @@ import (
 	ociobjectstorage "github.com/oracle/oci-go-sdk/v65/objectstorage"
 	ociv1beta1 "github.com/oracle/oci-service-operator/api/v1beta1"
 	"github.com/oracle/oci-service-operator/pkg/loggerutil"
+	"github.com/oracle/oci-service-operator/pkg/servicemanager"
 	. "github.com/oracle/oci-service-operator/pkg/servicemanager/objectstorage"
 	"github.com/stretchr/testify/assert"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -75,6 +77,18 @@ type fakeObjectStorageClient struct {
 	updateBucketFn func(ctx context.Context, req ociobjectstorage.UpdateBucketRequest) (ociobjectstorage.UpdateBucketResponse, error)
 	deleteBucketFn func(ctx context.Context, req ociobjectstorage.DeleteBucketRequest) (ociobjectstorage.DeleteBucketResponse, error)
 }
+
+type fakeServiceError struct {
+	statusCode int
+	code       string
+	message    string
+}
+
+func (e fakeServiceError) Error() string           { return e.message }
+func (e fakeServiceError) GetHTTPStatusCode() int  { return e.statusCode }
+func (e fakeServiceError) GetMessage() string      { return e.message }
+func (e fakeServiceError) GetCode() string         { return e.code }
+func (e fakeServiceError) GetOpcRequestID() string { return "opc-request-id" }
 
 func (f *fakeObjectStorageClient) GetNamespace(ctx context.Context, req ociobjectstorage.GetNamespaceRequest) (ociobjectstorage.GetNamespaceResponse, error) {
 	if f.getNamespaceFn != nil {
@@ -375,6 +389,9 @@ func TestCreateOrUpdate_SecretAlreadyExists(t *testing.T) {
 		createSecretFn: func(_ context.Context, _, _ string, _ map[string]string, _ map[string][]byte) (bool, error) {
 			return false, apierrors.NewAlreadyExists(schema.GroupResource{}, "my-bucket-cr")
 		},
+		getSecretFn: func(_ context.Context, _, _ string) (map[string][]byte, error) {
+			return servicemanager.AddManagedSecretData(GetCredentialMapForTest("mynamespace", "mybucket"), "ObjectStorageBucket", "my-bucket-cr"), nil
+		},
 	}
 	mgr := mgrWithFake(credClient, fake)
 
@@ -418,8 +435,15 @@ func TestDelete_Success(t *testing.T) {
 			assert.Equal(t, "mybucket", *req.BucketName)
 			return ociobjectstorage.DeleteBucketResponse{}, nil
 		},
+		getBucketFn: func(_ context.Context, _ ociobjectstorage.GetBucketRequest) (ociobjectstorage.GetBucketResponse, error) {
+			return ociobjectstorage.GetBucketResponse{}, fakeServiceError{statusCode: 404, code: "NotFound", message: "bucket not found"}
+		},
 	}
-	credClient := &fakeCredentialClient{}
+	credClient := &fakeCredentialClient{
+		getSecretFn: func(_ context.Context, _, _ string) (map[string][]byte, error) {
+			return servicemanager.AddManagedSecretData(map[string][]byte{}, "ObjectStorageBucket", "my-bucket-cr"), nil
+		},
+	}
 	mgr := mgrWithFake(credClient, fake)
 
 	b := &ociv1beta1.ObjectStorageBucket{}
@@ -438,10 +462,14 @@ func TestDelete_NotFound(t *testing.T) {
 	// 404 should be treated as already-deleted (graceful).
 	fake := &fakeObjectStorageClient{
 		deleteBucketFn: func(_ context.Context, _ ociobjectstorage.DeleteBucketRequest) (ociobjectstorage.DeleteBucketResponse, error) {
-			return ociobjectstorage.DeleteBucketResponse{}, errors.New("bucket not found (404)")
+			return ociobjectstorage.DeleteBucketResponse{}, fakeServiceError{statusCode: 404, code: "NotFound", message: "bucket not found"}
 		},
 	}
-	credClient := &fakeCredentialClient{}
+	credClient := &fakeCredentialClient{
+		getSecretFn: func(_ context.Context, _, _ string) (map[string][]byte, error) {
+			return servicemanager.AddManagedSecretData(map[string][]byte{}, "ObjectStorageBucket", "my-bucket-cr"), nil
+		},
+	}
 	mgr := mgrWithFake(credClient, fake)
 
 	b := &ociv1beta1.ObjectStorageBucket{}
@@ -449,9 +477,46 @@ func TestDelete_NotFound(t *testing.T) {
 	b.Namespace = "default"
 	b.Status.OsokStatus.Ocid = "mynamespace/mybucket"
 
-	// The error is a plain error, not an OCI service error, so it won't be recognized
-	// as 404. But this exercises the delete path; real 404 detection uses IsServiceError.
-	_, _ = mgr.Delete(context.Background(), b)
+	done, err := mgr.Delete(context.Background(), b)
+	assert.NoError(t, err)
+	assert.True(t, done)
+	assert.True(t, credClient.deleteCalled)
+}
+
+func TestDelete_UsesSpecBucketIdWhenStatusIsEmpty(t *testing.T) {
+	var deletedNamespace, deletedBucket string
+	credClient := &fakeCredentialClient{
+		getSecretFn: func(_ context.Context, _, _ string) (map[string][]byte, error) {
+			return nil, apierrors.NewNotFound(corev1.Resource("secret"), "my-bucket-cr")
+		},
+	}
+	fake := &fakeObjectStorageClient{
+		deleteBucketFn: func(_ context.Context, req ociobjectstorage.DeleteBucketRequest) (ociobjectstorage.DeleteBucketResponse, error) {
+			deletedNamespace = *req.NamespaceName
+			deletedBucket = *req.BucketName
+			return ociobjectstorage.DeleteBucketResponse{}, nil
+		},
+		getBucketFn: func(_ context.Context, req ociobjectstorage.GetBucketRequest) (ociobjectstorage.GetBucketResponse, error) {
+			return ociobjectstorage.GetBucketResponse{}, fakeServiceError{
+				statusCode: 404,
+				code:       "NotFound",
+				message:    *req.NamespaceName + "/" + *req.BucketName,
+			}
+		},
+	}
+	mgr := mgrWithFake(credClient, fake)
+
+	b := &ociv1beta1.ObjectStorageBucket{}
+	b.Name = "my-bucket-cr"
+	b.Namespace = "default"
+	b.Spec.BucketId = "mynamespace/mybucket"
+
+	done, err := mgr.Delete(context.Background(), b)
+	assert.NoError(t, err)
+	assert.True(t, done)
+	assert.Equal(t, "mynamespace", deletedNamespace)
+	assert.Equal(t, "mybucket", deletedBucket)
+	assert.False(t, credClient.deleteCalled, "DeleteSecret should be skipped when the secret is already missing")
 }
 
 func TestDelete_MalformedOcid(t *testing.T) {
@@ -464,6 +529,6 @@ func TestDelete_MalformedOcid(t *testing.T) {
 	b.Status.OsokStatus.Ocid = "malformed"
 
 	done, err := mgr.Delete(context.Background(), b)
-	assert.NoError(t, err)
-	assert.True(t, done, "Malformed ocid should skip OCI delete and return success")
+	assert.Error(t, err)
+	assert.False(t, done)
 }

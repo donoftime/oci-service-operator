@@ -23,7 +23,7 @@ type AdbServiceClient interface {
 
 	GetAdb(ctx context.Context, request database.GetAutonomousDatabaseRequest) (database.GetAutonomousDatabaseResponse, error)
 
-	DeleteAdb() (string, error)
+	DeleteAdb(ctx context.Context, adbId ociv1beta1.OCID) error
 
 	servicemanager.OSOKServiceManager
 }
@@ -34,6 +34,7 @@ type DatabaseClientInterface interface {
 	ListAutonomousDatabases(ctx context.Context, request database.ListAutonomousDatabasesRequest) (database.ListAutonomousDatabasesResponse, error)
 	GetAutonomousDatabase(ctx context.Context, request database.GetAutonomousDatabaseRequest) (database.GetAutonomousDatabaseResponse, error)
 	UpdateAutonomousDatabase(ctx context.Context, request database.UpdateAutonomousDatabaseRequest) (database.UpdateAutonomousDatabaseResponse, error)
+	DeleteAutonomousDatabase(ctx context.Context, request database.DeleteAutonomousDatabaseRequest) (database.DeleteAutonomousDatabaseResponse, error)
 }
 
 func getDbClient(provider common.ConfigurationProvider) database.DatabaseClient {
@@ -61,12 +62,17 @@ func (c *AdbServiceManager) CreateAdb(ctx context.Context, adb ociv1beta1.Autono
 		DbName:               common.String(adb.Spec.DbName),
 		DataStorageSizeInTBs: common.Int(adb.Spec.DataStorageSizeInTBs),
 		AdminPassword:        common.String(adminPwd),
-		IsAutoScalingEnabled: common.Bool(adb.Spec.IsAutoScalingEnabled),
 		IsDedicated:          common.Bool(adb.Spec.IsDedicated),
 		DbWorkload:           database.CreateAutonomousDatabaseBaseDbWorkloadEnum(adb.Spec.DbWorkload),
-		IsFreeTier:           common.Bool(adb.Spec.IsFreeTier),
 		FreeformTags:         adb.Spec.FreeFormTags,
 		DefinedTags:          *util.ConvertToOciDefinedTags(&adb.Spec.DefinedTags),
+	}
+
+	if adb.Spec.HasExplicitIsAutoScalingEnabled() {
+		createAutonomousDatabaseDetails.IsAutoScalingEnabled = common.Bool(adb.Spec.IsAutoScalingEnabled)
+	}
+	if adb.Spec.HasExplicitIsFreeTier() {
+		createAutonomousDatabaseDetails.IsFreeTier = common.Bool(adb.Spec.IsFreeTier)
 	}
 
 	if adb.Spec.ComputeModel != "" {
@@ -109,7 +115,10 @@ func (c *AdbServiceManager) GetAdbOcid(ctx context.Context, adb ociv1beta1.Auton
 
 	if len(listAdbResponse.Items) > 0 {
 		status := listAdbResponse.Items[0].LifecycleState
-		if status == "AVAILABLE" || status == "PROVISIONING" {
+		if status == database.AutonomousDatabaseSummaryLifecycleStateAvailable ||
+			status == database.AutonomousDatabaseSummaryLifecycleStateAvailableNeedsAttention ||
+			status == database.AutonomousDatabaseSummaryLifecycleStateProvisioning ||
+			status == database.AutonomousDatabaseSummaryLifecycleStateUpdating {
 
 			c.Log.DebugLog(fmt.Sprintf("Autonomous Database %s exists.", adb.Spec.DisplayName))
 
@@ -121,8 +130,15 @@ func (c *AdbServiceManager) GetAdbOcid(ctx context.Context, adb ociv1beta1.Auton
 	return nil, nil
 }
 
-func (c *AdbServiceManager) DeleteAdb() (string, error) {
-	return "", nil
+func (c *AdbServiceManager) DeleteAdb(ctx context.Context, adbId ociv1beta1.OCID) error {
+	dbClient := c.getOCIClient()
+
+	req := database.DeleteAutonomousDatabaseRequest{
+		AutonomousDatabaseId: common.String(string(adbId)),
+	}
+
+	_, err := dbClient.DeleteAutonomousDatabase(ctx, req)
+	return err
 }
 
 // Sync the Autonomous Database details
@@ -165,6 +181,7 @@ func (c *AdbServiceManager) UpdateAdb(ctx context.Context, adb *ociv1beta1.Auton
 
 	if adb.Spec.DbName != "" && adb.Spec.DbName != *existingAdb.DbName {
 		updateAutonomousDatabaseDetails.DbName = common.String(adb.Spec.DbName)
+		updateNeeded = true
 	}
 
 	if adb.Spec.DbWorkload != "" && string(existingAdb.DbWorkload) != adb.Spec.DbWorkload {
@@ -188,12 +205,12 @@ func (c *AdbServiceManager) UpdateAdb(ctx context.Context, adb *ociv1beta1.Auton
 		updateNeeded = true
 	}
 
-	if adb.Spec.IsAutoScalingEnabled != false && adb.Spec.IsAutoScalingEnabled != *existingAdb.IsAutoScalingEnabled {
+	if shouldUpdateOptionalBool(adb.Spec.HasExplicitIsAutoScalingEnabled(), adb.Spec.IsAutoScalingEnabled, existingAdb.IsAutoScalingEnabled) {
 		updateAutonomousDatabaseDetails.IsAutoScalingEnabled = common.Bool(adb.Spec.IsAutoScalingEnabled)
 		updateNeeded = true
 	}
 
-	if adb.Spec.IsFreeTier != false && adb.Spec.IsFreeTier != *existingAdb.IsFreeTier {
+	if shouldUpdateOptionalBool(adb.Spec.HasExplicitIsFreeTier(), adb.Spec.IsFreeTier, existingAdb.IsFreeTier) {
 		updateAutonomousDatabaseDetails.IsFreeTier = common.Bool(adb.Spec.IsFreeTier)
 		updateNeeded = true
 	}

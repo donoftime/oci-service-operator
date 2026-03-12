@@ -233,7 +233,17 @@ func TestCreateOrUpdate_InstanceFailed(t *testing.T) {
 // TestDelete_CallsTerminate verifies that Delete calls TerminateInstance with the correct OCID.
 func TestDelete_CallsTerminate(t *testing.T) {
 	instanceOcid := "ocid1.instance.oc1..todel"
-	ociClient := &fakeComputeClient{}
+	ociClient := &fakeComputeClient{
+		getFn: func(_ context.Context, req core.GetInstanceRequest) (core.GetInstanceResponse, error) {
+			return core.GetInstanceResponse{
+				Instance: core.Instance{
+					Id:             req.InstanceId,
+					DisplayName:    common.String("test-instance"),
+					LifecycleState: core.InstanceLifecycleStateTerminated,
+				},
+			}, nil
+		},
+	}
 	mgr := newTestManager(ociClient)
 
 	ci := &ociv1beta1.ComputeInstance{}

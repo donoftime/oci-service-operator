@@ -101,9 +101,6 @@ func (m *FunctionsApplicationServiceManager) CreateOrUpdate(ctx context.Context,
 		}
 
 		app.Status.OsokStatus.Ocid = ociv1beta1.OCID(*appInstance.Id)
-		app.Status.OsokStatus = util.UpdateOSOKStatusCondition(app.Status.OsokStatus,
-			ociv1beta1.Active, v1.ConditionTrue, "",
-			fmt.Sprintf("FunctionsApplication %s is %s", *appInstance.DisplayName, appInstance.LifecycleState), m.Log)
 		m.Log.InfoLog(fmt.Sprintf("FunctionsApplication %s is %s", *appInstance.DisplayName, appInstance.LifecycleState))
 
 	} else {
@@ -114,13 +111,12 @@ func (m *FunctionsApplicationServiceManager) CreateOrUpdate(ctx context.Context,
 			return servicemanager.OSOKResponse{IsSuccessful: false}, err
 		}
 
+		app.Status.OsokStatus.Ocid = app.Spec.FunctionsApplicationId
 		if err = m.UpdateApplication(ctx, app); err != nil {
 			m.Log.ErrorLog(err, "Error while updating FunctionsApplication")
 			return servicemanager.OSOKResponse{IsSuccessful: false}, err
 		}
 
-		app.Status.OsokStatus = util.UpdateOSOKStatusCondition(app.Status.OsokStatus,
-			ociv1beta1.Active, v1.ConditionTrue, "", "FunctionsApplication Bound/Updated", m.Log)
 		m.Log.InfoLog(fmt.Sprintf("FunctionsApplication %s is bound/updated", *appInstance.DisplayName))
 	}
 
@@ -130,15 +126,25 @@ func (m *FunctionsApplicationServiceManager) CreateOrUpdate(ctx context.Context,
 		app.Status.OsokStatus.CreatedAt = &now
 	}
 
-	if appInstance.LifecycleState == ocifunctions.ApplicationLifecycleStateFailed {
+	switch appInstance.LifecycleState {
+	case ocifunctions.ApplicationLifecycleStateFailed, ocifunctions.ApplicationLifecycleStateDeleted:
 		app.Status.OsokStatus = util.UpdateOSOKStatusCondition(app.Status.OsokStatus,
 			ociv1beta1.Failed, v1.ConditionFalse, "",
-			fmt.Sprintf("FunctionsApplication %s creation Failed", *appInstance.DisplayName), m.Log)
-		m.Log.InfoLog(fmt.Sprintf("FunctionsApplication %s creation Failed", *appInstance.DisplayName))
+			fmt.Sprintf("FunctionsApplication %s is %s", *appInstance.DisplayName, appInstance.LifecycleState), m.Log)
+		m.Log.InfoLog(fmt.Sprintf("FunctionsApplication %s is %s", *appInstance.DisplayName, appInstance.LifecycleState))
 		return servicemanager.OSOKResponse{IsSuccessful: false}, nil
+	case ocifunctions.ApplicationLifecycleStateActive:
+		app.Status.OsokStatus = util.UpdateOSOKStatusCondition(app.Status.OsokStatus,
+			ociv1beta1.Active, v1.ConditionTrue, "",
+			fmt.Sprintf("FunctionsApplication %s is %s", *appInstance.DisplayName, appInstance.LifecycleState), m.Log)
+		return servicemanager.OSOKResponse{IsSuccessful: true}, nil
+	default:
+		app.Status.OsokStatus = util.UpdateOSOKStatusCondition(app.Status.OsokStatus,
+			ociv1beta1.Provisioning, v1.ConditionTrue, "",
+			fmt.Sprintf("FunctionsApplication %s is %s", *appInstance.DisplayName, appInstance.LifecycleState), m.Log)
+		m.Log.InfoLog(fmt.Sprintf("FunctionsApplication %s is %s, requeueing", *appInstance.DisplayName, appInstance.LifecycleState))
+		return servicemanager.OSOKResponse{IsSuccessful: false, ShouldRequeue: true}, nil
 	}
-
-	return servicemanager.OSOKResponse{IsSuccessful: true}, nil
 }
 
 // Delete handles deletion of the FunctionsApplication (called by the finalizer).
@@ -148,18 +154,34 @@ func (m *FunctionsApplicationServiceManager) Delete(ctx context.Context, obj run
 		return false, err
 	}
 
-	if app.Status.OsokStatus.Ocid == "" {
+	targetID, err := servicemanager.ResolveResourceID(app.Status.OsokStatus.Ocid, app.Spec.FunctionsApplicationId)
+	if err != nil {
 		m.Log.InfoLog("FunctionsApplication has no OCID, nothing to delete")
 		return true, nil
 	}
 
-	m.Log.InfoLog(fmt.Sprintf("Deleting FunctionsApplication %s", app.Status.OsokStatus.Ocid))
-	if err := m.DeleteApplication(ctx, app.Status.OsokStatus.Ocid); err != nil {
+	m.Log.InfoLog(fmt.Sprintf("Deleting FunctionsApplication %s", targetID))
+	if err := m.DeleteApplication(ctx, targetID); err != nil {
+		if isFunctionsNotFound(err) {
+			return true, nil
+		}
 		m.Log.ErrorLog(err, "Error while deleting FunctionsApplication")
 		return false, err
 	}
 
-	return true, nil
+	appInstance, err := m.GetApplication(ctx, targetID, nil)
+	if err != nil {
+		if isFunctionsNotFound(err) {
+			return true, nil
+		}
+		m.Log.ErrorLog(err, "Error while checking FunctionsApplication deletion")
+		return false, err
+	}
+
+	if appInstance.LifecycleState == ocifunctions.ApplicationLifecycleStateDeleted {
+		return true, nil
+	}
+	return false, nil
 }
 
 // GetCrdStatus returns the OSOK status from the resource.

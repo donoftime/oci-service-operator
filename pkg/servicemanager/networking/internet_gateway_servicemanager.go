@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	ocicore "github.com/oracle/oci-go-sdk/v65/core"
@@ -19,7 +18,6 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/servicemanager"
 	"github.com/oracle/oci-service-operator/pkg/util"
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -72,26 +70,11 @@ func (c *OciInternetGatewayServiceManager) CreateOrUpdate(ctx context.Context, o
 				c.Log.ErrorLog(err, "Create OciInternetGateway failed")
 				return servicemanager.OSOKResponse{IsSuccessful: false}, err
 			}
-
-			if igwInstance.LifecycleState == ocicore.InternetGatewayLifecycleStateProvisioning {
-				igw.Status.OsokStatus = util.UpdateOSOKStatusCondition(igw.Status.OsokStatus,
-					ociv1beta1.Provisioning, v1.ConditionTrue, "", "OciInternetGateway Provisioning", c.Log)
-				igw.Status.OsokStatus.Ocid = ociv1beta1.OCID(*igwInstance.Id)
-				return servicemanager.OSOKResponse{IsSuccessful: false}, nil
-			}
 		} else {
 			igwInstance, err = c.GetInternetGateway(ctx, *igwOcid)
 			if err != nil {
 				c.Log.ErrorLog(err, "Error while getting OciInternetGateway by OCID")
 				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-
-			if igwInstance.LifecycleState == ocicore.InternetGatewayLifecycleStateProvisioning {
-				c.Log.InfoLog(fmt.Sprintf("OciInternetGateway %s is still PROVISIONING", safeString(igwInstance.DisplayName)))
-				igw.Status.OsokStatus = util.UpdateOSOKStatusCondition(igw.Status.OsokStatus,
-					ociv1beta1.Provisioning, v1.ConditionTrue, "", "OciInternetGateway Provisioning", c.Log)
-				igw.Status.OsokStatus.Ocid = ociv1beta1.OCID(*igwInstance.Id)
-				return servicemanager.OSOKResponse{IsSuccessful: false}, nil
 			}
 		}
 	} else {
@@ -102,24 +85,15 @@ func (c *OciInternetGatewayServiceManager) CreateOrUpdate(ctx context.Context, o
 			return servicemanager.OSOKResponse{IsSuccessful: false}, err
 		}
 
+		igw.Status.OsokStatus.Ocid = igw.Spec.InternetGatewayId
 		if err = c.UpdateInternetGateway(ctx, igw); err != nil {
 			c.Log.ErrorLog(err, "Error while updating OciInternetGateway")
 			return servicemanager.OSOKResponse{IsSuccessful: false}, err
 		}
 	}
 
-	igw.Status.OsokStatus.Ocid = ociv1beta1.OCID(*igwInstance.Id)
-	if igw.Status.OsokStatus.CreatedAt == nil {
-		now := metav1.NewTime(time.Now())
-		igw.Status.OsokStatus.CreatedAt = &now
-	}
-
-	igw.Status.OsokStatus = util.UpdateOSOKStatusCondition(igw.Status.OsokStatus,
-		ociv1beta1.Active, v1.ConditionTrue, "",
-		fmt.Sprintf("OciInternetGateway %s is %s", safeString(igwInstance.DisplayName), igwInstance.LifecycleState), c.Log)
-	c.Log.InfoLog(fmt.Sprintf("OciInternetGateway %s is %s", safeString(igwInstance.DisplayName), igwInstance.LifecycleState))
-
-	return servicemanager.OSOKResponse{IsSuccessful: true}, nil
+	return reconcileLifecycleStatus(&igw.Status.OsokStatus, "OciInternetGateway", safeString(igwInstance.DisplayName),
+		string(igwInstance.LifecycleState), ociv1beta1.OCID(*igwInstance.Id), c.Log), nil
 }
 
 // Delete handles deletion of the Internet Gateway (called by the finalizer).
@@ -129,18 +103,29 @@ func (c *OciInternetGatewayServiceManager) Delete(ctx context.Context, obj runti
 		return false, err
 	}
 
-	if igw.Status.OsokStatus.Ocid == "" {
+	resourceID := igw.Status.OsokStatus.Ocid
+	if resourceID == "" {
+		resourceID = igw.Spec.InternetGatewayId
+	}
+	if resourceID == "" {
 		c.Log.InfoLog("OciInternetGateway has no OCID, nothing to delete")
 		return true, nil
 	}
 
-	c.Log.InfoLog(fmt.Sprintf("Deleting OciInternetGateway %s", igw.Status.OsokStatus.Ocid))
-	if err := c.DeleteInternetGateway(ctx, igw.Status.OsokStatus.Ocid); err != nil {
+	c.Log.InfoLog(fmt.Sprintf("Deleting OciInternetGateway %s", resourceID))
+	done, err := deleteResourceAndWait(
+		func() error { return c.DeleteInternetGateway(ctx, resourceID) },
+		func() error {
+			_, getErr := c.GetInternetGateway(ctx, resourceID)
+			return getErr
+		},
+	)
+	if err != nil {
 		c.Log.ErrorLog(err, "Error while deleting OciInternetGateway")
 		return false, err
 	}
 
-	return true, nil
+	return done, nil
 }
 
 // GetCrdStatus returns the OSOK status from the resource.

@@ -8,6 +8,7 @@ package redis_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -15,8 +16,10 @@ import (
 	ociredis "github.com/oracle/oci-go-sdk/v65/redis"
 	ociv1beta1 "github.com/oracle/oci-service-operator/api/v1beta1"
 	"github.com/oracle/oci-service-operator/pkg/loggerutil"
+	"github.com/oracle/oci-service-operator/pkg/servicemanager"
 	. "github.com/oracle/oci-service-operator/pkg/servicemanager/redis"
 	"github.com/stretchr/testify/assert"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -31,6 +34,20 @@ type fakeCredentialClient struct {
 	createCalled   bool
 	deleteCalled   bool
 }
+
+type fakeServiceError struct {
+	statusCode int
+	code       string
+	message    string
+}
+
+func (e fakeServiceError) Error() string {
+	return fmt.Sprintf("%d %s: %s", e.statusCode, e.code, e.message)
+}
+func (e fakeServiceError) GetHTTPStatusCode() int  { return e.statusCode }
+func (e fakeServiceError) GetMessage() string      { return e.message }
+func (e fakeServiceError) GetCode() string         { return e.code }
+func (e fakeServiceError) GetOpcRequestID() string { return "opc-request-id" }
 
 func (f *fakeCredentialClient) CreateSecret(ctx context.Context, name, ns string, labels map[string]string, data map[string][]byte) (bool, error) {
 	f.createCalled = true
@@ -123,27 +140,62 @@ func TestDelete_NoOcid(t *testing.T) {
 	assert.False(t, credClient.deleteCalled, "DeleteSecret should not be called when OCID is empty")
 }
 
-// TestDelete_SecretError verifies Delete tolerates secret-deletion errors.
-func TestDelete_SecretError(t *testing.T) {
+// TestDelete_SecretNotFound verifies Delete ignores missing Redis secrets.
+func TestDelete_SecretNotFound(t *testing.T) {
 	credClient := &fakeCredentialClient{
-		deleteSecretFn: func(_ context.Context, _, _ string) (bool, error) {
-			return false, errors.New("secret not found")
+		getSecretFn: func(_ context.Context, _, _ string) (map[string][]byte, error) {
+			return nil, apierrors.NewNotFound(corev1.Resource("secret"), "test-cluster")
 		},
 	}
-	log := loggerutil.OSOKLogger{Logger: ctrl.Log.WithName("test")}
-
-	mgr := NewRedisClusterServiceManager(
-		common.NewRawConfigurationProvider("", "", "", "", "", nil),
-		credClient, nil, log)
+	ociCl := &fakeOciClient{
+		deleteFn: func(_ context.Context, _ ociredis.DeleteRedisClusterRequest) (ociredis.DeleteRedisClusterResponse, error) {
+			return ociredis.DeleteRedisClusterResponse{}, nil
+		},
+		getFn: func(_ context.Context, _ ociredis.GetRedisClusterRequest) (ociredis.GetRedisClusterResponse, error) {
+			return ociredis.GetRedisClusterResponse{}, &fakeServiceError{statusCode: 404, code: "NotFound", message: "gone"}
+		},
+	}
+	mgr := newMgrWithFakeClient(ociCl, credClient)
 
 	cluster := &ociv1beta1.RedisCluster{}
 	cluster.Name = "test-cluster"
 	cluster.Namespace = "default"
 	cluster.Status.OsokStatus.Ocid = "ocid1.redis.oc1..xxx"
 
-	// The OCI API call will fail with invalid config, but we exercise the path.
-	// In a full integration test the OCI client would be mocked.
-	_, _ = mgr.Delete(context.Background(), cluster)
+	done, err := mgr.Delete(context.Background(), cluster)
+	assert.NoError(t, err)
+	assert.True(t, done)
+	assert.False(t, credClient.deleteCalled, "DeleteSecret should be skipped when the secret is already missing")
+}
+
+// TestDelete_SecretError verifies Delete still fails for non-NotFound secret errors.
+func TestDelete_SecretError(t *testing.T) {
+	credClient := &fakeCredentialClient{
+		getSecretFn: func(_ context.Context, _, _ string) (map[string][]byte, error) {
+			return servicemanager.AddManagedSecretData(map[string][]byte{}, "RedisCluster", "test-cluster"), nil
+		},
+		deleteSecretFn: func(_ context.Context, _, _ string) (bool, error) {
+			return false, errors.New("secret delete failed")
+		},
+	}
+	ociCl := &fakeOciClient{
+		deleteFn: func(_ context.Context, _ ociredis.DeleteRedisClusterRequest) (ociredis.DeleteRedisClusterResponse, error) {
+			return ociredis.DeleteRedisClusterResponse{}, nil
+		},
+		getFn: func(_ context.Context, _ ociredis.GetRedisClusterRequest) (ociredis.GetRedisClusterResponse, error) {
+			return ociredis.GetRedisClusterResponse{}, &fakeServiceError{statusCode: 404, code: "NotFound", message: "gone"}
+		},
+	}
+	mgr := newMgrWithFakeClient(ociCl, credClient)
+
+	cluster := &ociv1beta1.RedisCluster{}
+	cluster.Name = "test-cluster"
+	cluster.Namespace = "default"
+	cluster.Status.OsokStatus.Ocid = "ocid1.redis.oc1..xxx"
+
+	done, err := mgr.Delete(context.Background(), cluster)
+	assert.Error(t, err)
+	assert.False(t, done)
 }
 
 // TestGetCrdStatus_ReturnsStatus verifies status extraction from a RedisCluster object.
@@ -516,6 +568,9 @@ func TestCreateOrUpdate_SecretWrite(t *testing.T) {
 			credCl := &fakeCredentialClient{
 				createSecretFn: func(_ context.Context, _, _ string, _ map[string]string, _ map[string][]byte) (bool, error) {
 					return tc.secretErr == nil, tc.secretErr
+				},
+				getSecretFn: func(_ context.Context, _, _ string) (map[string][]byte, error) {
+					return servicemanager.AddManagedSecretData(GetCredentialMapForTest(activeCluster), "RedisCluster", "test-cluster"), nil
 				},
 			}
 			ociCl := &fakeOciClient{

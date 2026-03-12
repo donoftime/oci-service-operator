@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	ocicore "github.com/oracle/oci-go-sdk/v65/core"
@@ -19,7 +18,6 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/servicemanager"
 	"github.com/oracle/oci-service-operator/pkg/util"
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -72,26 +70,11 @@ func (c *OciDrgServiceManager) CreateOrUpdate(ctx context.Context, obj runtime.O
 				c.Log.ErrorLog(err, "Create OciDrg failed")
 				return servicemanager.OSOKResponse{IsSuccessful: false}, err
 			}
-
-			if drgInstance.LifecycleState == ocicore.DrgLifecycleStateProvisioning {
-				drg.Status.OsokStatus = util.UpdateOSOKStatusCondition(drg.Status.OsokStatus,
-					ociv1beta1.Provisioning, v1.ConditionTrue, "", "OciDrg Provisioning", c.Log)
-				drg.Status.OsokStatus.Ocid = ociv1beta1.OCID(*drgInstance.Id)
-				return servicemanager.OSOKResponse{IsSuccessful: false}, nil
-			}
 		} else {
 			drgInstance, err = c.GetDrg(ctx, *drgOcid)
 			if err != nil {
 				c.Log.ErrorLog(err, "Error while getting OciDrg by OCID")
 				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-
-			if drgInstance.LifecycleState == ocicore.DrgLifecycleStateProvisioning {
-				c.Log.InfoLog(fmt.Sprintf("OciDrg %s is still PROVISIONING", safeString(drgInstance.DisplayName)))
-				drg.Status.OsokStatus = util.UpdateOSOKStatusCondition(drg.Status.OsokStatus,
-					ociv1beta1.Provisioning, v1.ConditionTrue, "", "OciDrg Provisioning", c.Log)
-				drg.Status.OsokStatus.Ocid = ociv1beta1.OCID(*drgInstance.Id)
-				return servicemanager.OSOKResponse{IsSuccessful: false}, nil
 			}
 		}
 	} else {
@@ -102,24 +85,15 @@ func (c *OciDrgServiceManager) CreateOrUpdate(ctx context.Context, obj runtime.O
 			return servicemanager.OSOKResponse{IsSuccessful: false}, err
 		}
 
+		drg.Status.OsokStatus.Ocid = drg.Spec.DrgId
 		if err = c.UpdateDrg(ctx, drg); err != nil {
 			c.Log.ErrorLog(err, "Error while updating OciDrg")
 			return servicemanager.OSOKResponse{IsSuccessful: false}, err
 		}
 	}
 
-	drg.Status.OsokStatus.Ocid = ociv1beta1.OCID(*drgInstance.Id)
-	if drg.Status.OsokStatus.CreatedAt == nil {
-		now := metav1.NewTime(time.Now())
-		drg.Status.OsokStatus.CreatedAt = &now
-	}
-
-	drg.Status.OsokStatus = util.UpdateOSOKStatusCondition(drg.Status.OsokStatus,
-		ociv1beta1.Active, v1.ConditionTrue, "",
-		fmt.Sprintf("OciDrg %s is %s", safeString(drgInstance.DisplayName), drgInstance.LifecycleState), c.Log)
-	c.Log.InfoLog(fmt.Sprintf("OciDrg %s is %s", safeString(drgInstance.DisplayName), drgInstance.LifecycleState))
-
-	return servicemanager.OSOKResponse{IsSuccessful: true}, nil
+	return reconcileLifecycleStatus(&drg.Status.OsokStatus, "OciDrg", safeString(drgInstance.DisplayName),
+		string(drgInstance.LifecycleState), ociv1beta1.OCID(*drgInstance.Id), c.Log), nil
 }
 
 // Delete handles deletion of the DRG (called by the finalizer).
@@ -129,18 +103,29 @@ func (c *OciDrgServiceManager) Delete(ctx context.Context, obj runtime.Object) (
 		return false, err
 	}
 
-	if drg.Status.OsokStatus.Ocid == "" {
+	resourceID := drg.Status.OsokStatus.Ocid
+	if resourceID == "" {
+		resourceID = drg.Spec.DrgId
+	}
+	if resourceID == "" {
 		c.Log.InfoLog("OciDrg has no OCID, nothing to delete")
 		return true, nil
 	}
 
-	c.Log.InfoLog(fmt.Sprintf("Deleting OciDrg %s", drg.Status.OsokStatus.Ocid))
-	if err := c.DeleteDrg(ctx, drg.Status.OsokStatus.Ocid); err != nil {
+	c.Log.InfoLog(fmt.Sprintf("Deleting OciDrg %s", resourceID))
+	done, err := deleteResourceAndWait(
+		func() error { return c.DeleteDrg(ctx, resourceID) },
+		func() error {
+			_, getErr := c.GetDrg(ctx, resourceID)
+			return getErr
+		},
+	)
+	if err != nil {
 		c.Log.ErrorLog(err, "Error while deleting OciDrg")
 		return false, err
 	}
 
-	return true, nil
+	return done, nil
 }
 
 // GetCrdStatus returns the OSOK status from the resource.

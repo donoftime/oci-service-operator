@@ -5,6 +5,7 @@ testbin/
 bundle/
 unittests.cover
 unittests.percent
+formal/controllers/**/out/
 
 # This is to remediate SCA findings wrt downloads from dockerfiles present in go vendor tree
 vendor/**/Dockerfile

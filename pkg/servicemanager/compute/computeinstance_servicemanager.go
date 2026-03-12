@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	"github.com/oracle/oci-go-sdk/v65/core"
@@ -20,7 +19,6 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/servicemanager"
 	"github.com/oracle/oci-service-operator/pkg/util"
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -104,16 +102,6 @@ func (c *ComputeInstanceServiceManager) CreateOrUpdate(ctx context.Context, obj 
 			}
 		}
 
-		ci.Status.OsokStatus.Ocid = ociv1beta1.OCID(*instance.Id)
-		displayName := ""
-		if instance.DisplayName != nil {
-			displayName = *instance.DisplayName
-		}
-		ci.Status.OsokStatus = util.UpdateOSOKStatusCondition(ci.Status.OsokStatus,
-			ociv1beta1.Active, v1.ConditionTrue, "",
-			fmt.Sprintf("ComputeInstance %s is %s", displayName, instance.LifecycleState), c.Log)
-		c.Log.InfoLog(fmt.Sprintf("ComputeInstance %s is %s", displayName, instance.LifecycleState))
-
 	} else {
 		// Bind to an existing compute instance by ID
 		instance, err = c.GetInstance(ctx, ci.Spec.ComputeInstanceId, nil)
@@ -126,35 +114,9 @@ func (c *ComputeInstanceServiceManager) CreateOrUpdate(ctx context.Context, obj 
 			c.Log.ErrorLog(err, "Error while updating ComputeInstance")
 			return servicemanager.OSOKResponse{IsSuccessful: false}, err
 		}
-
-		ci.Status.OsokStatus = util.UpdateOSOKStatusCondition(ci.Status.OsokStatus,
-			ociv1beta1.Active, v1.ConditionTrue, "", "ComputeInstance Bound/Updated", c.Log)
-		displayName := ""
-		if instance.DisplayName != nil {
-			displayName = *instance.DisplayName
-		}
-		c.Log.InfoLog(fmt.Sprintf("ComputeInstance %s is bound/updated", displayName))
 	}
 
-	ci.Status.OsokStatus.Ocid = ociv1beta1.OCID(*instance.Id)
-	if ci.Status.OsokStatus.CreatedAt == nil {
-		now := metav1.NewTime(time.Now())
-		ci.Status.OsokStatus.CreatedAt = &now
-	}
-
-	if instance.LifecycleState == core.InstanceLifecycleStateTerminated {
-		displayName := ""
-		if instance.DisplayName != nil {
-			displayName = *instance.DisplayName
-		}
-		ci.Status.OsokStatus = util.UpdateOSOKStatusCondition(ci.Status.OsokStatus,
-			ociv1beta1.Failed, v1.ConditionFalse, "",
-			fmt.Sprintf("ComputeInstance %s is Terminated", displayName), c.Log)
-		c.Log.InfoLog(fmt.Sprintf("ComputeInstance %s is Terminated", displayName))
-		return servicemanager.OSOKResponse{IsSuccessful: false}, nil
-	}
-
-	return servicemanager.OSOKResponse{IsSuccessful: true}, nil
+	return reconcileLifecycleStatus(&ci.Status.OsokStatus, instance, c.Log), nil
 }
 
 // Delete handles deletion of the compute instance (called by the finalizer).
@@ -164,18 +126,33 @@ func (c *ComputeInstanceServiceManager) Delete(ctx context.Context, obj runtime.
 		return false, err
 	}
 
-	if ci.Status.OsokStatus.Ocid == "" {
+	targetID, err := resolveInstanceID(ci.Status.OsokStatus.Ocid, ci.Spec.ComputeInstanceId)
+	if err != nil {
 		c.Log.InfoLog("ComputeInstance has no OCID, nothing to delete")
 		return true, nil
 	}
 
-	c.Log.InfoLog(fmt.Sprintf("Terminating ComputeInstance %s", ci.Status.OsokStatus.Ocid))
-	if err := c.TerminateInstance(ctx, ci.Status.OsokStatus.Ocid); err != nil {
+	c.Log.InfoLog(fmt.Sprintf("Terminating ComputeInstance %s", targetID))
+	if err := c.TerminateInstance(ctx, targetID); err != nil {
+		if isNotFoundServiceError(err) {
+			return true, nil
+		}
 		c.Log.ErrorLog(err, "Error while terminating ComputeInstance")
 		return false, err
 	}
 
-	return true, nil
+	instance, err := c.GetInstance(ctx, targetID, nil)
+	if err != nil {
+		if isNotFoundServiceError(err) {
+			return true, nil
+		}
+		return false, err
+	}
+	if instance.LifecycleState == core.InstanceLifecycleStateTerminated {
+		return true, nil
+	}
+
+	return false, nil
 }
 
 // GetCrdStatus returns the OSOK status from the resource.

@@ -150,6 +150,31 @@ GOBIN=$(PROJECT_DIR)/bin go install $(2) ;\
 }
 endef
 
+FORMAL_DIR ?= $(PROJECT_DIR)/formal
+FORMAL_TOOLS_DIR ?= $(PROJECT_DIR)/bin/formal
+TLA2TOOLS_VERSION ?= 1.8.0
+PLANTUML_VERSION ?= 1.2024.6
+TLA2TOOLS_JAR ?= $(FORMAL_TOOLS_DIR)/tla2tools-$(TLA2TOOLS_VERSION).jar
+PLANTUML_JAR ?= $(FORMAL_TOOLS_DIR)/plantuml-$(PLANTUML_VERSION).jar
+
+.PHONY: formal-tools
+formal-tools: ## Download TLC and PlantUML locally if necessary.
+	./tools/formal/bootstrap.sh "$(FORMAL_TOOLS_DIR)" "$(TLA2TOOLS_VERSION)" "$(PLANTUML_VERSION)"
+
+.PHONY: formal
+formal: formal-tools ## Run TLC for every controller spec under formal/controllers.
+	./tools/formal/run_all.sh "$(TLA2TOOLS_JAR)" "$(FORMAL_DIR)/controllers"
+
+formal-%: formal-tools ## Run TLC for a single controller slug from formal/controllers/<slug>.
+	./tools/formal/run_controller.sh "$(TLA2TOOLS_JAR)" "$(FORMAL_DIR)/controllers/$*"
+
+.PHONY: diagrams
+diagrams: formal-tools ## Render all PlantUML diagrams under formal/controllers.
+	./tools/formal/render_all.sh "$(PLANTUML_JAR)" "$(FORMAL_DIR)/controllers"
+
+diagrams-%: formal-tools ## Render PlantUML diagrams for a single controller slug.
+	./tools/formal/render_controller.sh "$(PLANTUML_JAR)" "$(FORMAL_DIR)/controllers/$*"
+
 .PHONY: bundle
 bundle: manifests kustomize ## Generate bundle manifests and metadata, then validate generated files.
 	operator-sdk generate kustomize manifests -q

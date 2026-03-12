@@ -127,8 +127,15 @@ func (c *StreamServiceManager) GetStream(ctx context.Context, streamId ociv1beta
 func (c *StreamServiceManager) UpdateStream(ctx context.Context, stream *ociv1beta1.Stream) error {
 
 	streamClient := c.getOCIClient()
+	streamID := stream.Spec.StreamId
+	if strings.TrimSpace(string(streamID)) == "" {
+		streamID = stream.Status.OsokStatus.Ocid
+	}
+	if strings.TrimSpace(string(streamID)) == "" {
+		return errors.New("stream id is required for update")
+	}
 
-	existingStream, err := c.GetStream(ctx, stream.Spec.StreamId, nil)
+	existingStream, err := c.GetStream(ctx, streamID, nil)
 	if err != nil {
 		return err
 	}
@@ -163,7 +170,7 @@ func (c *StreamServiceManager) UpdateStream(ctx context.Context, stream *ociv1be
 
 	if updateNeeded {
 		updateAutonomousDatabaseRequest := streaming.UpdateStreamRequest{
-			StreamId:            common.String(string(stream.Spec.StreamId)),
+			StreamId:            common.String(string(streamID)),
 			UpdateStreamDetails: updateStreamDetails,
 		}
 

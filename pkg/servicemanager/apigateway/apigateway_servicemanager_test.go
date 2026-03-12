@@ -388,7 +388,17 @@ func TestGatewayServiceManager_CreateOrUpdate_ListError(t *testing.T) {
 }
 
 func TestGatewayServiceManager_Delete_WithOcid(t *testing.T) {
-	gwClient := &mockGatewayClient{}
+	gwClient := &mockGatewayClient{
+		getGatewayFn: func(_ context.Context, _ apigateway.GetGatewayRequest) (apigateway.GetGatewayResponse, error) {
+			return apigateway.GetGatewayResponse{
+				Gateway: apigateway.Gateway{
+					Id:             common.String("ocid1.apigateway.oc1..xxx"),
+					DisplayName:    common.String("deleted-gw"),
+					LifecycleState: apigateway.GatewayLifecycleStateDeleted,
+				},
+			}, nil
+		},
+	}
 	credClient := &fakeCredentialClient{}
 	mgr := makeGatewayManager(gwClient, credClient)
 
@@ -631,13 +641,23 @@ func TestDeploymentServiceManager_CreateOrUpdate_CreatingState_Requeues(t *testi
 	obj.Spec.PathPrefix = "/v1"
 
 	resp, err := mgr.CreateOrUpdate(context.Background(), obj, ctrl.Request{})
-	// Creating state handled by existing code — just check it doesn't crash
-	_ = resp
-	_ = err
+	assert.NoError(t, err)
+	assert.False(t, resp.IsSuccessful)
+	assert.True(t, resp.ShouldRequeue, "should requeue while deployment is CREATING")
 }
 
 func TestDeploymentServiceManager_Delete_WithOcid(t *testing.T) {
-	depClient := &mockDeploymentClient{}
+	depClient := &mockDeploymentClient{
+		getDeploymentFn: func(_ context.Context, _ apigateway.GetDeploymentRequest) (apigateway.GetDeploymentResponse, error) {
+			return apigateway.GetDeploymentResponse{
+				Deployment: apigateway.Deployment{
+					Id:             common.String("ocid1.apideployment.oc1..xxx"),
+					DisplayName:    common.String("deleted-dep"),
+					LifecycleState: apigateway.DeploymentLifecycleStateDeleted,
+				},
+			}, nil
+		},
+	}
 	credClient := &fakeCredentialClient{}
 	mgr := makeDeploymentManager(depClient, credClient)
 

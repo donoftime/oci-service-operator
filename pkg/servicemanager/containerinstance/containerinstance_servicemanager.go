@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	"github.com/oracle/oci-go-sdk/v65/containerinstances"
@@ -19,7 +18,6 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/loggerutil"
 	"github.com/oracle/oci-service-operator/pkg/servicemanager"
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 
@@ -108,16 +106,6 @@ func (c *ContainerInstanceServiceManager) CreateOrUpdate(ctx context.Context, ob
 			}
 		}
 
-		ci.Status.OsokStatus.Ocid = ociv1beta1.OCID(*ciInstance.Id)
-		displayName := ""
-		if ciInstance.DisplayName != nil {
-			displayName = *ciInstance.DisplayName
-		}
-		ci.Status.OsokStatus = util.UpdateOSOKStatusCondition(ci.Status.OsokStatus,
-			ociv1beta1.Active, v1.ConditionTrue, "",
-			fmt.Sprintf("ContainerInstance %s is %s", displayName, ciInstance.LifecycleState), c.Log)
-		c.Log.InfoLog(fmt.Sprintf("ContainerInstance %s is %s", displayName, ciInstance.LifecycleState))
-
 	} else {
 		// Bind to an existing container instance by ID
 		ciInstance, err = c.GetContainerInstance(ctx, ci.Spec.ContainerInstanceId, nil)
@@ -130,38 +118,13 @@ func (c *ContainerInstanceServiceManager) CreateOrUpdate(ctx context.Context, ob
 			c.Log.ErrorLog(err, "Error while updating ContainerInstance")
 			return servicemanager.OSOKResponse{IsSuccessful: false}, err
 		}
-
-		ci.Status.OsokStatus = util.UpdateOSOKStatusCondition(ci.Status.OsokStatus,
-			ociv1beta1.Active, v1.ConditionTrue, "", "ContainerInstance Bound/Updated", c.Log)
-		displayName := ""
-		if ciInstance.DisplayName != nil {
-			displayName = *ciInstance.DisplayName
-		}
-		c.Log.InfoLog(fmt.Sprintf("ContainerInstance %s is bound/updated", displayName))
 	}
 
-	ci.Status.OsokStatus.Ocid = ociv1beta1.OCID(*ciInstance.Id)
-	if ci.Status.OsokStatus.CreatedAt == nil {
-		now := metav1.NewTime(time.Now())
-		ci.Status.OsokStatus.CreatedAt = &now
-	}
-
-	if ciInstance.LifecycleState == containerinstances.ContainerInstanceLifecycleStateFailed {
-		displayName := ""
-		if ciInstance.DisplayName != nil {
-			displayName = *ciInstance.DisplayName
-		}
-		ci.Status.OsokStatus = util.UpdateOSOKStatusCondition(ci.Status.OsokStatus,
-			ociv1beta1.Failed, v1.ConditionFalse, "",
-			fmt.Sprintf("ContainerInstance %s creation Failed", displayName), c.Log)
-		c.Log.InfoLog(fmt.Sprintf("ContainerInstance %s creation Failed", displayName))
-		return servicemanager.OSOKResponse{IsSuccessful: false}, nil
-	}
-
+	response := reconcileLifecycleStatus(&ci.Status.OsokStatus, ciInstance, c.Log)
 	if err := c.GarbageCollect(ctx, *ci); err != nil {
 		c.Log.ErrorLog(err, "ContainerInstance GC failed (non-fatal)")
 	}
-	return servicemanager.OSOKResponse{IsSuccessful: true}, nil
+	return response, nil
 }
 
 // Delete handles deletion of the container instance (called by the finalizer).
@@ -171,18 +134,33 @@ func (c *ContainerInstanceServiceManager) Delete(ctx context.Context, obj runtim
 		return false, err
 	}
 
-	if ci.Status.OsokStatus.Ocid == "" {
+	targetID, err := resolveContainerInstanceID(ci.Status.OsokStatus.Ocid, ci.Spec.ContainerInstanceId)
+	if err != nil {
 		c.Log.InfoLog("ContainerInstance has no OCID, nothing to delete")
 		return true, nil
 	}
 
-	c.Log.InfoLog(fmt.Sprintf("Deleting ContainerInstance %s", ci.Status.OsokStatus.Ocid))
-	if err := c.DeleteContainerInstance(ctx, ci.Status.OsokStatus.Ocid); err != nil {
+	c.Log.InfoLog(fmt.Sprintf("Deleting ContainerInstance %s", targetID))
+	if err := c.DeleteContainerInstance(ctx, targetID); err != nil {
+		if isNotFoundServiceError(err) {
+			return true, nil
+		}
 		c.Log.ErrorLog(err, "Error while deleting ContainerInstance")
 		return false, err
 	}
 
-	return true, nil
+	instance, err := c.GetContainerInstance(ctx, targetID, nil)
+	if err != nil {
+		if isNotFoundServiceError(err) {
+			return true, nil
+		}
+		return false, err
+	}
+	if instance.LifecycleState == containerinstances.ContainerInstanceLifecycleStateDeleted {
+		return true, nil
+	}
+
+	return false, nil
 }
 
 // GetCrdStatus returns the OSOK status from the resource.

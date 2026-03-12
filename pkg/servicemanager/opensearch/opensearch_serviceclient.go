@@ -119,6 +119,11 @@ func (c *OpenSearchClusterServiceManager) UpdateOpenSearchCluster(ctx context.Co
 		return err
 	}
 
+	targetID, err := resolveClusterID(cluster.Status.OsokStatus.Ocid, cluster.Spec.OpenSearchClusterId)
+	if err != nil {
+		return err
+	}
+
 	details := opensearch.UpdateOpensearchClusterDetails{
 		DisplayName: common.String(cluster.Spec.DisplayName),
 	}
@@ -133,7 +138,7 @@ func (c *OpenSearchClusterServiceManager) UpdateOpenSearchCluster(ctx context.Co
 	}
 
 	_, err = client.UpdateOpensearchCluster(ctx, opensearch.UpdateOpensearchClusterRequest{
-		OpensearchClusterId:            common.String(string(cluster.Status.OsokStatus.Ocid)),
+		OpensearchClusterId:            common.String(string(targetID)),
 		UpdateOpensearchClusterDetails: details,
 	})
 	return err

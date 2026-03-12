@@ -15,8 +15,11 @@ import (
 	ocipsql "github.com/oracle/oci-go-sdk/v65/psql"
 	ociv1beta1 "github.com/oracle/oci-service-operator/api/v1beta1"
 	"github.com/oracle/oci-service-operator/pkg/loggerutil"
+	"github.com/oracle/oci-service-operator/pkg/servicemanager"
 	. "github.com/oracle/oci-service-operator/pkg/servicemanager/postgresql"
 	"github.com/stretchr/testify/assert"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
@@ -197,17 +200,20 @@ func TestDelete_NoOcid(t *testing.T) {
 	assert.False(t, credClient.deleteCalled, "DeleteSecret should not be called when OCID is empty")
 }
 
-// TestDelete_SecretError verifies Delete tolerates secret-deletion errors.
-func TestDelete_SecretError(t *testing.T) {
+// TestDelete_SecretNotFound verifies Delete ignores missing connection secrets.
+func TestDelete_SecretNotFound(t *testing.T) {
 	credClient := &fakeCredentialClient{
 		deleteSecretFn: func(_ context.Context, _, _ string) (bool, error) {
-			return false, errors.New("secret not found")
+			return false, apierrors.NewNotFound(corev1.Resource("secret"), "test-db")
 		},
 	}
 
 	ociClient := &mockOciPostgresClient{
 		deleteFn: func(_ context.Context, _ ocipsql.DeleteDbSystemRequest) (ocipsql.DeleteDbSystemResponse, error) {
 			return ocipsql.DeleteDbSystemResponse{}, nil
+		},
+		getFn: func(_ context.Context, _ ocipsql.GetDbSystemRequest) (ocipsql.GetDbSystemResponse, error) {
+			return ocipsql.GetDbSystemResponse{}, &fakeServiceError{statusCode: 404, code: "NotFound", message: "gone"}
 		},
 	}
 	mgr := newPostgresMgr(t, ociClient, credClient)
@@ -217,10 +223,40 @@ func TestDelete_SecretError(t *testing.T) {
 	dbSystem.Namespace = "default"
 	dbSystem.Status.OsokStatus.Ocid = "ocid1.postgresql.oc1..xxx"
 
-	// Should succeed despite secret deletion error
 	done, err := mgr.Delete(context.Background(), dbSystem)
 	assert.NoError(t, err)
 	assert.True(t, done)
+}
+
+// TestDelete_SecretError verifies Delete still returns an error for non-NotFound secret failures.
+func TestDelete_SecretError(t *testing.T) {
+	credClient := &fakeCredentialClient{
+		getSecretFn: func(_ context.Context, _, _ string) (map[string][]byte, error) {
+			return servicemanager.AddManagedSecretData(map[string][]byte{"id": []byte("ocid1.postgresql.oc1..xxx")}, "PostgresDbSystem", "test-db"), nil
+		},
+		deleteSecretFn: func(_ context.Context, _, _ string) (bool, error) {
+			return false, errors.New("secret delete failed")
+		},
+	}
+
+	ociClient := &mockOciPostgresClient{
+		deleteFn: func(_ context.Context, _ ocipsql.DeleteDbSystemRequest) (ocipsql.DeleteDbSystemResponse, error) {
+			return ocipsql.DeleteDbSystemResponse{}, nil
+		},
+		getFn: func(_ context.Context, _ ocipsql.GetDbSystemRequest) (ocipsql.GetDbSystemResponse, error) {
+			return ocipsql.GetDbSystemResponse{}, &fakeServiceError{statusCode: 404, code: "NotFound", message: "gone"}
+		},
+	}
+	mgr := newPostgresMgr(t, ociClient, credClient)
+
+	dbSystem := &ociv1beta1.PostgresDbSystem{}
+	dbSystem.Name = "test-db"
+	dbSystem.Namespace = "default"
+	dbSystem.Status.OsokStatus.Ocid = "ocid1.postgresql.oc1..xxx"
+
+	done, err := mgr.Delete(context.Background(), dbSystem)
+	assert.Error(t, err)
+	assert.False(t, done)
 }
 
 // TestGetCrdStatus_ReturnsStatus verifies status extraction from a PostgresDbSystem object.
@@ -403,6 +439,9 @@ func TestDelete_WithOcid(t *testing.T) {
 			assert.Equal(t, dbSystemOcid, *req.DbSystemId)
 			return ocipsql.DeleteDbSystemResponse{}, nil
 		},
+		getFn: func(_ context.Context, _ ocipsql.GetDbSystemRequest) (ocipsql.GetDbSystemResponse, error) {
+			return ocipsql.GetDbSystemResponse{}, &fakeServiceError{statusCode: 404, code: "NotFound", message: "gone"}
+		},
 	}
 	mgr := newPostgresMgr(t, ociClient, nil)
 
@@ -422,6 +461,9 @@ func TestDelete_NotFound(t *testing.T) {
 	ociClient := &mockOciPostgresClient{
 		deleteFn: func(_ context.Context, _ ocipsql.DeleteDbSystemRequest) (ocipsql.DeleteDbSystemResponse, error) {
 			return ocipsql.DeleteDbSystemResponse{}, nil
+		},
+		getFn: func(_ context.Context, _ ocipsql.GetDbSystemRequest) (ocipsql.GetDbSystemResponse, error) {
+			return ocipsql.GetDbSystemResponse{}, &fakeServiceError{statusCode: 404, code: "NotFound", message: "gone"}
 		},
 	}
 	mgr := newPostgresMgr(t, ociClient, nil)
@@ -565,6 +607,9 @@ func TestDelete_DeleteError_404(t *testing.T) {
 	ociClient := &mockOciPostgresClient{
 		deleteFn: func(_ context.Context, _ ocipsql.DeleteDbSystemRequest) (ocipsql.DeleteDbSystemResponse, error) {
 			return ocipsql.DeleteDbSystemResponse{}, &fakeServiceError{statusCode: 404, code: "NotFound", message: "not found"}
+		},
+		getFn: func(_ context.Context, _ ocipsql.GetDbSystemRequest) (ocipsql.GetDbSystemResponse, error) {
+			return ocipsql.GetDbSystemResponse{}, &fakeServiceError{statusCode: 404, code: "NotFound", message: "gone"}
 		},
 	}
 	mgr := newPostgresMgr(t, ociClient, nil)

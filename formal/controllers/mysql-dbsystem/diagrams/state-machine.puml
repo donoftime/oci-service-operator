@@ -1,0 +1,21 @@
+@startuml
+title MySQL DB System Controller Contract
+
+[*] --> LookupOrCreate
+LookupOrCreate --> Provisioning : CREATING / UPDATING / INACTIVE
+LookupOrCreate --> Active : ACTIVE
+LookupOrCreate --> Failed : FAILED or terminal fault
+
+Provisioning --> LookupOrCreate : requeue
+Active --> SecretWritten
+SecretWritten --> [*]
+Failed --> [*]
+
+state Deleting {
+  [*] --> Exists
+  Exists --> Exists : delete submitted\nresource still returned
+  Exists --> Gone : get returns 404
+  Gone --> [*]
+}
+
+@enduml

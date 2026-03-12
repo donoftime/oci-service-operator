@@ -8,6 +8,7 @@ package opensearch_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
@@ -18,6 +19,20 @@ import (
 	"github.com/stretchr/testify/assert"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
+
+type fakeServiceError struct {
+	statusCode int
+	code       string
+	message    string
+}
+
+func (f *fakeServiceError) GetHTTPStatusCode() int  { return f.statusCode }
+func (f *fakeServiceError) GetMessage() string      { return f.message }
+func (f *fakeServiceError) GetCode() string         { return f.code }
+func (f *fakeServiceError) GetOpcRequestID() string { return "" }
+func (f *fakeServiceError) Error() string {
+	return fmt.Sprintf("%d %s: %s", f.statusCode, f.code, f.message)
+}
 
 // fakeCredentialClient implements credhelper.CredentialClient for testing.
 type fakeCredentialClient struct{}
@@ -389,8 +404,7 @@ func TestCreateOrUpdate_LifecycleFailed(t *testing.T) {
 
 	resp, err := mgr.CreateOrUpdate(context.Background(), cluster, ctrl.Request{})
 	assert.NoError(t, err)
-	// Reconciliation is "successful" (processed without error); the cluster itself is Failed.
-	assert.True(t, resp.IsSuccessful)
+	assert.False(t, resp.IsSuccessful)
 	// The lifecycle switch appends a condition after the "bound" condition; check the last one.
 	conds := cluster.Status.OsokStatus.Conditions
 	assert.NotEmpty(t, conds)
@@ -415,8 +429,8 @@ func TestCreateOrUpdate_LifecycleCreating(t *testing.T) {
 
 	resp, err := mgr.CreateOrUpdate(context.Background(), cluster, ctrl.Request{})
 	assert.NoError(t, err)
-	assert.True(t, resp.IsSuccessful)
-	// The default lifecycle branch appends Provisioning after any prior conditions.
+	assert.False(t, resp.IsSuccessful)
+	assert.True(t, resp.ShouldRequeue)
 	conds := cluster.Status.OsokStatus.Conditions
 	assert.NotEmpty(t, conds)
 	assert.Equal(t, ociv1beta1.Provisioning, conds[len(conds)-1].Type)
@@ -440,8 +454,8 @@ func TestCreateOrUpdate_LifecycleUpdating(t *testing.T) {
 
 	resp, err := mgr.CreateOrUpdate(context.Background(), cluster, ctrl.Request{})
 	assert.NoError(t, err)
-	assert.True(t, resp.IsSuccessful)
-	// The default lifecycle branch appends Provisioning after any prior conditions.
+	assert.False(t, resp.IsSuccessful)
+	assert.True(t, resp.ShouldRequeue)
 	conds := cluster.Status.OsokStatus.Conditions
 	assert.NotEmpty(t, conds)
 	assert.Equal(t, ociv1beta1.Provisioning, conds[len(conds)-1].Type)
@@ -515,6 +529,9 @@ func TestDelete_WithStatusOcid(t *testing.T) {
 		deleteFn: func(_ context.Context, _ ociopensearch.DeleteOpensearchClusterRequest) (ociopensearch.DeleteOpensearchClusterResponse, error) {
 			return ociopensearch.DeleteOpensearchClusterResponse{}, nil
 		},
+		getFn: func(_ context.Context, _ ociopensearch.GetOpensearchClusterRequest) (ociopensearch.GetOpensearchClusterResponse, error) {
+			return ociopensearch.GetOpensearchClusterResponse{}, &fakeServiceError{statusCode: 404, code: "NotFound", message: "gone"}
+		},
 	}
 	mgr := makeManagerWithFake(fake)
 
@@ -533,6 +550,9 @@ func TestDelete_WithSpecOcid(t *testing.T) {
 	fake := &fakeOciClient{
 		deleteFn: func(_ context.Context, _ ociopensearch.DeleteOpensearchClusterRequest) (ociopensearch.DeleteOpensearchClusterResponse, error) {
 			return ociopensearch.DeleteOpensearchClusterResponse{}, nil
+		},
+		getFn: func(_ context.Context, _ ociopensearch.GetOpensearchClusterRequest) (ociopensearch.GetOpensearchClusterResponse, error) {
+			return ociopensearch.GetOpensearchClusterResponse{}, &fakeServiceError{statusCode: 404, code: "NotFound", message: "gone"}
 		},
 	}
 	mgr := makeManagerWithFake(fake)
@@ -555,7 +575,7 @@ func TestDelete_WrongType(t *testing.T) {
 	assert.True(t, done)
 }
 
-// TestDelete_DeleteFails verifies that delete errors are swallowed (returns done=true).
+// TestDelete_DeleteFails verifies that delete errors now propagate.
 func TestDelete_DeleteFails(t *testing.T) {
 	fake := &fakeOciClient{
 		deleteFn: func(_ context.Context, _ ociopensearch.DeleteOpensearchClusterRequest) (ociopensearch.DeleteOpensearchClusterResponse, error) {
@@ -568,9 +588,8 @@ func TestDelete_DeleteFails(t *testing.T) {
 	cluster.Status.OsokStatus.Ocid = "ocid1.opensearchcluster.oc1..xxx"
 
 	done, err := mgr.Delete(context.Background(), cluster)
-	// Delete swallows errors (returns done=true, no error propagated)
-	assert.NoError(t, err)
-	assert.True(t, done)
+	assert.Error(t, err)
+	assert.False(t, done)
 }
 
 // ---- Credential map / endpoint fields ----

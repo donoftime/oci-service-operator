@@ -127,35 +127,34 @@ func (c *GatewayServiceManager) CreateOrUpdate(ctx context.Context, obj runtime.
 		gw.Status.OsokStatus.CreatedAt = &now
 	}
 
-	if gwInstance.LifecycleState == apigateway.GatewayLifecycleStateCreating {
-		gw.Status.OsokStatus = util.UpdateOSOKStatusCondition(gw.Status.OsokStatus,
-			ociv1beta1.Provisioning, v1.ConditionTrue, "",
-			fmt.Sprintf("ApiGateway %s is still Creating", *gwInstance.DisplayName), c.Log)
-		c.Log.InfoLog(fmt.Sprintf("ApiGateway %s is still Creating, requeueing", *gwInstance.DisplayName))
-		return servicemanager.OSOKResponse{IsSuccessful: false, ShouldRequeue: true}, nil
-	}
-
-	if gwInstance.LifecycleState == apigateway.GatewayLifecycleStateFailed {
+	switch gwInstance.LifecycleState {
+	case apigateway.GatewayLifecycleStateFailed, apigateway.GatewayLifecycleStateDeleted:
 		gw.Status.OsokStatus = util.UpdateOSOKStatusCondition(gw.Status.OsokStatus,
 			ociv1beta1.Failed, v1.ConditionFalse, "",
-			fmt.Sprintf("ApiGateway %s creation Failed", *gwInstance.DisplayName), c.Log)
-		c.Log.InfoLog(fmt.Sprintf("ApiGateway %s creation Failed", *gwInstance.DisplayName))
+			fmt.Sprintf("ApiGateway %s is %s", *gwInstance.DisplayName, gwInstance.LifecycleState), c.Log)
+		c.Log.InfoLog(fmt.Sprintf("ApiGateway %s is %s", *gwInstance.DisplayName, gwInstance.LifecycleState))
 		return servicemanager.OSOKResponse{IsSuccessful: false}, nil
-	}
+	case apigateway.GatewayLifecycleStateActive:
+		gw.Status.OsokStatus = util.UpdateOSOKStatusCondition(gw.Status.OsokStatus,
+			ociv1beta1.Active, v1.ConditionTrue, "",
+			fmt.Sprintf("ApiGateway %s is %s", *gwInstance.DisplayName, gwInstance.LifecycleState), c.Log)
+		c.Log.InfoLog(fmt.Sprintf("ApiGateway %s is Active", *gwInstance.DisplayName))
 
-	gw.Status.OsokStatus = util.UpdateOSOKStatusCondition(gw.Status.OsokStatus,
-		ociv1beta1.Active, v1.ConditionTrue, "",
-		fmt.Sprintf("ApiGateway %s is %s", *gwInstance.DisplayName, gwInstance.LifecycleState), c.Log)
-	c.Log.InfoLog(fmt.Sprintf("ApiGateway %s is Active", *gwInstance.DisplayName))
-
-	if _, err := c.addToSecret(ctx, gw.Namespace, gw.Name, *gwInstance); err != nil {
-		if !apierrors.IsAlreadyExists(err) {
-			c.Log.InfoLog("ApiGateway secret creation failed")
-			return servicemanager.OSOKResponse{IsSuccessful: false}, err
+		if _, err := c.addToSecret(ctx, gw.Namespace, gw.Name, *gwInstance); err != nil {
+			if !apierrors.IsAlreadyExists(err) {
+				c.Log.InfoLog("ApiGateway secret creation failed")
+				return servicemanager.OSOKResponse{IsSuccessful: false}, err
+			}
 		}
-	}
 
-	return servicemanager.OSOKResponse{IsSuccessful: true}, nil
+		return servicemanager.OSOKResponse{IsSuccessful: true}, nil
+	default:
+		gw.Status.OsokStatus = util.UpdateOSOKStatusCondition(gw.Status.OsokStatus,
+			ociv1beta1.Provisioning, v1.ConditionTrue, "",
+			fmt.Sprintf("ApiGateway %s is %s", *gwInstance.DisplayName, gwInstance.LifecycleState), c.Log)
+		c.Log.InfoLog(fmt.Sprintf("ApiGateway %s is %s, requeueing", *gwInstance.DisplayName, gwInstance.LifecycleState))
+		return servicemanager.OSOKResponse{IsSuccessful: false, ShouldRequeue: true}, nil
+	}
 }
 
 // Delete handles deletion of the API Gateway (called by the finalizer).
@@ -165,18 +164,34 @@ func (c *GatewayServiceManager) Delete(ctx context.Context, obj runtime.Object) 
 		return false, err
 	}
 
-	if gw.Status.OsokStatus.Ocid == "" {
+	targetID, err := servicemanager.ResolveResourceID(gw.Status.OsokStatus.Ocid, gw.Spec.ApiGatewayId)
+	if err != nil {
 		c.Log.InfoLog("ApiGateway has no OCID, nothing to delete")
 		return true, nil
 	}
 
-	c.Log.InfoLog(fmt.Sprintf("Deleting ApiGateway %s", gw.Status.OsokStatus.Ocid))
-	if err := c.DeleteGateway(ctx, gw.Status.OsokStatus.Ocid); err != nil {
+	c.Log.InfoLog(fmt.Sprintf("Deleting ApiGateway %s", targetID))
+	if err := c.DeleteGateway(ctx, targetID); err != nil {
+		if isGatewayNotFound(err) {
+			return true, nil
+		}
 		c.Log.ErrorLog(err, "Error while deleting ApiGateway")
 		return false, err
 	}
 
-	return true, nil
+	gwInstance, err := c.GetGateway(ctx, targetID, nil)
+	if err != nil {
+		if isGatewayNotFound(err) {
+			return true, nil
+		}
+		c.Log.ErrorLog(err, "Error while checking ApiGateway deletion")
+		return false, err
+	}
+
+	if gwInstance.LifecycleState == apigateway.GatewayLifecycleStateDeleted {
+		return true, nil
+	}
+	return false, nil
 }
 
 // GetCrdStatus returns the OSOK status from the resource.
@@ -194,4 +209,12 @@ func (c *GatewayServiceManager) convert(obj runtime.Object) (*ociv1beta1.ApiGate
 		return nil, fmt.Errorf("failed type assertion for ApiGateway")
 	}
 	return gw, nil
+}
+
+func isGatewayNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	serviceErr, ok := common.IsServiceError(err)
+	return ok && serviceErr.GetHTTPStatusCode() == 404
 }

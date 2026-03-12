@@ -6,6 +6,7 @@
 package v1beta1
 
 import (
+	"encoding/json"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -28,6 +29,49 @@ type AutonomousDatabasesSpec struct {
 	LicenseModel         string         `json:"licenseModel,omitempty"`
 	TagResources         `json:",inline"`
 	Wallet               AutonomousDatabaseWallet `json:"wallet,omitempty"`
+
+	isAutoScalingEnabledSet bool `json:"-"`
+	isFreeTierSet           bool `json:"-"`
+}
+
+type autonomousDatabasesSpecAlias AutonomousDatabasesSpec
+
+func (s *AutonomousDatabasesSpec) UnmarshalJSON(data []byte) error {
+	type alias autonomousDatabasesSpecAlias
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	var decoded alias
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+
+	*s = AutonomousDatabasesSpec(decoded)
+	_, s.isAutoScalingEnabledSet = raw["isAutoScalingEnabled"]
+	_, s.isFreeTierSet = raw["isFreeTier"]
+
+	return nil
+}
+
+func (s *AutonomousDatabasesSpec) SetIsAutoScalingEnabled(value bool) {
+	s.IsAutoScalingEnabled = value
+	s.isAutoScalingEnabledSet = true
+}
+
+func (s *AutonomousDatabasesSpec) SetIsFreeTier(value bool) {
+	s.IsFreeTier = value
+	s.isFreeTierSet = true
+}
+
+func (s AutonomousDatabasesSpec) HasExplicitIsAutoScalingEnabled() bool {
+	return s.isAutoScalingEnabledSet
+}
+
+func (s AutonomousDatabasesSpec) HasExplicitIsFreeTier() bool {
+	return s.isFreeTierSet
 }
 
 type AutonomousDatabaseWallet struct {

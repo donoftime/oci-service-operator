@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	ocicore "github.com/oracle/oci-go-sdk/v65/core"
@@ -19,7 +18,6 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/servicemanager"
 	"github.com/oracle/oci-service-operator/pkg/util"
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -71,26 +69,11 @@ func (c *OciNetworkSecurityGroupServiceManager) CreateOrUpdate(ctx context.Conte
 				c.Log.ErrorLog(err, "Create OciNetworkSecurityGroup failed")
 				return servicemanager.OSOKResponse{IsSuccessful: false}, err
 			}
-
-			if nsgInstance.LifecycleState == ocicore.NetworkSecurityGroupLifecycleStateProvisioning {
-				nsg.Status.OsokStatus = util.UpdateOSOKStatusCondition(nsg.Status.OsokStatus,
-					ociv1beta1.Provisioning, v1.ConditionTrue, "", "OciNetworkSecurityGroup Provisioning", c.Log)
-				nsg.Status.OsokStatus.Ocid = ociv1beta1.OCID(*nsgInstance.Id)
-				return servicemanager.OSOKResponse{IsSuccessful: false}, nil
-			}
 		} else {
 			nsgInstance, err = c.GetNetworkSecurityGroup(ctx, *nsgOcid)
 			if err != nil {
 				c.Log.ErrorLog(err, "Error while getting OciNetworkSecurityGroup by OCID")
 				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-
-			if nsgInstance.LifecycleState == ocicore.NetworkSecurityGroupLifecycleStateProvisioning {
-				c.Log.InfoLog(fmt.Sprintf("OciNetworkSecurityGroup %s is still PROVISIONING", safeString(nsgInstance.DisplayName)))
-				nsg.Status.OsokStatus = util.UpdateOSOKStatusCondition(nsg.Status.OsokStatus,
-					ociv1beta1.Provisioning, v1.ConditionTrue, "", "OciNetworkSecurityGroup Provisioning", c.Log)
-				nsg.Status.OsokStatus.Ocid = ociv1beta1.OCID(*nsgInstance.Id)
-				return servicemanager.OSOKResponse{IsSuccessful: false}, nil
 			}
 		}
 	} else {
@@ -100,24 +83,15 @@ func (c *OciNetworkSecurityGroupServiceManager) CreateOrUpdate(ctx context.Conte
 			return servicemanager.OSOKResponse{IsSuccessful: false}, err
 		}
 
+		nsg.Status.OsokStatus.Ocid = nsg.Spec.NetworkSecurityGroupId
 		if err = c.UpdateNetworkSecurityGroup(ctx, nsg); err != nil {
 			c.Log.ErrorLog(err, "Error while updating OciNetworkSecurityGroup")
 			return servicemanager.OSOKResponse{IsSuccessful: false}, err
 		}
 	}
 
-	nsg.Status.OsokStatus.Ocid = ociv1beta1.OCID(*nsgInstance.Id)
-	if nsg.Status.OsokStatus.CreatedAt == nil {
-		now := metav1.NewTime(time.Now())
-		nsg.Status.OsokStatus.CreatedAt = &now
-	}
-
-	nsg.Status.OsokStatus = util.UpdateOSOKStatusCondition(nsg.Status.OsokStatus,
-		ociv1beta1.Active, v1.ConditionTrue, "",
-		fmt.Sprintf("OciNetworkSecurityGroup %s is %s", safeString(nsgInstance.DisplayName), nsgInstance.LifecycleState), c.Log)
-	c.Log.InfoLog(fmt.Sprintf("OciNetworkSecurityGroup %s is %s", safeString(nsgInstance.DisplayName), nsgInstance.LifecycleState))
-
-	return servicemanager.OSOKResponse{IsSuccessful: true}, nil
+	return reconcileLifecycleStatus(&nsg.Status.OsokStatus, "OciNetworkSecurityGroup", safeString(nsgInstance.DisplayName),
+		string(nsgInstance.LifecycleState), ociv1beta1.OCID(*nsgInstance.Id), c.Log), nil
 }
 
 // Delete handles deletion of the NSG (called by the finalizer).
@@ -127,18 +101,29 @@ func (c *OciNetworkSecurityGroupServiceManager) Delete(ctx context.Context, obj 
 		return false, err
 	}
 
-	if nsg.Status.OsokStatus.Ocid == "" {
+	resourceID := nsg.Status.OsokStatus.Ocid
+	if resourceID == "" {
+		resourceID = nsg.Spec.NetworkSecurityGroupId
+	}
+	if resourceID == "" {
 		c.Log.InfoLog("OciNetworkSecurityGroup has no OCID, nothing to delete")
 		return true, nil
 	}
 
-	c.Log.InfoLog(fmt.Sprintf("Deleting OciNetworkSecurityGroup %s", nsg.Status.OsokStatus.Ocid))
-	if err := c.DeleteNetworkSecurityGroup(ctx, nsg.Status.OsokStatus.Ocid); err != nil {
+	c.Log.InfoLog(fmt.Sprintf("Deleting OciNetworkSecurityGroup %s", resourceID))
+	done, err := deleteResourceAndWait(
+		func() error { return c.DeleteNetworkSecurityGroup(ctx, resourceID) },
+		func() error {
+			_, getErr := c.GetNetworkSecurityGroup(ctx, resourceID)
+			return getErr
+		},
+	)
+	if err != nil {
 		c.Log.ErrorLog(err, "Error while deleting OciNetworkSecurityGroup")
 		return false, err
 	}
 
-	return true, nil
+	return done, nil
 }
 
 // GetCrdStatus returns the OSOK status from the resource.

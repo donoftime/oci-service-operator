@@ -118,10 +118,10 @@ func TestUpdateOSOKStatusCondition_StatusChange(t *testing.T) {
 	}
 
 	updated := UpdateOSOKStatusCondition(status, v1beta1.Active, v1.ConditionTrue, "Ready", "now ready", log)
-	// Original condition stays + new appended
-	assert.True(t, len(updated.Conditions) >= 1)
-	last := updated.Conditions[len(updated.Conditions)-1]
-	assert.Equal(t, v1.ConditionTrue, last.Status)
+	assert.Len(t, updated.Conditions, 1)
+	assert.Equal(t, v1.ConditionTrue, updated.Conditions[0].Status)
+	assert.Equal(t, "now ready", updated.Conditions[0].Message)
+	assert.Equal(t, "Ready", updated.Conditions[0].Reason)
 }
 
 func TestUpdateOSOKStatusCondition_MessageChange(t *testing.T) {
@@ -133,8 +133,9 @@ func TestUpdateOSOKStatusCondition_MessageChange(t *testing.T) {
 	}
 
 	updated := UpdateOSOKStatusCondition(status, v1beta1.Active, v1.ConditionTrue, "Reason", "new message", log)
-	last := updated.Conditions[len(updated.Conditions)-1]
-	assert.Equal(t, "new message", last.Message)
+	assert.Len(t, updated.Conditions, 1)
+	assert.Equal(t, "new message", updated.Conditions[0].Message)
+	assert.Equal(t, "Reason", updated.Conditions[0].Reason)
 }
 
 func TestUpdateOSOKStatusCondition_NoChange(t *testing.T) {
@@ -146,8 +147,20 @@ func TestUpdateOSOKStatusCondition_NoChange(t *testing.T) {
 	}
 
 	updated := UpdateOSOKStatusCondition(status, v1beta1.Active, v1.ConditionTrue, "Reason", "same", log)
-	// No new condition appended when nothing changed
 	assert.Equal(t, len(status.Conditions), len(updated.Conditions))
+}
+
+func TestUpdateOSOKStatusCondition_ReasonChange(t *testing.T) {
+	log := testLogger()
+	status := v1beta1.OSOKStatus{
+		Conditions: []v1beta1.OSOKCondition{
+			{Type: v1beta1.Active, Status: v1.ConditionTrue, Reason: "Old", Message: "same"},
+		},
+	}
+
+	updated := UpdateOSOKStatusCondition(status, v1beta1.Active, v1.ConditionTrue, "New", "same", log)
+	assert.Len(t, updated.Conditions, 1)
+	assert.Equal(t, "New", updated.Conditions[0].Reason)
 }
 
 func TestConvertToOciDefinedTags_Basic(t *testing.T) {

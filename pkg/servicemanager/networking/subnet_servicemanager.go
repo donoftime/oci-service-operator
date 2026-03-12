@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	ocicore "github.com/oracle/oci-go-sdk/v65/core"
@@ -19,7 +18,6 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/servicemanager"
 	"github.com/oracle/oci-service-operator/pkg/util"
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -72,26 +70,11 @@ func (c *OciSubnetServiceManager) CreateOrUpdate(ctx context.Context, obj runtim
 				c.Log.ErrorLog(err, "Create OciSubnet failed")
 				return servicemanager.OSOKResponse{IsSuccessful: false}, err
 			}
-
-			if subnetInstance.LifecycleState == ocicore.SubnetLifecycleStateProvisioning {
-				subnet.Status.OsokStatus = util.UpdateOSOKStatusCondition(subnet.Status.OsokStatus,
-					ociv1beta1.Provisioning, v1.ConditionTrue, "", "OciSubnet Provisioning", c.Log)
-				subnet.Status.OsokStatus.Ocid = ociv1beta1.OCID(*subnetInstance.Id)
-				return servicemanager.OSOKResponse{IsSuccessful: false}, nil
-			}
 		} else {
 			subnetInstance, err = c.GetSubnet(ctx, *subnetOcid)
 			if err != nil {
 				c.Log.ErrorLog(err, "Error while getting OciSubnet by OCID")
 				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-
-			if subnetInstance.LifecycleState == ocicore.SubnetLifecycleStateProvisioning {
-				c.Log.InfoLog(fmt.Sprintf("OciSubnet %s is still PROVISIONING", safeString(subnetInstance.DisplayName)))
-				subnet.Status.OsokStatus = util.UpdateOSOKStatusCondition(subnet.Status.OsokStatus,
-					ociv1beta1.Provisioning, v1.ConditionTrue, "", "OciSubnet Provisioning", c.Log)
-				subnet.Status.OsokStatus.Ocid = ociv1beta1.OCID(*subnetInstance.Id)
-				return servicemanager.OSOKResponse{IsSuccessful: false}, nil
 			}
 		}
 	} else {
@@ -102,24 +85,15 @@ func (c *OciSubnetServiceManager) CreateOrUpdate(ctx context.Context, obj runtim
 			return servicemanager.OSOKResponse{IsSuccessful: false}, err
 		}
 
+		subnet.Status.OsokStatus.Ocid = subnet.Spec.SubnetId
 		if err = c.UpdateSubnet(ctx, subnet); err != nil {
 			c.Log.ErrorLog(err, "Error while updating OciSubnet")
 			return servicemanager.OSOKResponse{IsSuccessful: false}, err
 		}
 	}
 
-	subnet.Status.OsokStatus.Ocid = ociv1beta1.OCID(*subnetInstance.Id)
-	if subnet.Status.OsokStatus.CreatedAt == nil {
-		now := metav1.NewTime(time.Now())
-		subnet.Status.OsokStatus.CreatedAt = &now
-	}
-
-	subnet.Status.OsokStatus = util.UpdateOSOKStatusCondition(subnet.Status.OsokStatus,
-		ociv1beta1.Active, v1.ConditionTrue, "",
-		fmt.Sprintf("OciSubnet %s is %s", safeString(subnetInstance.DisplayName), subnetInstance.LifecycleState), c.Log)
-	c.Log.InfoLog(fmt.Sprintf("OciSubnet %s is %s", safeString(subnetInstance.DisplayName), subnetInstance.LifecycleState))
-
-	return servicemanager.OSOKResponse{IsSuccessful: true}, nil
+	return reconcileLifecycleStatus(&subnet.Status.OsokStatus, "OciSubnet", safeString(subnetInstance.DisplayName),
+		string(subnetInstance.LifecycleState), ociv1beta1.OCID(*subnetInstance.Id), c.Log), nil
 }
 
 // Delete handles deletion of the Subnet (called by the finalizer).
@@ -129,18 +103,29 @@ func (c *OciSubnetServiceManager) Delete(ctx context.Context, obj runtime.Object
 		return false, err
 	}
 
-	if subnet.Status.OsokStatus.Ocid == "" {
+	resourceID := subnet.Status.OsokStatus.Ocid
+	if resourceID == "" {
+		resourceID = subnet.Spec.SubnetId
+	}
+	if resourceID == "" {
 		c.Log.InfoLog("OciSubnet has no OCID, nothing to delete")
 		return true, nil
 	}
 
-	c.Log.InfoLog(fmt.Sprintf("Deleting OciSubnet %s", subnet.Status.OsokStatus.Ocid))
-	if err := c.DeleteSubnet(ctx, subnet.Status.OsokStatus.Ocid); err != nil {
+	c.Log.InfoLog(fmt.Sprintf("Deleting OciSubnet %s", resourceID))
+	done, err := deleteResourceAndWait(
+		func() error { return c.DeleteSubnet(ctx, resourceID) },
+		func() error {
+			_, getErr := c.GetSubnet(ctx, resourceID)
+			return getErr
+		},
+	)
+	if err != nil {
 		c.Log.ErrorLog(err, "Error while deleting OciSubnet")
 		return false, err
 	}
 
-	return true, nil
+	return done, nil
 }
 
 // GetCrdStatus returns the OSOK status from the resource.

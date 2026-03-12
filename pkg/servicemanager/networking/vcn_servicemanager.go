@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	ocicore "github.com/oracle/oci-go-sdk/v65/core"
@@ -19,7 +18,6 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/servicemanager"
 	"github.com/oracle/oci-service-operator/pkg/util"
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -72,26 +70,11 @@ func (c *OciVcnServiceManager) CreateOrUpdate(ctx context.Context, obj runtime.O
 				c.Log.ErrorLog(err, "Create OciVcn failed")
 				return servicemanager.OSOKResponse{IsSuccessful: false}, err
 			}
-
-			if vcnInstance.LifecycleState == ocicore.VcnLifecycleStateProvisioning {
-				vcn.Status.OsokStatus = util.UpdateOSOKStatusCondition(vcn.Status.OsokStatus,
-					ociv1beta1.Provisioning, v1.ConditionTrue, "", "OciVcn Provisioning", c.Log)
-				vcn.Status.OsokStatus.Ocid = ociv1beta1.OCID(*vcnInstance.Id)
-				return servicemanager.OSOKResponse{IsSuccessful: false}, nil
-			}
 		} else {
 			vcnInstance, err = c.GetVcn(ctx, *vcnOcid)
 			if err != nil {
 				c.Log.ErrorLog(err, "Error while getting OciVcn by OCID")
 				return servicemanager.OSOKResponse{IsSuccessful: false}, err
-			}
-
-			if vcnInstance.LifecycleState == ocicore.VcnLifecycleStateProvisioning {
-				c.Log.InfoLog(fmt.Sprintf("OciVcn %s is still PROVISIONING", safeString(vcnInstance.DisplayName)))
-				vcn.Status.OsokStatus = util.UpdateOSOKStatusCondition(vcn.Status.OsokStatus,
-					ociv1beta1.Provisioning, v1.ConditionTrue, "", "OciVcn Provisioning", c.Log)
-				vcn.Status.OsokStatus.Ocid = ociv1beta1.OCID(*vcnInstance.Id)
-				return servicemanager.OSOKResponse{IsSuccessful: false}, nil
 			}
 		}
 	} else {
@@ -102,24 +85,15 @@ func (c *OciVcnServiceManager) CreateOrUpdate(ctx context.Context, obj runtime.O
 			return servicemanager.OSOKResponse{IsSuccessful: false}, err
 		}
 
+		vcn.Status.OsokStatus.Ocid = vcn.Spec.VcnId
 		if err = c.UpdateVcn(ctx, vcn); err != nil {
 			c.Log.ErrorLog(err, "Error while updating OciVcn")
 			return servicemanager.OSOKResponse{IsSuccessful: false}, err
 		}
 	}
 
-	vcn.Status.OsokStatus.Ocid = ociv1beta1.OCID(*vcnInstance.Id)
-	if vcn.Status.OsokStatus.CreatedAt == nil {
-		now := metav1.NewTime(time.Now())
-		vcn.Status.OsokStatus.CreatedAt = &now
-	}
-
-	vcn.Status.OsokStatus = util.UpdateOSOKStatusCondition(vcn.Status.OsokStatus,
-		ociv1beta1.Active, v1.ConditionTrue, "",
-		fmt.Sprintf("OciVcn %s is %s", safeString(vcnInstance.DisplayName), vcnInstance.LifecycleState), c.Log)
-	c.Log.InfoLog(fmt.Sprintf("OciVcn %s is %s", safeString(vcnInstance.DisplayName), vcnInstance.LifecycleState))
-
-	return servicemanager.OSOKResponse{IsSuccessful: true}, nil
+	return reconcileLifecycleStatus(&vcn.Status.OsokStatus, "OciVcn", safeString(vcnInstance.DisplayName),
+		string(vcnInstance.LifecycleState), ociv1beta1.OCID(*vcnInstance.Id), c.Log), nil
 }
 
 // Delete handles deletion of the VCN (called by the finalizer).
@@ -129,18 +103,29 @@ func (c *OciVcnServiceManager) Delete(ctx context.Context, obj runtime.Object) (
 		return false, err
 	}
 
-	if vcn.Status.OsokStatus.Ocid == "" {
+	resourceID := vcn.Status.OsokStatus.Ocid
+	if resourceID == "" {
+		resourceID = vcn.Spec.VcnId
+	}
+	if resourceID == "" {
 		c.Log.InfoLog("OciVcn has no OCID, nothing to delete")
 		return true, nil
 	}
 
-	c.Log.InfoLog(fmt.Sprintf("Deleting OciVcn %s", vcn.Status.OsokStatus.Ocid))
-	if err := c.DeleteVcn(ctx, vcn.Status.OsokStatus.Ocid); err != nil {
+	c.Log.InfoLog(fmt.Sprintf("Deleting OciVcn %s", resourceID))
+	done, err := deleteResourceAndWait(
+		func() error { return c.DeleteVcn(ctx, resourceID) },
+		func() error {
+			_, getErr := c.GetVcn(ctx, resourceID)
+			return getErr
+		},
+	)
+	if err != nil {
 		c.Log.ErrorLog(err, "Error while deleting OciVcn")
 		return false, err
 	}
 
-	return true, nil
+	return done, nil
 }
 
 // GetCrdStatus returns the OSOK status from the resource.

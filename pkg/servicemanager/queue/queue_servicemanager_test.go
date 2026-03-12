@@ -8,14 +8,17 @@ package queue_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	ociqueue "github.com/oracle/oci-go-sdk/v65/queue"
 	ociv1beta1 "github.com/oracle/oci-service-operator/api/v1beta1"
 	"github.com/oracle/oci-service-operator/pkg/loggerutil"
+	"github.com/oracle/oci-service-operator/pkg/servicemanager"
 	. "github.com/oracle/oci-service-operator/pkg/servicemanager/queue"
 	"github.com/stretchr/testify/assert"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -33,6 +36,20 @@ type fakeCredentialClient struct {
 	createCalled   bool
 	deleteCalled   bool
 }
+
+type fakeServiceError struct {
+	statusCode int
+	code       string
+	message    string
+}
+
+func (e fakeServiceError) Error() string {
+	return fmt.Sprintf("%d %s: %s", e.statusCode, e.code, e.message)
+}
+func (e fakeServiceError) GetHTTPStatusCode() int  { return e.statusCode }
+func (e fakeServiceError) GetMessage() string      { return e.message }
+func (e fakeServiceError) GetCode() string         { return e.code }
+func (e fakeServiceError) GetOpcRequestID() string { return "opc-request-id" }
 
 func (f *fakeCredentialClient) CreateSecret(ctx context.Context, name, ns string, labels map[string]string, data map[string][]byte) (bool, error) {
 	f.createCalled = true
@@ -202,28 +219,88 @@ func TestDelete_NoOcid(t *testing.T) {
 	assert.False(t, credClient.deleteCalled, "DeleteSecret should not be called when OCID is empty")
 }
 
-// TestDelete_SecretError verifies Delete tolerates secret-deletion errors.
-func TestDelete_SecretError(t *testing.T) {
+// TestDelete_SecretNotFound verifies Delete ignores missing queue secrets.
+func TestDelete_SecretNotFound(t *testing.T) {
 	credClient := &fakeCredentialClient{
-		deleteSecretFn: func(_ context.Context, _, _ string) (bool, error) {
-			return false, errors.New("secret not found")
+		getSecretFn: func(_ context.Context, _, _ string) (map[string][]byte, error) {
+			return nil, apierrors.NewNotFound(corev1.Resource("secret"), "test-queue")
 		},
 	}
-	mgr := NewOciQueueServiceManager(emptyProvider(), credClient, nil, defaultLog())
+	fake := &fakeQueueAdminClient{
+		getQueueFn: func(_ context.Context, _ ociqueue.GetQueueRequest) (ociqueue.GetQueueResponse, error) {
+			return ociqueue.GetQueueResponse{
+				Queue: ociqueue.Queue{
+					Id:             common.String("ocid1.queue.oc1..xxx"),
+					DisplayName:    common.String("test-queue"),
+					LifecycleState: ociqueue.QueueLifecycleStateDeleted,
+				},
+			}, nil
+		},
+	}
+	mgr := mgrWithFake(credClient, fake)
 
 	q := &ociv1beta1.OciQueue{}
 	q.Name = "test-queue"
 	q.Namespace = "default"
 	q.Status.OsokStatus.Ocid = "ocid1.queue.oc1..xxx"
 
-	// The OCI API call will fail with invalid config, but we exercise the path.
-	_, _ = mgr.Delete(context.Background(), q)
+	done, err := mgr.Delete(context.Background(), q)
+	assert.NoError(t, err)
+	assert.True(t, done)
+	assert.False(t, credClient.deleteCalled, "DeleteSecret should not be called when the secret is already missing")
+}
+
+// TestDelete_SecretError verifies Delete still fails for non-NotFound secret errors.
+func TestDelete_SecretError(t *testing.T) {
+	credClient := &fakeCredentialClient{
+		getSecretFn: func(_ context.Context, _, _ string) (map[string][]byte, error) {
+			return servicemanager.AddManagedSecretData(map[string][]byte{}, "OciQueue", "test-queue"), nil
+		},
+		deleteSecretFn: func(_ context.Context, _, _ string) (bool, error) {
+			return false, errors.New("secret delete failed")
+		},
+	}
+	fake := &fakeQueueAdminClient{
+		getQueueFn: func(_ context.Context, _ ociqueue.GetQueueRequest) (ociqueue.GetQueueResponse, error) {
+			return ociqueue.GetQueueResponse{
+				Queue: ociqueue.Queue{
+					Id:             common.String("ocid1.queue.oc1..xxx"),
+					DisplayName:    common.String("test-queue"),
+					LifecycleState: ociqueue.QueueLifecycleStateDeleted,
+				},
+			}, nil
+		},
+	}
+	mgr := mgrWithFake(credClient, fake)
+
+	q := &ociv1beta1.OciQueue{}
+	q.Name = "test-queue"
+	q.Namespace = "default"
+	q.Status.OsokStatus.Ocid = "ocid1.queue.oc1..xxx"
+
+	done, err := mgr.Delete(context.Background(), q)
+	assert.Error(t, err)
+	assert.False(t, done)
 }
 
 // TestDelete_WithFakeClient verifies Delete calls DeleteQueue and then DeleteSecret.
 func TestDelete_WithFakeClient(t *testing.T) {
-	credClient := &fakeCredentialClient{}
-	fake := &fakeQueueAdminClient{}
+	credClient := &fakeCredentialClient{
+		getSecretFn: func(_ context.Context, _, _ string) (map[string][]byte, error) {
+			return servicemanager.AddManagedSecretData(map[string][]byte{}, "OciQueue", "test-queue"), nil
+		},
+	}
+	fake := &fakeQueueAdminClient{
+		getQueueFn: func(_ context.Context, _ ociqueue.GetQueueRequest) (ociqueue.GetQueueResponse, error) {
+			return ociqueue.GetQueueResponse{
+				Queue: ociqueue.Queue{
+					Id:             common.String("ocid1.queue.oc1..xxx"),
+					DisplayName:    common.String("test-queue"),
+					LifecycleState: ociqueue.QueueLifecycleStateDeleted,
+				},
+			}, nil
+		},
+	}
 	mgr := mgrWithFake(credClient, fake)
 
 	q := &ociv1beta1.OciQueue{}
@@ -235,6 +312,40 @@ func TestDelete_WithFakeClient(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, done)
 	assert.True(t, credClient.deleteCalled, "DeleteSecret should be called after DeleteQueue")
+}
+
+func TestDelete_UsesSpecQueueIDWhenStatusIsEmpty(t *testing.T) {
+	var deletedID string
+	credClient := &fakeCredentialClient{
+		getSecretFn: func(_ context.Context, _, _ string) (map[string][]byte, error) {
+			return nil, apierrors.NewNotFound(corev1.Resource("secret"), "test-queue")
+		},
+	}
+	fake := &fakeQueueAdminClient{
+		deleteQueueFn: func(_ context.Context, req ociqueue.DeleteQueueRequest) (ociqueue.DeleteQueueResponse, error) {
+			deletedID = *req.QueueId
+			return ociqueue.DeleteQueueResponse{}, nil
+		},
+		getQueueFn: func(_ context.Context, req ociqueue.GetQueueRequest) (ociqueue.GetQueueResponse, error) {
+			return ociqueue.GetQueueResponse{}, fakeServiceError{
+				statusCode: 404,
+				code:       "NotFound",
+				message:    *req.QueueId,
+			}
+		},
+	}
+	mgr := mgrWithFake(credClient, fake)
+
+	q := &ociv1beta1.OciQueue{}
+	q.Name = "test-queue"
+	q.Namespace = "default"
+	q.Spec.QueueId = "ocid1.queue.oc1..spec-only"
+
+	done, err := mgr.Delete(context.Background(), q)
+	assert.NoError(t, err)
+	assert.True(t, done)
+	assert.Equal(t, "ocid1.queue.oc1..spec-only", deletedID)
+	assert.False(t, credClient.deleteCalled, "DeleteSecret should be skipped when the secret is already missing")
 }
 
 // ---------------------------------------------------------------------------
@@ -704,6 +815,9 @@ func TestCreateOrUpdate_SecretAlreadyExists(t *testing.T) {
 	credClient := &fakeCredentialClient{
 		createSecretFn: func(_ context.Context, _, _ string, _ map[string]string, _ map[string][]byte) (bool, error) {
 			return false, apierrors.NewAlreadyExists(schema.GroupResource{}, "already-queue")
+		},
+		getSecretFn: func(_ context.Context, _, _ string) (map[string][]byte, error) {
+			return servicemanager.AddManagedSecretData(map[string][]byte{}, "OciQueue", "already-queue"), nil
 		},
 	}
 	mgr := mgrWithFake(credClient, fake)

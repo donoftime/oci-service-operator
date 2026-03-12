@@ -1,0 +1,18 @@
+@startuml
+title Functions Application Reconcile Model
+
+[*] --> Ready : ACTIVE
+[*] --> Retryable : CREATING / UPDATING / DELETING
+[*] --> Failed : FAILED / DELETED
+
+Retryable : requeue required
+
+Ready --> Retryable : OCI enters nonterminal state
+Retryable --> Ready : lifecycle becomes ACTIVE
+Retryable --> Failed : lifecycle becomes FAILED or DELETED
+Ready --> Deleting : delete requested
+Retryable --> Deleting : delete requested
+Failed --> Deleting : delete requested
+Deleting --> Deleted : resource gone, finalizer removed
+
+@enduml

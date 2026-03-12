@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	ociqueue "github.com/oracle/oci-go-sdk/v65/queue"
+	"github.com/oracle/oci-service-operator/pkg/servicemanager"
 )
 
 func (c *OciQueueServiceManager) addToSecret(ctx context.Context, namespace string, queueName string,
@@ -19,7 +20,7 @@ func (c *OciQueueServiceManager) addToSecret(ctx context.Context, namespace stri
 	credMap := getCredentialMap(q)
 
 	c.Log.InfoLog(fmt.Sprintf("Creating secret for OciQueue %s in namespace %s", queueName, namespace))
-	return c.CredentialClient.CreateSecret(ctx, queueName, namespace, nil, credMap)
+	return servicemanager.EnsureOwnedSecret(ctx, c.CredentialClient, queueName, namespace, "OciQueue", queueName, credMap)
 }
 
 func getCredentialMap(q ociqueue.Queue) map[string][]byte {

@@ -173,6 +173,11 @@ func TestDelete_Success(t *testing.T) {
 			assert.Equal(t, "ocid1.dataflowapplication.oc1..xxx", *req.ApplicationId)
 			return ocidataflow.DeleteApplicationResponse{}, nil
 		},
+		getApplicationFn: func(_ context.Context, _ ocidataflow.GetApplicationRequest) (ocidataflow.GetApplicationResponse, error) {
+			return ocidataflow.GetApplicationResponse{
+				Application: makeExistingApplication("ocid1.dataflowapplication.oc1..xxx", "test-app", ocidataflow.ApplicationLifecycleStateDeleted),
+			}, nil
+		},
 	}
 	mgr := mgrWithFake(fake)
 
@@ -187,6 +192,9 @@ func TestDelete_NotFound(t *testing.T) {
 	fake := &fakeDataFlowClient{
 		deleteApplicationFn: func(_ context.Context, _ ocidataflow.DeleteApplicationRequest) (ocidataflow.DeleteApplicationResponse, error) {
 			return ocidataflow.DeleteApplicationResponse{}, errors.New("404 NotFound")
+		},
+		getApplicationFn: func(_ context.Context, _ ocidataflow.GetApplicationRequest) (ocidataflow.GetApplicationResponse, error) {
+			return ocidataflow.GetApplicationResponse{}, errors.New("404 NotFound")
 		},
 	}
 	mgr := mgrWithFake(fake)
@@ -248,6 +256,11 @@ func TestCreateOrUpdate_CreateNew(t *testing.T) {
 					DisplayName:    common.String("test-app"),
 					LifecycleState: ocidataflow.ApplicationLifecycleStateActive,
 				},
+			}, nil
+		},
+		getApplicationFn: func(_ context.Context, _ ocidataflow.GetApplicationRequest) (ocidataflow.GetApplicationResponse, error) {
+			return ocidataflow.GetApplicationResponse{
+				Application: makeExistingApplication(appID, "test-app", ocidataflow.ApplicationLifecycleStateActive),
 			}, nil
 		},
 	}
@@ -339,6 +352,11 @@ func TestCreateOrUpdate_ListFindsExisting(t *testing.T) {
 						LifecycleState: ocidataflow.ApplicationLifecycleStateActive,
 					},
 				},
+			}, nil
+		},
+		getApplicationFn: func(_ context.Context, _ ocidataflow.GetApplicationRequest) (ocidataflow.GetApplicationResponse, error) {
+			return ocidataflow.GetApplicationResponse{
+				Application: makeExistingApplication(appID, "test-app", ocidataflow.ApplicationLifecycleStateActive),
 			}, nil
 		},
 	}

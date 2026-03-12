@@ -7,7 +7,7 @@ package objectstorage
 
 // GetCredentialMapForTest exports getCredentialMap for unit testing.
 func GetCredentialMapForTest(namespace, bucketName string) map[string][]byte {
-	return getCredentialMap(namespace, bucketName)
+	return getCredentialMap(namespace, bucketName, "")
 }
 
 // ExportSetClientForTest sets the OCI client on the service manager for unit testing.

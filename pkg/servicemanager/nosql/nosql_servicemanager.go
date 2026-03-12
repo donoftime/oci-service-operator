@@ -19,7 +19,6 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/loggerutil"
 	"github.com/oracle/oci-service-operator/pkg/servicemanager"
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 
@@ -111,11 +110,6 @@ func (c *NoSQLDatabaseServiceManager) CreateOrUpdate(ctx context.Context, obj ru
 		}
 
 		db.Status.OsokStatus.Ocid = ociv1beta1.OCID(*tableInstance.Id)
-		db.Status.OsokStatus = util.UpdateOSOKStatusCondition(db.Status.OsokStatus,
-			ociv1beta1.Active, v1.ConditionTrue, "",
-			fmt.Sprintf("NoSQL table %s is %s", *tableInstance.Name, tableInstance.LifecycleState), c.Log)
-		c.Log.InfoLog(fmt.Sprintf("NoSQL table %s is %s", *tableInstance.Name, tableInstance.LifecycleState))
-
 	} else {
 		// Bind to an existing table by ID
 		tableInstance, err = c.GetTable(ctx, db.Spec.TableId, nil)
@@ -124,31 +118,14 @@ func (c *NoSQLDatabaseServiceManager) CreateOrUpdate(ctx context.Context, obj ru
 			return servicemanager.OSOKResponse{IsSuccessful: false}, err
 		}
 
+		db.Status.OsokStatus.Ocid = db.Spec.TableId
 		if err = c.UpdateTable(ctx, db); err != nil {
 			c.Log.ErrorLog(err, "Error while updating NoSQL table")
 			return servicemanager.OSOKResponse{IsSuccessful: false}, err
 		}
-
-		db.Status.OsokStatus = util.UpdateOSOKStatusCondition(db.Status.OsokStatus,
-			ociv1beta1.Active, v1.ConditionTrue, "", "NoSQL table Bound/Updated", c.Log)
-		c.Log.InfoLog(fmt.Sprintf("NoSQL table %s is bound/updated", *tableInstance.Name))
 	}
 
-	db.Status.OsokStatus.Ocid = ociv1beta1.OCID(*tableInstance.Id)
-	if db.Status.OsokStatus.CreatedAt == nil {
-		now := metav1.NewTime(time.Now())
-		db.Status.OsokStatus.CreatedAt = &now
-	}
-
-	if tableInstance.LifecycleState == nosql.TableLifecycleStateFailed {
-		db.Status.OsokStatus = util.UpdateOSOKStatusCondition(db.Status.OsokStatus,
-			ociv1beta1.Failed, v1.ConditionFalse, "",
-			fmt.Sprintf("NoSQL table %s creation Failed", *tableInstance.Name), c.Log)
-		c.Log.InfoLog(fmt.Sprintf("NoSQL table %s creation Failed", *tableInstance.Name))
-		return servicemanager.OSOKResponse{IsSuccessful: false}, nil
-	}
-
-	return servicemanager.OSOKResponse{IsSuccessful: true}, nil
+	return reconcileLifecycleStatus(&db.Status.OsokStatus, tableInstance, c.Log), nil
 }
 
 // Delete handles deletion of the NoSQL table (called by the finalizer).
@@ -159,17 +136,28 @@ func (c *NoSQLDatabaseServiceManager) Delete(ctx context.Context, obj runtime.Ob
 	}
 
 	if db.Status.OsokStatus.Ocid == "" {
-		c.Log.InfoLog("NoSQL table has no OCID, nothing to delete")
-		return true, nil
+		if db.Spec.TableId == "" {
+			c.Log.InfoLog("NoSQL table has no OCID, nothing to delete")
+			return true, nil
+		}
+		db.Status.OsokStatus.Ocid = db.Spec.TableId
+	}
+
+	if _, err := c.GetTable(ctx, db.Status.OsokStatus.Ocid, nil); err != nil {
+		if isNotFoundServiceError(err) {
+			return true, nil
+		}
+		c.Log.ErrorLog(err, "Error while getting NoSQL table during delete")
+		return false, err
 	}
 
 	c.Log.InfoLog(fmt.Sprintf("Deleting NoSQL table %s", db.Status.OsokStatus.Ocid))
-	if err := c.DeleteTable(ctx, db.Status.OsokStatus.Ocid); err != nil {
+	if err := c.DeleteTable(ctx, db.Status.OsokStatus.Ocid); err != nil && !isNotFoundServiceError(err) {
 		c.Log.ErrorLog(err, "Error while deleting NoSQL table")
 		return false, err
 	}
 
-	return true, nil
+	return false, nil
 }
 
 // GetCrdStatus returns the OSOK status from the resource.

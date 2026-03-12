@@ -174,7 +174,12 @@ func (c *PostgresDbSystemServiceManager) UpdatePostgresDbSystem(ctx context.Cont
 	updateDetails := psql.UpdateDbSystemDetails{}
 	updateNeeded := false
 
-	existing, err := c.GetPostgresDbSystem(ctx, dbSystem.Status.OsokStatus.Ocid)
+	targetID, err := resolveDbSystemID(dbSystem.Status.OsokStatus.Ocid, dbSystem.Spec.PostgresDbSystemId)
+	if err != nil {
+		return err
+	}
+
+	existing, err := c.GetPostgresDbSystem(ctx, targetID)
 	if err != nil {
 		return err
 	}
@@ -194,7 +199,7 @@ func (c *PostgresDbSystemServiceManager) UpdatePostgresDbSystem(ctx context.Cont
 	}
 
 	req := psql.UpdateDbSystemRequest{
-		DbSystemId:            common.String(string(dbSystem.Status.OsokStatus.Ocid)),
+		DbSystemId:            common.String(string(targetID)),
 		UpdateDbSystemDetails: updateDetails,
 	}
 

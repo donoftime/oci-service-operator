@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	"github.com/oracle/oci-go-sdk/v65/redis"
@@ -20,7 +19,6 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/servicemanager"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 
@@ -102,12 +100,6 @@ func (c *RedisClusterServiceManager) CreateOrUpdate(ctx context.Context, obj run
 			}
 		}
 
-		cluster.Status.OsokStatus.Ocid = ociv1beta1.OCID(*clusterInstance.Id)
-		cluster.Status.OsokStatus = util.UpdateOSOKStatusCondition(cluster.Status.OsokStatus,
-			ociv1beta1.Active, v1.ConditionTrue, "",
-			fmt.Sprintf("RedisCluster %s is %s", *clusterInstance.DisplayName, clusterInstance.LifecycleState), c.Log)
-		c.Log.InfoLog(fmt.Sprintf("RedisCluster %s is %s", *clusterInstance.DisplayName, clusterInstance.LifecycleState))
-
 	} else {
 		// Bind to an existing cluster by ID
 		clusterInstance, err = c.GetRedisCluster(ctx, cluster.Spec.RedisClusterId, nil)
@@ -120,24 +112,11 @@ func (c *RedisClusterServiceManager) CreateOrUpdate(ctx context.Context, obj run
 			c.Log.ErrorLog(err, "Error while updating RedisCluster")
 			return servicemanager.OSOKResponse{IsSuccessful: false}, err
 		}
-
-		cluster.Status.OsokStatus = util.UpdateOSOKStatusCondition(cluster.Status.OsokStatus,
-			ociv1beta1.Active, v1.ConditionTrue, "", "RedisCluster Bound/Updated", c.Log)
-		c.Log.InfoLog(fmt.Sprintf("RedisCluster %s is bound/updated", *clusterInstance.DisplayName))
 	}
 
-	cluster.Status.OsokStatus.Ocid = ociv1beta1.OCID(*clusterInstance.Id)
-	if cluster.Status.OsokStatus.CreatedAt == nil {
-		now := metav1.NewTime(time.Now())
-		cluster.Status.OsokStatus.CreatedAt = &now
-	}
-
-	if clusterInstance.LifecycleState == redis.RedisClusterLifecycleStateFailed {
-		cluster.Status.OsokStatus = util.UpdateOSOKStatusCondition(cluster.Status.OsokStatus,
-			ociv1beta1.Failed, v1.ConditionFalse, "",
-			fmt.Sprintf("RedisCluster %s creation Failed", *clusterInstance.DisplayName), c.Log)
-		c.Log.InfoLog(fmt.Sprintf("RedisCluster %s creation Failed", *clusterInstance.DisplayName))
-		return servicemanager.OSOKResponse{IsSuccessful: false}, nil
+	response := reconcileLifecycleStatus(&cluster.Status.OsokStatus, clusterInstance, c.Log)
+	if !response.IsSuccessful {
+		return response, nil
 	}
 
 	_, err = c.addToSecret(ctx, cluster.Namespace, cluster.Name, *clusterInstance)
@@ -149,7 +128,7 @@ func (c *RedisClusterServiceManager) CreateOrUpdate(ctx context.Context, obj run
 		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
-	return servicemanager.OSOKResponse{IsSuccessful: true}, nil
+	return response, nil
 }
 
 // Delete handles deletion of the Redis cluster (called by the finalizer).
@@ -159,22 +138,41 @@ func (c *RedisClusterServiceManager) Delete(ctx context.Context, obj runtime.Obj
 		return false, err
 	}
 
-	if cluster.Status.OsokStatus.Ocid == "" {
+	targetID, err := resolveClusterID(cluster.Status.OsokStatus.Ocid, cluster.Spec.RedisClusterId)
+	if err != nil {
 		c.Log.InfoLog("RedisCluster has no OCID, nothing to delete")
 		return true, nil
 	}
 
-	c.Log.InfoLog(fmt.Sprintf("Deleting RedisCluster %s", cluster.Status.OsokStatus.Ocid))
-	if err := c.DeleteRedisCluster(ctx, cluster.Status.OsokStatus.Ocid); err != nil {
+	c.Log.InfoLog(fmt.Sprintf("Deleting RedisCluster %s", targetID))
+	if err := c.DeleteRedisCluster(ctx, targetID); err != nil {
+		if isNotFoundServiceError(err) {
+			return true, nil
+		}
 		c.Log.ErrorLog(err, "Error while deleting RedisCluster")
 		return false, err
 	}
 
-	if _, err := c.CredentialClient.DeleteSecret(ctx, cluster.Name, cluster.Namespace); err != nil {
-		c.Log.ErrorLog(err, "Error while deleting RedisCluster secret")
+	clusterInstance, err := c.GetRedisCluster(ctx, targetID, nil)
+	if err != nil {
+		if isNotFoundServiceError(err) {
+			if _, err := servicemanager.DeleteOwnedSecretIfPresent(ctx, c.CredentialClient, cluster.Name, cluster.Namespace, "RedisCluster", cluster.Name); err != nil {
+				c.Log.ErrorLog(err, "Error while deleting RedisCluster secret")
+				return false, err
+			}
+			return true, nil
+		}
+		return false, err
+	}
+	if clusterInstance.LifecycleState == redis.RedisClusterLifecycleStateDeleted {
+		if _, err := servicemanager.DeleteOwnedSecretIfPresent(ctx, c.CredentialClient, cluster.Name, cluster.Namespace, "RedisCluster", cluster.Name); err != nil {
+			c.Log.ErrorLog(err, "Error while deleting RedisCluster secret")
+			return false, err
+		}
+		return true, nil
 	}
 
-	return true, nil
+	return false, nil
 }
 
 // GetCrdStatus returns the OSOK status from the resource.

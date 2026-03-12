@@ -8,6 +8,7 @@ package networking_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
@@ -18,6 +19,20 @@ import (
 	"github.com/stretchr/testify/assert"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
+
+type fakeServiceError struct {
+	statusCode int
+	code       string
+	message    string
+}
+
+func (f *fakeServiceError) Error() string          { return f.message }
+func (f *fakeServiceError) GetHTTPStatusCode() int { return f.statusCode }
+func (f *fakeServiceError) GetMessage() string     { return f.message }
+func (f *fakeServiceError) GetCode() string        { return f.code }
+func (f *fakeServiceError) GetOpcRequestID() string {
+	return "opc-request-id"
+}
 
 // ---------------------------------------------------------------------------
 // fakeVirtualNetworkClient — implements VirtualNetworkClientInterface for testing.
@@ -89,6 +104,9 @@ func (f *fakeVirtualNetworkClient) GetVcn(ctx context.Context, req ocicore.GetVc
 	if f.getVcnFn != nil {
 		return f.getVcnFn(ctx, req)
 	}
+	if req.VcnId != nil && strings.Contains(*req.VcnId, ".del") {
+		return ocicore.GetVcnResponse{}, &fakeServiceError{statusCode: 404, code: "NotFound", message: "not found"}
+	}
 	return ocicore.GetVcnResponse{}, nil
 }
 
@@ -123,6 +141,9 @@ func (f *fakeVirtualNetworkClient) CreateSubnet(ctx context.Context, req ocicore
 func (f *fakeVirtualNetworkClient) GetSubnet(ctx context.Context, req ocicore.GetSubnetRequest) (ocicore.GetSubnetResponse, error) {
 	if f.getSubnetFn != nil {
 		return f.getSubnetFn(ctx, req)
+	}
+	if req.SubnetId != nil && strings.Contains(*req.SubnetId, ".del") {
+		return ocicore.GetSubnetResponse{}, &fakeServiceError{statusCode: 404, code: "NotFound", message: "not found"}
 	}
 	return ocicore.GetSubnetResponse{}, nil
 }
@@ -161,6 +182,9 @@ func (f *fakeVirtualNetworkClient) GetInternetGateway(ctx context.Context, req o
 	if f.getInternetGatewayFn != nil {
 		return f.getInternetGatewayFn(ctx, req)
 	}
+	if req.IgId != nil && strings.Contains(*req.IgId, ".del") {
+		return ocicore.GetInternetGatewayResponse{}, &fakeServiceError{statusCode: 404, code: "NotFound", message: "not found"}
+	}
 	return ocicore.GetInternetGatewayResponse{}, nil
 }
 
@@ -197,6 +221,9 @@ func (f *fakeVirtualNetworkClient) CreateNatGateway(ctx context.Context, req oci
 func (f *fakeVirtualNetworkClient) GetNatGateway(ctx context.Context, req ocicore.GetNatGatewayRequest) (ocicore.GetNatGatewayResponse, error) {
 	if f.getNatGatewayFn != nil {
 		return f.getNatGatewayFn(ctx, req)
+	}
+	if req.NatGatewayId != nil && strings.Contains(*req.NatGatewayId, ".del") {
+		return ocicore.GetNatGatewayResponse{}, &fakeServiceError{statusCode: 404, code: "NotFound", message: "not found"}
 	}
 	return ocicore.GetNatGatewayResponse{}, nil
 }
@@ -235,6 +262,9 @@ func (f *fakeVirtualNetworkClient) GetServiceGateway(ctx context.Context, req oc
 	if f.getServiceGatewayFn != nil {
 		return f.getServiceGatewayFn(ctx, req)
 	}
+	if req.ServiceGatewayId != nil && strings.Contains(*req.ServiceGatewayId, ".del") {
+		return ocicore.GetServiceGatewayResponse{}, &fakeServiceError{statusCode: 404, code: "NotFound", message: "not found"}
+	}
 	return ocicore.GetServiceGatewayResponse{}, nil
 }
 
@@ -271,6 +301,9 @@ func (f *fakeVirtualNetworkClient) CreateDrg(ctx context.Context, req ocicore.Cr
 func (f *fakeVirtualNetworkClient) GetDrg(ctx context.Context, req ocicore.GetDrgRequest) (ocicore.GetDrgResponse, error) {
 	if f.getDrgFn != nil {
 		return f.getDrgFn(ctx, req)
+	}
+	if req.DrgId != nil && strings.Contains(*req.DrgId, ".del") {
+		return ocicore.GetDrgResponse{}, &fakeServiceError{statusCode: 404, code: "NotFound", message: "not found"}
 	}
 	return ocicore.GetDrgResponse{}, nil
 }
@@ -309,6 +342,9 @@ func (f *fakeVirtualNetworkClient) GetSecurityList(ctx context.Context, req ocic
 	if f.getSecurityListFn != nil {
 		return f.getSecurityListFn(ctx, req)
 	}
+	if req.SecurityListId != nil && strings.Contains(*req.SecurityListId, ".del") {
+		return ocicore.GetSecurityListResponse{}, &fakeServiceError{statusCode: 404, code: "NotFound", message: "not found"}
+	}
 	return ocicore.GetSecurityListResponse{}, nil
 }
 
@@ -346,6 +382,9 @@ func (f *fakeVirtualNetworkClient) GetNetworkSecurityGroup(ctx context.Context, 
 	if f.getNetworkSecurityGroupFn != nil {
 		return f.getNetworkSecurityGroupFn(ctx, req)
 	}
+	if req.NetworkSecurityGroupId != nil && strings.Contains(*req.NetworkSecurityGroupId, ".del") {
+		return ocicore.GetNetworkSecurityGroupResponse{}, &fakeServiceError{statusCode: 404, code: "NotFound", message: "not found"}
+	}
 	return ocicore.GetNetworkSecurityGroupResponse{}, nil
 }
 
@@ -382,6 +421,9 @@ func (f *fakeVirtualNetworkClient) CreateRouteTable(ctx context.Context, req oci
 func (f *fakeVirtualNetworkClient) GetRouteTable(ctx context.Context, req ocicore.GetRouteTableRequest) (ocicore.GetRouteTableResponse, error) {
 	if f.getRouteTableFn != nil {
 		return f.getRouteTableFn(ctx, req)
+	}
+	if req.RtId != nil && strings.Contains(*req.RtId, ".del") {
+		return ocicore.GetRouteTableResponse{}, &fakeServiceError{statusCode: 404, code: "NotFound", message: "not found"}
 	}
 	return ocicore.GetRouteTableResponse{}, nil
 }
@@ -549,6 +591,7 @@ func TestVcn_CreateOrUpdate_NoId_NotFound_Provisioning(t *testing.T) {
 	resp, err := mgr.CreateOrUpdate(context.Background(), v, ctrl.Request{})
 	assert.NoError(t, err)
 	assert.False(t, resp.IsSuccessful, "PROVISIONING VCN should cause requeue")
+	assert.True(t, resp.ShouldRequeue)
 }
 
 // ---------------------------------------------------------------------------
@@ -617,6 +660,7 @@ func TestVcn_CreateOrUpdate_NoId_FoundByDisplayName_Provisioning(t *testing.T) {
 	resp, err := mgr.CreateOrUpdate(context.Background(), v, ctrl.Request{})
 	assert.NoError(t, err)
 	assert.False(t, resp.IsSuccessful, "PROVISIONING VCN found by display name should requeue")
+	assert.True(t, resp.ShouldRequeue)
 }
 
 // ---------------------------------------------------------------------------
@@ -843,6 +887,7 @@ func TestSubnet_CreateOrUpdate_NoId_NotFound_Provisioning(t *testing.T) {
 	resp, err := mgr.CreateOrUpdate(context.Background(), s, ctrl.Request{})
 	assert.NoError(t, err)
 	assert.False(t, resp.IsSuccessful, "PROVISIONING subnet should cause requeue")
+	assert.True(t, resp.ShouldRequeue)
 }
 
 // ---------------------------------------------------------------------------
@@ -915,6 +960,7 @@ func TestSubnet_CreateOrUpdate_NoId_FoundByDisplayName_Provisioning(t *testing.T
 	resp, err := mgr.CreateOrUpdate(context.Background(), s, ctrl.Request{})
 	assert.NoError(t, err)
 	assert.False(t, resp.IsSuccessful, "PROVISIONING subnet found by display name should requeue")
+	assert.True(t, resp.ShouldRequeue)
 }
 
 // ---------------------------------------------------------------------------

@@ -23,7 +23,7 @@ type DbSystemServiceClient interface {
 
 	GetDbSystem(ctx context.Context, request mysql.GetDbSystemRequest) (mysql.GetDbSystemResponse, error)
 
-	DeleteMySqlDbSystem() (string, error)
+	DeleteMySqlDbSystem(ctx context.Context, dbSystemId ociv1beta1.OCID) error
 
 	servicemanager.OSOKServiceManager
 }
@@ -34,6 +34,7 @@ type MySQLDbSystemClientInterface interface {
 	ListDbSystems(ctx context.Context, request mysql.ListDbSystemsRequest) (mysql.ListDbSystemsResponse, error)
 	GetDbSystem(ctx context.Context, request mysql.GetDbSystemRequest) (mysql.GetDbSystemResponse, error)
 	UpdateDbSystem(ctx context.Context, request mysql.UpdateDbSystemRequest) (mysql.UpdateDbSystemResponse, error)
+	DeleteDbSystem(ctx context.Context, request mysql.DeleteDbSystemRequest) (mysql.DeleteDbSystemResponse, error)
 }
 
 func getDbSystemClient(provider common.ConfigurationProvider) mysql.DbSystemClient {
@@ -161,8 +162,15 @@ func (c *DbSystemServiceManager) GetMySqlDbSystemOcid(ctx context.Context, dbSys
 	//return nil, nil
 }
 
-func (c *DbSystemServiceManager) DeleteMySqlDbSystem() (string, error) {
-	return "", nil
+func (c *DbSystemServiceManager) DeleteMySqlDbSystem(ctx context.Context, dbSystemId ociv1beta1.OCID) error {
+	dbClient := c.getOCIClient()
+
+	req := mysql.DeleteDbSystemRequest{
+		DbSystemId: common.String(string(dbSystemId)),
+	}
+
+	_, err := dbClient.DeleteDbSystem(ctx, req)
+	return err
 }
 
 // GetMySqlDbSystem Sync the MySqlDbSystem details

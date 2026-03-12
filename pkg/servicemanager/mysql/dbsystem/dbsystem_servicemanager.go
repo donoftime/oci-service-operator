@@ -20,7 +20,6 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/util"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"reflect"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -125,11 +124,6 @@ func (c *DbSystemServiceManager) CreateOrUpdate(ctx context.Context, obj runtime
 
 			}
 		}
-		mysqlDbSystem.Status.OsokStatus = util.UpdateOSOKStatusCondition(mysqlDbSystem.Status.OsokStatus,
-			ociv1beta1.Active, v1.ConditionTrue, "",
-			fmt.Sprintf("MySqlDbSystem %s is %s", *mySqlDbSystemInstance.DisplayName, mySqlDbSystemInstance.LifecycleState), c.Log)
-		c.Log.InfoLog(fmt.Sprintf("MySqlDbSystem %s is %s", *mySqlDbSystemInstance.DisplayName, mySqlDbSystemInstance.LifecycleState))
-
 	} else {
 		// Bind CRD with an existing MySql instance
 		mySqlDbSystemInstance, err = c.GetMySqlDbSystem(ctx, mysqlDbSystem.Spec.MySqlDbSystemId, nil)
@@ -143,30 +137,19 @@ func (c *DbSystemServiceManager) CreateOrUpdate(ctx context.Context, obj runtime
 				c.Log.ErrorLog(err, "Error while updating MysqlDbSystem")
 				return servicemanager.OSOKResponse{IsSuccessful: false}, err
 			}
-			mysqlDbSystem.Status.OsokStatus = util.UpdateOSOKStatusCondition(mysqlDbSystem.Status.OsokStatus,
-				ociv1beta1.Active, v1.ConditionTrue, "", "MysqlDbSystem update success", c.Log)
 			c.Log.InfoLog(fmt.Sprintf("MySqlDbSystem %s is updated successfully", *mySqlDbSystemInstance.DisplayName))
 		} else {
-			mysqlDbSystem.Status.OsokStatus = util.UpdateOSOKStatusCondition(mysqlDbSystem.Status.OsokStatus,
-				ociv1beta1.Active, v1.ConditionTrue, "", "MysqlDbSystem Bound success", c.Log)
 			c.Log.InfoLog(fmt.Sprintf("MysqlDbSystem %s is bound successfully", *mySqlDbSystemInstance.DisplayName))
-
 		}
 
 	}
 
-	mysqlDbSystem.Status.OsokStatus.Ocid = ociv1beta1.OCID(*mySqlDbSystemInstance.Id)
-	if mysqlDbSystem.Status.OsokStatus.CreatedAt != nil {
-		now := metav1.NewTime(time.Now())
-		mysqlDbSystem.Status.OsokStatus.CreatedAt = &now
+	lifecycleResponse := reconcileLifecycleStatus(&mysqlDbSystem.Status.OsokStatus, mySqlDbSystemInstance, c.Log)
+	if !lifecycleResponse.IsSuccessful {
+		return lifecycleResponse, nil
 	}
 
-	if mySqlDbSystemInstance.LifecycleState == "FAILED" {
-		mysqlDbSystem.Status.OsokStatus = util.UpdateOSOKStatusCondition(mysqlDbSystem.Status.OsokStatus,
-			ociv1beta1.Failed, v1.ConditionFalse, "",
-			fmt.Sprintf("MySqlDbSystem %s creation Failed", *mySqlDbSystemInstance.DisplayName), c.Log)
-		c.Log.InfoLog(fmt.Sprintf("MySqlDbSystem %s creation Failed", *mySqlDbSystemInstance.DisplayName))
-	} else if mySqlDbSystemInstance.LifecycleState == "ACTIVE" {
+	if mySqlDbSystemInstance.LifecycleState == mysql.DbSystemLifecycleStateActive {
 		_, err := c.addToSecret(ctx, mysqlDbSystem.Namespace, mysqlDbSystem.Name, *mySqlDbSystemInstance)
 		if err != nil {
 			if apierrors.IsAlreadyExists(err) {
@@ -175,11 +158,6 @@ func (c *DbSystemServiceManager) CreateOrUpdate(ctx context.Context, obj runtime
 			c.Log.InfoLog(fmt.Sprintf("Secret creation failed"))
 			return servicemanager.OSOKResponse{IsSuccessful: false}, err
 		}
-	} else {
-		mysqlDbSystem.Status.OsokStatus = util.UpdateOSOKStatusCondition(mysqlDbSystem.Status.OsokStatus,
-			ociv1beta1.Provisioning, v1.ConditionTrue, "",
-			fmt.Sprintf("MySqlDbSystem %s is %s", *mySqlDbSystemInstance.DisplayName, mySqlDbSystemInstance.LifecycleState), c.Log)
-		return servicemanager.OSOKResponse{IsSuccessful: false}, fmt.Errorf("MySqlDbSystem %s is %s, waiting for ACTIVE", *mySqlDbSystemInstance.DisplayName, mySqlDbSystemInstance.LifecycleState)
 	}
 
 	return servicemanager.OSOKResponse{IsSuccessful: true}, nil
@@ -202,7 +180,33 @@ func isValidUpdate(dbSystem ociv1beta1.MySqlDbSystem, mySqlDbInstance mysql.DbSy
 }
 
 func (c *DbSystemServiceManager) Delete(ctx context.Context, obj runtime.Object) (bool, error) {
-	return true, nil
+	mysqlDbSystem, err := c.convert(obj)
+	if err != nil {
+		return false, err
+	}
+
+	dbSystemID := mysqlDbSystem.Status.OsokStatus.Ocid
+	if dbSystemID == "" {
+		dbSystemID = mysqlDbSystem.Spec.MySqlDbSystemId
+	}
+	if dbSystemID == "" {
+		return true, nil
+	}
+
+	if _, err := c.GetMySqlDbSystem(ctx, dbSystemID, nil); err != nil {
+		if isNotFoundServiceError(err) {
+			if _, secretErr := c.deleteFromSecret(ctx, mysqlDbSystem.Namespace, mysqlDbSystem.Name); secretErr != nil {
+				c.Log.ErrorLog(secretErr, "Error while deleting MySqlDbSystem secret")
+			}
+			return true, nil
+		}
+		return false, err
+	}
+
+	if err := c.DeleteMySqlDbSystem(ctx, dbSystemID); err != nil && !isNotFoundServiceError(err) {
+		return false, err
+	}
+	return false, nil
 }
 
 func (c *DbSystemServiceManager) GetCrdStatus(obj runtime.Object) (*ociv1beta1.OSOKStatus, error) {

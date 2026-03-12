@@ -1,0 +1,18 @@
+@startuml
+title AutonomousDatabases Formal Lifecycle
+
+[*] --> Observed
+Observed --> Retryable : PROVISIONING, UPDATING
+Observed --> Active : AVAILABLE
+Observed --> Failed : FAILED, TERMINATED
+Active --> DeletePending : delete requested
+Retryable --> DeletePending : delete requested
+Failed --> DeletePending : delete requested
+DeletePending --> Deleted : finalizer removed after delete
+
+state Retryable
+state Active
+state Failed
+state DeletePending
+state Deleted
+@enduml

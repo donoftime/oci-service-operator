@@ -145,7 +145,12 @@ func (c *ComputeInstanceServiceManager) UpdateInstance(ctx context.Context, ci *
 		return err
 	}
 
-	existing, err := c.GetInstance(ctx, ci.Status.OsokStatus.Ocid, nil)
+	targetID, err := resolveInstanceID(ci.Status.OsokStatus.Ocid, ci.Spec.ComputeInstanceId)
+	if err != nil {
+		return err
+	}
+
+	existing, err := c.GetInstance(ctx, targetID, nil)
 	if err != nil {
 		return err
 	}
@@ -163,7 +168,7 @@ func (c *ComputeInstanceServiceManager) UpdateInstance(ctx context.Context, ci *
 	}
 
 	req := core.UpdateInstanceRequest{
-		InstanceId:            common.String(string(ci.Status.OsokStatus.Ocid)),
+		InstanceId:            common.String(string(targetID)),
 		UpdateInstanceDetails: updateDetails,
 	}
 

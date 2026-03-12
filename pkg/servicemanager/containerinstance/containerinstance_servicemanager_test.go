@@ -8,6 +8,7 @@ package containerinstance_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -19,6 +20,20 @@ import (
 	"github.com/stretchr/testify/assert"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
+
+type fakeServiceError struct {
+	statusCode int
+	code       string
+	message    string
+}
+
+func (f *fakeServiceError) GetHTTPStatusCode() int  { return f.statusCode }
+func (f *fakeServiceError) GetMessage() string      { return f.message }
+func (f *fakeServiceError) GetCode() string         { return f.code }
+func (f *fakeServiceError) GetOpcRequestID() string { return "" }
+func (f *fakeServiceError) Error() string {
+	return fmt.Sprintf("%d %s: %s", f.statusCode, f.code, f.message)
+}
 
 // fakeCredentialClient implements credhelper.CredentialClient for testing.
 type fakeCredentialClient struct {
@@ -385,7 +400,11 @@ func TestCreateOrUpdate_WithContainerInstanceId(t *testing.T) {
 
 // TestDelete_WithOcid verifies that deletion calls the OCI delete API when OCID is set.
 func TestDelete_WithOcid(t *testing.T) {
-	ociClient := &fakeOciClient{}
+	ociClient := &fakeOciClient{
+		getFn: func(_ context.Context, req ocicontainerinstances.GetContainerInstanceRequest) (ocicontainerinstances.GetContainerInstanceResponse, error) {
+			return ocicontainerinstances.GetContainerInstanceResponse{}, &fakeServiceError{statusCode: 404, code: "NotFound", message: *req.ContainerInstanceId}
+		},
+	}
 	mgr := newTestManager(ociClient)
 
 	ci := &ociv1beta1.ContainerInstance{}

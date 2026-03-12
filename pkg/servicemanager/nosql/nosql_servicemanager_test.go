@@ -713,6 +713,10 @@ func TestCreateOrUpdate_WithTableId_UpdateLimits(t *testing.T) {
 func TestDelete_WithOcid_Success(t *testing.T) {
 	deleteCalled := false
 	mock := &mockNosqlClient{
+		getFn: func(_ context.Context, req nosql.GetTableRequest) (nosql.GetTableResponse, error) {
+			assert.Equal(t, testTableOcid, *req.TableNameOrId)
+			return nosql.GetTableResponse{Table: makeActiveTable(testTableOcid, "my-table")}, nil
+		},
 		deleteFn: func(_ context.Context, req nosql.DeleteTableRequest) (nosql.DeleteTableResponse, error) {
 			deleteCalled = true
 			assert.Equal(t, testTableOcid, *req.TableNameOrId)
@@ -727,7 +731,7 @@ func TestDelete_WithOcid_Success(t *testing.T) {
 
 	done, err := mgr.Delete(context.Background(), db)
 	assert.NoError(t, err)
-	assert.True(t, done)
+	assert.False(t, done)
 	assert.True(t, deleteCalled)
 }
 
@@ -735,6 +739,10 @@ func TestDelete_WithOcid_Success(t *testing.T) {
 func TestDelete_WithOcid_Error(t *testing.T) {
 	deleteErr := errors.New("DeleteTable API error")
 	mock := &mockNosqlClient{
+		getFn: func(_ context.Context, req nosql.GetTableRequest) (nosql.GetTableResponse, error) {
+			assert.Equal(t, testTableOcid, *req.TableNameOrId)
+			return nosql.GetTableResponse{Table: makeActiveTable(testTableOcid, "my-table")}, nil
+		},
 		deleteFn: func(_ context.Context, _ nosql.DeleteTableRequest) (nosql.DeleteTableResponse, error) {
 			return nosql.DeleteTableResponse{}, deleteErr
 		},

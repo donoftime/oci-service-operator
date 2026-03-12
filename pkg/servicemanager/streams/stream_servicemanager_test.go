@@ -16,8 +16,11 @@ import (
 	ociv1beta1 "github.com/oracle/oci-service-operator/api/v1beta1"
 	"github.com/oracle/oci-service-operator/pkg/loggerutil"
 	"github.com/oracle/oci-service-operator/pkg/metrics"
+	"github.com/oracle/oci-service-operator/pkg/servicemanager"
 	. "github.com/oracle/oci-service-operator/pkg/servicemanager/streams"
 	"github.com/stretchr/testify/assert"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
@@ -160,36 +163,57 @@ func TestGetCrdStatus_WrongType(t *testing.T) {
 // Delete tests
 // ---------------------------------------------------------------------------
 
-// TestDelete_NoOcid verifies that Delete with no Spec.StreamId and non-empty
-// Status.Ocid returns (true, nil) without making OCI API calls.
+// TestDelete_NoOcid verifies that Delete falls back to status.ocid when Spec.StreamId is empty.
 func TestDelete_NoOcid(t *testing.T) {
-	credClient := &fakeCredentialClient{}
-	mgr := makeTestManager(credClient, nil)
+	credClient := &fakeCredentialClient{
+		getSecretFn: func(_ context.Context, _, _ string) (map[string][]byte, error) {
+			return servicemanager.AddManagedSecretData(map[string][]byte{}, "Stream", "test-stream"), nil
+		},
+	}
+	streamID := "ocid1.stream.oc1..xxx"
+	mockClient := &mockStreamAdminClient{
+		deleteStreamFn: func(_ context.Context, req streaming.DeleteStreamRequest) (streaming.DeleteStreamResponse, error) {
+			assert.Equal(t, streamID, *req.StreamId)
+			return streaming.DeleteStreamResponse{}, nil
+		},
+		getStreamFn: func(_ context.Context, _ streaming.GetStreamRequest) (streaming.GetStreamResponse, error) {
+			return streaming.GetStreamResponse{
+				Stream: streaming.Stream{
+					Id:             common.String(streamID),
+					Name:           common.String("test-stream"),
+					LifecycleState: "DELETED",
+				},
+			}, nil
+		},
+	}
+	credClient.getSecretFn = func(_ context.Context, _, _ string) (map[string][]byte, error) {
+		return servicemanager.AddManagedSecretData(map[string][]byte{"endpoint": []byte("managed")}, "Stream", "test-stream"), nil
+	}
+	mgr := makeTestManager(credClient, mockClient)
 
 	stream := &ociv1beta1.Stream{}
 	stream.Name = "test-stream"
 	stream.Namespace = "default"
-	// No Spec.StreamId; non-empty Status.Ocid triggers the early-return path.
-	stream.Status.OsokStatus.Ocid = "ocid1.stream.oc1..xxx"
+	stream.Status.OsokStatus.Ocid = ociv1beta1.OCID(streamID)
 
 	done, err := mgr.Delete(context.Background(), stream)
 	assert.NoError(t, err)
 	assert.True(t, done)
-	assert.False(t, credClient.deleteCalled, "DeleteSecret should not be called when no spec StreamId is set")
+	assert.True(t, credClient.deleteCalled, "DeleteSecret should be called once the stream is deleted")
 }
 
-// TestDelete_WrongType verifies Delete returns (true, nil) for non-Stream objects.
+// TestDelete_WrongType verifies Delete returns an error for non-Stream objects.
 func TestDelete_WrongType(t *testing.T) {
 	mgr := makeTestManager(&fakeCredentialClient{}, nil)
 
 	cluster := &ociv1beta1.RedisCluster{}
 	done, err := mgr.Delete(context.Background(), cluster)
-	assert.NoError(t, err)
-	assert.True(t, done)
+	assert.Error(t, err)
+	assert.False(t, done)
 }
 
-// TestDelete_DeleteStreamFails verifies Delete returns (true, nil) when the OCI
-// DeleteStream call fails (no OCI credentials or mock error).
+// TestDelete_DeleteStreamFails verifies Delete returns an error when the OCI
+// DeleteStream call fails.
 func TestDelete_DeleteStreamFails(t *testing.T) {
 	credClient := &fakeCredentialClient{}
 	mockClient := &mockStreamAdminClient{
@@ -205,15 +229,19 @@ func TestDelete_DeleteStreamFails(t *testing.T) {
 	stream.Spec.StreamId = "ocid1.stream.oc1..xxx"
 
 	done, err := mgr.Delete(context.Background(), stream)
-	assert.NoError(t, err)
-	assert.True(t, done)
+	assert.Error(t, err)
+	assert.False(t, done)
 	assert.False(t, credClient.deleteCalled, "DeleteSecret should not be called when DeleteStream fails")
 }
 
 // TestDelete_StreamDeleted verifies that Delete calls DeleteSecret when the stream
 // reaches DELETED lifecycle state.
 func TestDelete_StreamDeleted(t *testing.T) {
-	credClient := &fakeCredentialClient{}
+	credClient := &fakeCredentialClient{
+		getSecretFn: func(_ context.Context, _, _ string) (map[string][]byte, error) {
+			return servicemanager.AddManagedSecretData(map[string][]byte{}, "Stream", "test-stream"), nil
+		},
+	}
 	streamID := "ocid1.stream.oc1..xxx"
 	mockClient := &mockStreamAdminClient{
 		deleteStreamFn: func(_ context.Context, _ streaming.DeleteStreamRequest) (streaming.DeleteStreamResponse, error) {
@@ -240,6 +268,40 @@ func TestDelete_StreamDeleted(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, done)
 	assert.True(t, credClient.deleteCalled, "DeleteSecret should be called when stream is DELETED")
+}
+
+func TestDelete_StreamDeleted_MissingSecret(t *testing.T) {
+	credClient := &fakeCredentialClient{
+		getSecretFn: func(_ context.Context, _, _ string) (map[string][]byte, error) {
+			return nil, apierrors.NewNotFound(corev1.Resource("secret"), "test-stream")
+		},
+	}
+	streamID := "ocid1.stream.oc1..missing-secret"
+	mockClient := &mockStreamAdminClient{
+		deleteStreamFn: func(_ context.Context, _ streaming.DeleteStreamRequest) (streaming.DeleteStreamResponse, error) {
+			return streaming.DeleteStreamResponse{}, nil
+		},
+		getStreamFn: func(_ context.Context, _ streaming.GetStreamRequest) (streaming.GetStreamResponse, error) {
+			return streaming.GetStreamResponse{
+				Stream: streaming.Stream{
+					Id:             common.String(streamID),
+					Name:           common.String("test-stream"),
+					LifecycleState: "DELETED",
+				},
+			}, nil
+		},
+	}
+	mgr := makeTestManager(credClient, mockClient)
+
+	stream := &ociv1beta1.Stream{}
+	stream.Name = "test-stream"
+	stream.Namespace = "default"
+	stream.Spec.StreamId = ociv1beta1.OCID(streamID)
+
+	done, err := mgr.Delete(context.Background(), stream)
+	assert.NoError(t, err)
+	assert.True(t, done)
+	assert.False(t, credClient.deleteCalled, "DeleteSecret should be skipped when the secret is already missing")
 }
 
 // ---------------------------------------------------------------------------
@@ -449,7 +511,11 @@ func TestDelete_EmptyOcidPath(t *testing.T) {
 // TestDelete_StreamFoundByName verifies Delete finds a stream via name lookup when
 // Spec.StreamId is empty, then deletes it successfully.
 func TestDelete_StreamFoundByName(t *testing.T) {
-	credClient := &fakeCredentialClient{}
+	credClient := &fakeCredentialClient{
+		getSecretFn: func(_ context.Context, _, _ string) (map[string][]byte, error) {
+			return servicemanager.AddManagedSecretData(map[string][]byte{}, "Stream", "test-stream"), nil
+		},
+	}
 	streamID := "ocid1.stream.oc1..named"
 
 	mockClient := &mockStreamAdminClient{
@@ -531,7 +597,7 @@ func TestDelete_FailedStreamFound(t *testing.T) {
 
 	done, err := mgr.Delete(context.Background(), stream)
 	assert.NoError(t, err)
-	assert.True(t, done)
+	assert.False(t, done)
 }
 
 // ---------------------------------------------------------------------------
@@ -813,7 +879,7 @@ func TestCreateOrUpdate_FailedLifecycle(t *testing.T) {
 
 	resp, err := mgr.CreateOrUpdate(context.Background(), stream, ctrl.Request{})
 	assert.NoError(t, err)
-	assert.True(t, resp.IsSuccessful)
+	assert.False(t, resp.IsSuccessful)
 	assert.False(t, credClient.createCalled, "CreateSecret should NOT be called for a FAILED stream")
 }
 

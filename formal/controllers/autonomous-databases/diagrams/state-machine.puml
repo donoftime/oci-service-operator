@@ -1,0 +1,22 @@
+@startuml
+title Autonomous Databases Controller Contract
+
+[*] --> LookupOrCreate
+LookupOrCreate --> Provisioning : lifecycle in retryable set
+LookupOrCreate --> Active : lifecycle in active set
+LookupOrCreate --> Failed : lifecycle in failed set
+
+Provisioning --> LookupOrCreate : requeue
+Active --> WalletSecret : wallet enabled
+Active --> [*] : no wallet
+WalletSecret --> [*]
+Failed --> [*]
+
+state Deleting {
+  [*] --> Exists
+  Exists --> Exists : delete request accepted\nresource still visible
+  Exists --> Gone : get returns 404
+  Gone --> [*]
+}
+
+@enduml

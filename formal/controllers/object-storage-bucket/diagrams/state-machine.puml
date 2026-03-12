@@ -1,0 +1,14 @@
+@startuml
+title Object Storage Bucket Reconcile Model
+
+[*] --> Ready : ACTIVE / BOUND
+[*] --> Failed : FAILED / DELETED
+
+Ready : secret present
+
+Ready --> Deleting : delete requested
+Failed --> Deleting : delete requested
+Deleting : requeue required
+Deleting --> Deleted : bucket gone, finalizer removed
+
+@enduml

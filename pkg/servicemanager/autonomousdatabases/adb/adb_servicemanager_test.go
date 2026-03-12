@@ -20,6 +20,7 @@ import (
 	"github.com/oracle/oci-go-sdk/v65/database"
 	ociv1beta1 "github.com/oracle/oci-service-operator/api/v1beta1"
 	"github.com/oracle/oci-service-operator/pkg/loggerutil"
+	"github.com/oracle/oci-service-operator/pkg/servicemanager"
 	. "github.com/oracle/oci-service-operator/pkg/servicemanager/autonomousdatabases/adb"
 	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -79,6 +80,7 @@ type mockOciDbClient struct {
 	listFn   func(context.Context, database.ListAutonomousDatabasesRequest) (database.ListAutonomousDatabasesResponse, error)
 	getFn    func(context.Context, database.GetAutonomousDatabaseRequest) (database.GetAutonomousDatabaseResponse, error)
 	updateFn func(context.Context, database.UpdateAutonomousDatabaseRequest) (database.UpdateAutonomousDatabaseResponse, error)
+	deleteFn func(context.Context, database.DeleteAutonomousDatabaseRequest) (database.DeleteAutonomousDatabaseResponse, error)
 }
 
 func (m *mockOciDbClient) CreateAutonomousDatabase(ctx context.Context, req database.CreateAutonomousDatabaseRequest) (database.CreateAutonomousDatabaseResponse, error) {
@@ -109,11 +111,19 @@ func (m *mockOciDbClient) UpdateAutonomousDatabase(ctx context.Context, req data
 	return database.UpdateAutonomousDatabaseResponse{}, nil
 }
 
+func (m *mockOciDbClient) DeleteAutonomousDatabase(ctx context.Context, req database.DeleteAutonomousDatabaseRequest) (database.DeleteAutonomousDatabaseResponse, error) {
+	if m.deleteFn != nil {
+		return m.deleteFn(ctx, req)
+	}
+	return database.DeleteAutonomousDatabaseResponse{}, nil
+}
+
 // makeActiveAdb returns a minimal AutonomousDatabase suitable for mock responses.
 func makeActiveAdb(id, displayName string) database.AutonomousDatabase {
 	return database.AutonomousDatabase{
 		Id:                   common.String(id),
 		DisplayName:          common.String(displayName),
+		LifecycleState:       database.AutonomousDatabaseLifecycleStateAvailable,
 		DbName:               common.String("testdb"),
 		CpuCoreCount:         common.Int(2),
 		DataStorageSizeInTBs: common.Int(1),
@@ -263,10 +273,10 @@ func TestCreateOrUpdate_BindExistingAdb_UpdateMultipleFields(t *testing.T) {
 
 	adb := &ociv1beta1.AutonomousDatabases{}
 	adb.Spec.AdbId = ociv1beta1.OCID(adbId)
-	adb.Spec.DisplayName = "new-name"    // differs from "old-name"
-	adb.Spec.CpuCoreCount = 4            // differs from 2
-	adb.Spec.DataStorageSizeInTBs = 2    // differs from 1
-	adb.Spec.IsAutoScalingEnabled = true // differs from false
+	adb.Spec.DisplayName = "new-name"      // differs from "old-name"
+	adb.Spec.CpuCoreCount = 4              // differs from 2
+	adb.Spec.DataStorageSizeInTBs = 2      // differs from 1
+	adb.Spec.SetIsAutoScalingEnabled(true) // differs from false
 
 	resp, err := mgr.CreateOrUpdate(context.Background(), adb, ctrl.Request{})
 	assert.NoError(t, err)
@@ -432,7 +442,9 @@ func TestCreateOrUpdate_WithWallet_AlreadyExists(t *testing.T) {
 
 	credClient := &fakeCredentialClient{
 		getSecretFn: func(_ context.Context, _, _ string) (map[string][]byte, error) {
-			return nil, nil // nil error = wallet secret exists
+			return servicemanager.AddManagedSecretData(map[string][]byte{
+				"tnsnames.ora": []byte("legacy-wallet"),
+			}, "AutonomousDatabases", "test-adb"), nil
 		},
 	}
 	mgr := newTestManager(credClient)
@@ -602,13 +614,21 @@ func TestCreateOrUpdate_CreateNewAdb_OCPU(t *testing.T) {
 // DeleteAdb test
 // ---------------------------------------------------------------------------
 
-// TestDeleteAdb verifies DeleteAdb returns empty string and no error (stub implementation).
+// TestDeleteAdb verifies DeleteAdb issues the OCI delete request for the supplied OCID.
 func TestDeleteAdb(t *testing.T) {
+	deleted := false
 	mgr := newTestManager(&fakeCredentialClient{})
+	ExportSetClientForTest(mgr, &mockOciDbClient{
+		deleteFn: func(_ context.Context, req database.DeleteAutonomousDatabaseRequest) (database.DeleteAutonomousDatabaseResponse, error) {
+			deleted = true
+			assert.Equal(t, "ocid1.autonomousdatabase.oc1..delete", *req.AutonomousDatabaseId)
+			return database.DeleteAutonomousDatabaseResponse{}, nil
+		},
+	})
 
-	ocid, err := mgr.DeleteAdb()
+	err := mgr.DeleteAdb(context.Background(), "ocid1.autonomousdatabase.oc1..delete")
 	assert.NoError(t, err)
-	assert.Equal(t, "", ocid)
+	assert.True(t, deleted)
 }
 
 // ---------------------------------------------------------------------------
@@ -766,7 +786,7 @@ func TestCreateOrUpdate_UpdateAdb_AdditionalFields(t *testing.T) {
 	adb := &ociv1beta1.AutonomousDatabases{}
 	adb.Spec.AdbId = ociv1beta1.OCID(adbId)
 	adb.Spec.DbWorkload = "DW"                               // differs from OLTP
-	adb.Spec.IsFreeTier = true                               // differs from false
+	adb.Spec.SetIsFreeTier(true)                             // differs from false
 	adb.Spec.LicenseModel = "BRING_YOUR_OWN_LICENSE"         // differs from LICENSE_INCLUDED
 	adb.Spec.DbVersion = "21c"                               // differs from 19c
 	adb.Spec.FreeFormTags = map[string]string{"env": "prod"} // differs from nil

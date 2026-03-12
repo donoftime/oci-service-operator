@@ -40,12 +40,21 @@ func GetOSOKStatusCondition(status v1beta1.OSOKStatus, conditionType v1beta1.OSO
 	return nil
 }
 
+func getOSOKStatusConditionIndex(status v1beta1.OSOKStatus, conditionType v1beta1.OSOKConditionType) int {
+	for cnt := range status.Conditions {
+		if status.Conditions[cnt].Type == conditionType {
+			return cnt
+		}
+	}
+	return -1
+}
+
 func UpdateOSOKStatusCondition(osokStatus v1beta1.OSOKStatus, conditionType v1beta1.OSOKConditionType,
 	status v1.ConditionStatus, reason string, message string, log loggerutil.OSOKLogger) v1beta1.OSOKStatus {
 	currentTime := metav1.Now()
 
-	existingCondition := GetOSOKStatusCondition(osokStatus, conditionType, log)
-	if existingCondition == nil {
+	existingConditionIndex := getOSOKStatusConditionIndex(osokStatus, conditionType)
+	if existingConditionIndex == -1 {
 		condition := v1beta1.OSOKCondition{
 			Type:               conditionType,
 			Status:             status,
@@ -54,33 +63,20 @@ func UpdateOSOKStatusCondition(osokStatus v1beta1.OSOKStatus, conditionType v1be
 			Reason:             reason,
 		}
 		osokStatus.Conditions = append(osokStatus.Conditions, condition)
-	} else {
-		updated := false
-		var newCondition = v1beta1.OSOKCondition{}
-		if existingCondition.Type != conditionType {
-			newCondition.Type = conditionType
-			newCondition.Status = status
-			newCondition.LastTransitionTime = &currentTime
-			newCondition.Message = message
-			updated = true
-		}
-		if existingCondition.Status != status {
-			newCondition.Type = conditionType
-			newCondition.Message = message
-			newCondition.Status = status
-			newCondition.LastTransitionTime = &currentTime
-			updated = true
-		}
-		if existingCondition.Message != message {
-			newCondition.Type = conditionType
-			newCondition.Message = message
-			newCondition.Status = status
-			newCondition.LastTransitionTime = &currentTime
-			updated = true
-		}
-		if updated {
-			osokStatus.Conditions = append(osokStatus.Conditions, newCondition)
-		}
+		return osokStatus
+	}
+
+	existingCondition := osokStatus.Conditions[existingConditionIndex]
+	if existingCondition.Status == status && existingCondition.Reason == reason && existingCondition.Message == message {
+		return osokStatus
+	}
+
+	osokStatus.Conditions[existingConditionIndex] = v1beta1.OSOKCondition{
+		Type:               conditionType,
+		Status:             status,
+		LastTransitionTime: &currentTime,
+		Message:            message,
+		Reason:             reason,
 	}
 	return osokStatus
 }

@@ -1,0 +1,20 @@
+@startuml
+title NoSQL Database Controller Contract
+
+[*] --> LookupOrCreate
+LookupOrCreate --> Provisioning : CREATING / UPDATING
+LookupOrCreate --> Active : ACTIVE
+LookupOrCreate --> Failed : FAILED or terminal fault
+
+Provisioning --> LookupOrCreate : requeue
+Active --> [*]
+Failed --> [*]
+
+state DeleteLoop {
+  [*] --> Exists
+  Exists --> Exists : delete submitted\nget still returns table
+  Exists --> Gone : get returns 404
+  Gone --> [*]
+}
+
+@enduml

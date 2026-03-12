@@ -156,60 +156,24 @@ func (c *DataFlowApplicationServiceManager) UpdateDataFlowApplication(ctx contex
 		return err
 	}
 
-	updateDetails := ocidataflow.UpdateApplicationDetails{}
-	updateNeeded := false
+	applicationID, err := resolveApplicationID(app.Status.OsokStatus.Ocid, app.Spec.DataFlowApplicationId)
+	if err != nil {
+		return err
+	}
 
-	if app.Spec.DisplayName != "" {
-		updateDetails.DisplayName = common.String(app.Spec.DisplayName)
-		updateNeeded = true
+	existing, err := c.GetDataFlowApplication(ctx, applicationID)
+	if err != nil {
+		return err
 	}
-	if app.Spec.Description != "" {
-		updateDetails.Description = common.String(app.Spec.Description)
-		updateNeeded = true
-	}
-	if app.Spec.NumExecutors > 0 {
-		updateDetails.NumExecutors = common.Int(app.Spec.NumExecutors)
-		updateNeeded = true
-	}
-	if app.Spec.Configuration != nil {
-		updateDetails.Configuration = app.Spec.Configuration
-		updateNeeded = true
-	}
-	if len(app.Spec.Arguments) > 0 {
-		updateDetails.Arguments = app.Spec.Arguments
-		updateNeeded = true
-	}
-	if app.Spec.SparkVersion != "" {
-		updateDetails.SparkVersion = common.String(app.Spec.SparkVersion)
-		updateNeeded = true
-	}
-	if app.Spec.DriverShape != "" {
-		updateDetails.DriverShape = common.String(app.Spec.DriverShape)
-		updateNeeded = true
-	}
-	if app.Spec.ExecutorShape != "" {
-		updateDetails.ExecutorShape = common.String(app.Spec.ExecutorShape)
-		updateNeeded = true
-	}
-	if app.Spec.FileUri != "" {
-		updateDetails.FileUri = common.String(app.Spec.FileUri)
-		updateNeeded = true
-	}
-	if app.Spec.ClassName != "" {
-		updateDetails.ClassName = common.String(app.Spec.ClassName)
-		updateNeeded = true
-	}
-	if app.Spec.ArchiveUri != "" {
-		updateDetails.ArchiveUri = common.String(app.Spec.ArchiveUri)
-		updateNeeded = true
-	}
+
+	updateDetails, updateNeeded := dataFlowUpdateNeeded(app, existing)
 
 	if !updateNeeded {
 		return nil
 	}
 
 	req := ocidataflow.UpdateApplicationRequest{
-		ApplicationId:            common.String(string(app.Status.OsokStatus.Ocid)),
+		ApplicationId:            common.String(string(applicationID)),
 		UpdateApplicationDetails: updateDetails,
 	}
 
@@ -230,8 +194,7 @@ func (c *DataFlowApplicationServiceManager) DeleteDataFlowApplication(ctx contex
 
 	_, err = client.DeleteApplication(ctx, req)
 	if err != nil {
-		// Treat 404 as already deleted
-		if strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "NotFound") {
+		if isNotFoundServiceError(err) || strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "NotFound") {
 			c.Log.InfoLog(fmt.Sprintf("DataFlowApplication %s already deleted", applicationId))
 			return nil
 		}

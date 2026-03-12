@@ -230,7 +230,12 @@ func (c *ContainerInstanceServiceManager) UpdateContainerInstance(ctx context.Co
 		return err
 	}
 
-	existing, err := c.GetContainerInstance(ctx, ci.Status.OsokStatus.Ocid, nil)
+	targetID, err := resolveContainerInstanceID(ci.Status.OsokStatus.Ocid, ci.Spec.ContainerInstanceId)
+	if err != nil {
+		return err
+	}
+
+	existing, err := c.GetContainerInstance(ctx, targetID, nil)
 	if err != nil {
 		return err
 	}
@@ -248,7 +253,7 @@ func (c *ContainerInstanceServiceManager) UpdateContainerInstance(ctx context.Co
 	}
 
 	req := containerinstances.UpdateContainerInstanceRequest{
-		ContainerInstanceId:            common.String(string(ci.Status.OsokStatus.Ocid)),
+		ContainerInstanceId:            common.String(string(targetID)),
 		UpdateContainerInstanceDetails: updateDetails,
 	}
 

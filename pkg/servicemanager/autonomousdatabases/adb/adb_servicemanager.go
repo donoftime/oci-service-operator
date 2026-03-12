@@ -22,7 +22,6 @@ import (
 	ociv1beta1 "github.com/oracle/oci-service-operator/api/v1beta1"
 	"github.com/oracle/oci-service-operator/pkg/credhelper"
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -82,8 +81,9 @@ func (c *AdbServiceManager) CreateOrUpdate(ctx context.Context, obj runtime.Obje
 			if err != nil {
 				autonomousDatabases.Status.OsokStatus = util.UpdateOSOKStatusCondition(autonomousDatabases.Status.OsokStatus,
 					ociv1beta1.Failed, v1.ConditionFalse, "", err.Error(), c.Log)
-				if err.(common.ServiceError).GetHTTPStatusCode() == 400 && err.(common.ServiceError).GetCode() == "InvalidParameter" {
-					autonomousDatabases.Status.OsokStatus.Message = err.(common.ServiceError).GetCode()
+				if serviceErr, ok := err.(common.ServiceError); ok && serviceErr.GetHTTPStatusCode() == 400 &&
+					serviceErr.GetCode() == "InvalidParameter" {
+					autonomousDatabases.Status.OsokStatus.Message = serviceErr.GetCode()
 					c.Log.ErrorLog(err, "Create AutonomousDatabase failed")
 					return servicemanager.OSOKResponse{IsSuccessful: false}, nil
 				}
@@ -93,6 +93,7 @@ func (c *AdbServiceManager) CreateOrUpdate(ctx context.Context, obj runtime.Obje
 			c.Log.InfoLog(fmt.Sprintf("AutonomousDatabase %s is Provisioning", autonomousDatabases.Spec.DisplayName))
 			autonomousDatabases.Status.OsokStatus = util.UpdateOSOKStatusCondition(autonomousDatabases.Status.OsokStatus,
 				ociv1beta1.Provisioning, v1.ConditionTrue, "", "AutonomousDatabase Provisioning", c.Log)
+			autonomousDatabases.Status.OsokStatus.Ocid = ociv1beta1.OCID(*resp.Id)
 
 			retryPolicy := c.getAdbRetryPolicy(9)
 			adbInstance, err = c.GetAdb(ctx, ociv1beta1.OCID(*resp.Id), &retryPolicy)
@@ -108,17 +109,6 @@ func (c *AdbServiceManager) CreateOrUpdate(ctx context.Context, obj runtime.Obje
 				return servicemanager.OSOKResponse{IsSuccessful: false}, err
 			}
 		}
-		autonomousDatabases.Status.OsokStatus = util.UpdateOSOKStatusCondition(autonomousDatabases.Status.OsokStatus,
-			ociv1beta1.Active, v1.ConditionTrue, "",
-			fmt.Sprintf("AutonomousDatabase %s is Active", *adbInstance.DisplayName), c.Log)
-		c.Log.InfoLog(fmt.Sprintf("AutonomousDatabase %s is Active", *adbInstance.DisplayName))
-
-		autonomousDatabases.Status.OsokStatus.Ocid = ociv1beta1.OCID(*adbInstance.Id)
-		if autonomousDatabases.Status.OsokStatus.CreatedAt != nil {
-			now := metav1.NewTime(time.Now())
-			autonomousDatabases.Status.OsokStatus.CreatedAt = &now
-		}
-
 	} else {
 		// Bind CRD with an existing ADB.
 		adbInstance, err = c.GetAdb(ctx, autonomousDatabases.Spec.AdbId, nil)
@@ -132,23 +122,15 @@ func (c *AdbServiceManager) CreateOrUpdate(ctx context.Context, obj runtime.Obje
 				c.Log.ErrorLog(err, "Error while updating Autonomous database")
 				return servicemanager.OSOKResponse{IsSuccessful: false}, err
 			}
-			autonomousDatabases.Status.OsokStatus = util.UpdateOSOKStatusCondition(autonomousDatabases.Status.OsokStatus,
-				ociv1beta1.Active, v1.ConditionTrue, "", "AutonomousDatabase Update success", c.Log)
 			c.Log.InfoLog(fmt.Sprintf("AutonomousDatabase %s is updated successfully", *adbInstance.DisplayName))
 		} else {
-			autonomousDatabases.Status.OsokStatus = util.UpdateOSOKStatusCondition(autonomousDatabases.Status.OsokStatus,
-				ociv1beta1.Active, v1.ConditionTrue, "", "AutonomousDatabase Bound success", c.Log)
-			autonomousDatabases.Status.OsokStatus.Ocid = ociv1beta1.OCID(*adbInstance.Id)
-			now := metav1.NewTime(time.Now())
-			autonomousDatabases.Status.OsokStatus.CreatedAt = &now
-
 			c.Log.InfoLog(fmt.Sprintf("AutonomousDatabase %s is bounded successfully", *adbInstance.DisplayName))
 		}
-		autonomousDatabases.Status.OsokStatus.Ocid = ociv1beta1.OCID(*adbInstance.Id)
-		if autonomousDatabases.Status.OsokStatus.CreatedAt != nil {
-			now := metav1.NewTime(time.Now())
-			autonomousDatabases.Status.OsokStatus.CreatedAt = &now
-		}
+	}
+
+	lifecycleResponse := reconcileLifecycleStatus(&autonomousDatabases.Status.OsokStatus, adbInstance, c.Log)
+	if !lifecycleResponse.IsSuccessful {
+		return lifecycleResponse, nil
 	}
 
 	if autonomousDatabases.Spec.Wallet.WalletPassword.Secret.SecretName != "" {
@@ -179,15 +161,44 @@ func isValidUpdate(autonomousDatabases ociv1beta1.AutonomousDatabases, adbInstan
 		autonomousDatabases.Spec.DataStorageSizeInTBs != 0 && autonomousDatabases.Spec.DataStorageSizeInTBs != *adbInstance.DataStorageSizeInTBs ||
 		autonomousDatabases.Spec.DbWorkload != "" && autonomousDatabases.Spec.DbWorkload != string(adbInstance.DbWorkload) ||
 		autonomousDatabases.Spec.DbVersion != "" && autonomousDatabases.Spec.DbVersion != *adbInstance.DbVersion ||
-		autonomousDatabases.Spec.IsAutoScalingEnabled != false && autonomousDatabases.Spec.IsAutoScalingEnabled != *adbInstance.IsAutoScalingEnabled ||
-		autonomousDatabases.Spec.IsFreeTier != false && autonomousDatabases.Spec.IsFreeTier != *adbInstance.IsFreeTier ||
+		shouldUpdateOptionalBool(autonomousDatabases.Spec.HasExplicitIsAutoScalingEnabled(), autonomousDatabases.Spec.IsAutoScalingEnabled, adbInstance.IsAutoScalingEnabled) ||
+		shouldUpdateOptionalBool(autonomousDatabases.Spec.HasExplicitIsFreeTier(), autonomousDatabases.Spec.IsFreeTier, adbInstance.IsFreeTier) ||
 		autonomousDatabases.Spec.LicenseModel != "" && autonomousDatabases.Spec.LicenseModel != string(adbInstance.LicenseModel) ||
 		autonomousDatabases.Spec.FreeFormTags != nil && !reflect.DeepEqual(autonomousDatabases.Spec.FreeFormTags, adbInstance.FreeformTags) ||
 		definedTagUpdated
 }
 
 func (c *AdbServiceManager) Delete(ctx context.Context, obj runtime.Object) (bool, error) {
-	return true, nil
+	autonomousDatabases, err := c.convert(obj)
+	if err != nil {
+		return false, err
+	}
+
+	adbID := autonomousDatabases.Status.OsokStatus.Ocid
+	if adbID == "" {
+		adbID = autonomousDatabases.Spec.AdbId
+	}
+	if adbID == "" {
+		return true, nil
+	}
+
+	if _, err := c.GetAdb(ctx, adbID, nil); err != nil {
+		if isNotFoundServiceError(err) {
+			walletName := walletSecretName(autonomousDatabases)
+			if walletName != "" {
+				if _, secretErr := servicemanager.DeleteOwnedSecretIfPresent(ctx, c.CredentialClient, walletName, autonomousDatabases.Namespace, autonomousDatabaseKindName, autonomousDatabases.Name); secretErr != nil {
+					c.Log.ErrorLog(secretErr, "Error while deleting Autonomous Database wallet secret")
+				}
+			}
+			return true, nil
+		}
+		return false, err
+	}
+
+	if err := c.DeleteAdb(ctx, adbID); err != nil && !isNotFoundServiceError(err) {
+		return false, err
+	}
+	return false, nil
 }
 
 func (c *AdbServiceManager) GetCrdStatus(obj runtime.Object) (*ociv1beta1.OSOKStatus, error) {

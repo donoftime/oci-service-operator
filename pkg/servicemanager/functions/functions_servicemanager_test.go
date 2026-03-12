@@ -14,6 +14,7 @@ import (
 	ocifunctions "github.com/oracle/oci-go-sdk/v65/functions"
 	ociv1beta1 "github.com/oracle/oci-service-operator/api/v1beta1"
 	"github.com/oracle/oci-service-operator/pkg/loggerutil"
+	"github.com/oracle/oci-service-operator/pkg/servicemanager"
 	. "github.com/oracle/oci-service-operator/pkg/servicemanager/functions"
 	"github.com/stretchr/testify/assert"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -23,6 +24,7 @@ import (
 type fakeCredentialClient struct {
 	createSecretFn func(ctx context.Context, name, ns string, labels map[string]string, data map[string][]byte) (bool, error)
 	deleteSecretFn func(ctx context.Context, name, ns string) (bool, error)
+	getSecretFn    func(ctx context.Context, name, ns string) (map[string][]byte, error)
 	createCalled   bool
 	deleteCalled   bool
 }
@@ -44,7 +46,10 @@ func (f *fakeCredentialClient) DeleteSecret(ctx context.Context, name, ns string
 }
 
 func (f *fakeCredentialClient) GetSecret(ctx context.Context, name, ns string) (map[string][]byte, error) {
-	return nil, nil
+	if f.getSecretFn != nil {
+		return f.getSecretFn(ctx, name, ns)
+	}
+	return servicemanager.AddManagedSecretData(map[string][]byte{}, "FunctionsFunction", name), nil
 }
 
 func (f *fakeCredentialClient) UpdateSecret(ctx context.Context, name, ns string, labels map[string]string, data map[string][]byte) (bool, error) {
@@ -513,6 +518,11 @@ func TestFunctionsApplication_Delete_WithOcid(t *testing.T) {
 			deleteCalled = true
 			return ocifunctions.DeleteApplicationResponse{}, nil
 		},
+		getApplicationFn: func(_ context.Context, _ ocifunctions.GetApplicationRequest) (ocifunctions.GetApplicationResponse, error) {
+			app := makeActiveApplication("ocid1.fnapp.oc1..todelete", "deleted-app")
+			app.LifecycleState = ocifunctions.ApplicationLifecycleStateDeleted
+			return ocifunctions.GetApplicationResponse{Application: app}, nil
+		},
 	}
 
 	mgr := newAppMgr(t, ociClient)
@@ -809,6 +819,11 @@ func TestFunctionsFunction_Delete_WithOcid(t *testing.T) {
 		deleteFunctionFn: func(_ context.Context, _ ocifunctions.DeleteFunctionRequest) (ocifunctions.DeleteFunctionResponse, error) {
 			deleteFnCalled = true
 			return ocifunctions.DeleteFunctionResponse{}, nil
+		},
+		getFunctionFn: func(_ context.Context, _ ocifunctions.GetFunctionRequest) (ocifunctions.GetFunctionResponse, error) {
+			fn := makeActiveFunction("ocid1.fnfunc.oc1..todelete", "deleted-fn", "")
+			fn.LifecycleState = ocifunctions.FunctionLifecycleStateDeleted
+			return ocifunctions.GetFunctionResponse{Function: fn}, nil
 		},
 	}
 	cred := &fakeCredentialClient{}

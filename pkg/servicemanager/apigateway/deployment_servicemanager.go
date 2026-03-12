@@ -124,20 +124,26 @@ func (c *DeploymentServiceManager) CreateOrUpdate(ctx context.Context, obj runti
 		dep.Status.OsokStatus.CreatedAt = &now
 	}
 
-	if depInstance.LifecycleState == apigateway.DeploymentLifecycleStateFailed {
+	switch depInstance.LifecycleState {
+	case apigateway.DeploymentLifecycleStateFailed, apigateway.DeploymentLifecycleStateDeleted:
 		dep.Status.OsokStatus = util.UpdateOSOKStatusCondition(dep.Status.OsokStatus,
 			ociv1beta1.Failed, v1.ConditionFalse, "",
-			fmt.Sprintf("ApiGatewayDeployment %s creation Failed", *depInstance.DisplayName), c.Log)
-		c.Log.InfoLog(fmt.Sprintf("ApiGatewayDeployment %s creation Failed", *depInstance.DisplayName))
+			fmt.Sprintf("ApiGatewayDeployment %s is %s", *depInstance.DisplayName, depInstance.LifecycleState), c.Log)
+		c.Log.InfoLog(fmt.Sprintf("ApiGatewayDeployment %s is %s", *depInstance.DisplayName, depInstance.LifecycleState))
 		return servicemanager.OSOKResponse{IsSuccessful: false}, nil
+	case apigateway.DeploymentLifecycleStateActive:
+		dep.Status.OsokStatus = util.UpdateOSOKStatusCondition(dep.Status.OsokStatus,
+			ociv1beta1.Active, v1.ConditionTrue, "",
+			fmt.Sprintf("ApiGatewayDeployment %s is %s", *depInstance.DisplayName, depInstance.LifecycleState), c.Log)
+		c.Log.InfoLog(fmt.Sprintf("ApiGatewayDeployment %s is Active", *depInstance.DisplayName))
+		return servicemanager.OSOKResponse{IsSuccessful: true}, nil
+	default:
+		dep.Status.OsokStatus = util.UpdateOSOKStatusCondition(dep.Status.OsokStatus,
+			ociv1beta1.Provisioning, v1.ConditionTrue, "",
+			fmt.Sprintf("ApiGatewayDeployment %s is %s", *depInstance.DisplayName, depInstance.LifecycleState), c.Log)
+		c.Log.InfoLog(fmt.Sprintf("ApiGatewayDeployment %s is %s, requeueing", *depInstance.DisplayName, depInstance.LifecycleState))
+		return servicemanager.OSOKResponse{IsSuccessful: false, ShouldRequeue: true}, nil
 	}
-
-	dep.Status.OsokStatus = util.UpdateOSOKStatusCondition(dep.Status.OsokStatus,
-		ociv1beta1.Active, v1.ConditionTrue, "",
-		fmt.Sprintf("ApiGatewayDeployment %s is %s", *depInstance.DisplayName, depInstance.LifecycleState), c.Log)
-	c.Log.InfoLog(fmt.Sprintf("ApiGatewayDeployment %s is Active", *depInstance.DisplayName))
-
-	return servicemanager.OSOKResponse{IsSuccessful: true}, nil
 }
 
 // Delete handles deletion of the API Gateway Deployment (called by the finalizer).
@@ -147,18 +153,34 @@ func (c *DeploymentServiceManager) Delete(ctx context.Context, obj runtime.Objec
 		return false, err
 	}
 
-	if dep.Status.OsokStatus.Ocid == "" {
+	targetID, err := servicemanager.ResolveResourceID(dep.Status.OsokStatus.Ocid, dep.Spec.DeploymentId)
+	if err != nil {
 		c.Log.InfoLog("ApiGatewayDeployment has no OCID, nothing to delete")
 		return true, nil
 	}
 
-	c.Log.InfoLog(fmt.Sprintf("Deleting ApiGatewayDeployment %s", dep.Status.OsokStatus.Ocid))
-	if err := c.DeleteDeployment(ctx, dep.Status.OsokStatus.Ocid); err != nil {
+	c.Log.InfoLog(fmt.Sprintf("Deleting ApiGatewayDeployment %s", targetID))
+	if err := c.DeleteDeployment(ctx, targetID); err != nil {
+		if isDeploymentNotFound(err) {
+			return true, nil
+		}
 		c.Log.ErrorLog(err, "Error while deleting ApiGatewayDeployment")
 		return false, err
 	}
 
-	return true, nil
+	depInstance, err := c.GetDeployment(ctx, targetID, nil)
+	if err != nil {
+		if isDeploymentNotFound(err) {
+			return true, nil
+		}
+		c.Log.ErrorLog(err, "Error while checking ApiGatewayDeployment deletion")
+		return false, err
+	}
+
+	if depInstance.LifecycleState == apigateway.DeploymentLifecycleStateDeleted {
+		return true, nil
+	}
+	return false, nil
 }
 
 // GetCrdStatus returns the OSOK status from the resource.
@@ -176,4 +198,12 @@ func (c *DeploymentServiceManager) convert(obj runtime.Object) (*ociv1beta1.ApiG
 		return nil, fmt.Errorf("failed type assertion for ApiGatewayDeployment")
 	}
 	return dep, nil
+}
+
+func isDeploymentNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	serviceErr, ok := common.IsServiceError(err)
+	return ok && serviceErr.GetHTTPStatusCode() == 404
 }

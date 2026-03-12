@@ -88,7 +88,7 @@ func (c *OciQueueServiceManager) CreateOrUpdate(ctx context.Context, obj runtime
 			c.Log.InfoLog(fmt.Sprintf("OciQueue %s creation submitted, waiting for provisioning", q.Spec.DisplayName))
 			q.Status.OsokStatus = util.UpdateOSOKStatusCondition(q.Status.OsokStatus,
 				ociv1beta1.Provisioning, v1.ConditionTrue, "", "OciQueue Provisioning", c.Log)
-			return servicemanager.OSOKResponse{IsSuccessful: false}, nil
+			return servicemanager.OSOKResponse{IsSuccessful: false, ShouldRequeue: true}, nil
 		}
 
 		// Queue exists (CREATING or ACTIVE) — fetch full details.
@@ -104,13 +104,10 @@ func (c *OciQueueServiceManager) CreateOrUpdate(ctx context.Context, obj runtime
 			q.Status.OsokStatus = util.UpdateOSOKStatusCondition(q.Status.OsokStatus,
 				ociv1beta1.Provisioning, v1.ConditionTrue, "", "OciQueue Provisioning", c.Log)
 			q.Status.OsokStatus.Ocid = ociv1beta1.OCID(*queueInstance.Id)
-			return servicemanager.OSOKResponse{IsSuccessful: false}, nil
+			return servicemanager.OSOKResponse{IsSuccessful: false, ShouldRequeue: true}, nil
 		}
 
 		q.Status.OsokStatus.Ocid = ociv1beta1.OCID(*queueInstance.Id)
-		q.Status.OsokStatus = util.UpdateOSOKStatusCondition(q.Status.OsokStatus,
-			ociv1beta1.Active, v1.ConditionTrue, "",
-			fmt.Sprintf("OciQueue %s is %s", safeString(queueInstance.DisplayName), queueInstance.LifecycleState), c.Log)
 		c.Log.InfoLog(fmt.Sprintf("OciQueue %s is %s", safeString(queueInstance.DisplayName), queueInstance.LifecycleState))
 
 	} else {
@@ -121,13 +118,12 @@ func (c *OciQueueServiceManager) CreateOrUpdate(ctx context.Context, obj runtime
 			return servicemanager.OSOKResponse{IsSuccessful: false}, err
 		}
 
+		q.Status.OsokStatus.Ocid = q.Spec.QueueId
 		if err = c.UpdateQueue(ctx, q); err != nil {
 			c.Log.ErrorLog(err, "Error while updating OciQueue")
 			return servicemanager.OSOKResponse{IsSuccessful: false}, err
 		}
 
-		q.Status.OsokStatus = util.UpdateOSOKStatusCondition(q.Status.OsokStatus,
-			ociv1beta1.Active, v1.ConditionTrue, "", "OciQueue Bound/Updated", c.Log)
 		c.Log.InfoLog(fmt.Sprintf("OciQueue %s is bound/updated", safeString(queueInstance.DisplayName)))
 	}
 
@@ -137,24 +133,34 @@ func (c *OciQueueServiceManager) CreateOrUpdate(ctx context.Context, obj runtime
 		q.Status.OsokStatus.CreatedAt = &now
 	}
 
-	if queueInstance.LifecycleState == ociqueue.QueueLifecycleStateFailed {
+	switch queueInstance.LifecycleState {
+	case ociqueue.QueueLifecycleStateFailed, ociqueue.QueueLifecycleStateDeleted:
 		q.Status.OsokStatus = util.UpdateOSOKStatusCondition(q.Status.OsokStatus,
 			ociv1beta1.Failed, v1.ConditionFalse, "",
-			fmt.Sprintf("OciQueue %s creation Failed", safeString(queueInstance.DisplayName)), c.Log)
-		c.Log.InfoLog(fmt.Sprintf("OciQueue %s creation Failed", safeString(queueInstance.DisplayName)))
+			fmt.Sprintf("OciQueue %s is %s", safeString(queueInstance.DisplayName), queueInstance.LifecycleState), c.Log)
+		c.Log.InfoLog(fmt.Sprintf("OciQueue %s is %s", safeString(queueInstance.DisplayName), queueInstance.LifecycleState))
 		return servicemanager.OSOKResponse{IsSuccessful: false}, nil
-	}
-
-	_, err = c.addToSecret(ctx, q.Namespace, q.Name, *queueInstance)
-	if err != nil {
-		if apierrors.IsAlreadyExists(err) {
-			return servicemanager.OSOKResponse{IsSuccessful: true}, nil
+	case ociqueue.QueueLifecycleStateActive:
+		q.Status.OsokStatus = util.UpdateOSOKStatusCondition(q.Status.OsokStatus,
+			ociv1beta1.Active, v1.ConditionTrue, "",
+			fmt.Sprintf("OciQueue %s is %s", safeString(queueInstance.DisplayName), queueInstance.LifecycleState), c.Log)
+		_, err = c.addToSecret(ctx, q.Namespace, q.Name, *queueInstance)
+		if err != nil {
+			if apierrors.IsAlreadyExists(err) {
+				return servicemanager.OSOKResponse{IsSuccessful: true}, nil
+			}
+			c.Log.InfoLog("Secret creation failed")
+			return servicemanager.OSOKResponse{IsSuccessful: false}, err
 		}
-		c.Log.InfoLog("Secret creation failed")
-		return servicemanager.OSOKResponse{IsSuccessful: false}, err
-	}
 
-	return servicemanager.OSOKResponse{IsSuccessful: true}, nil
+		return servicemanager.OSOKResponse{IsSuccessful: true}, nil
+	default:
+		q.Status.OsokStatus = util.UpdateOSOKStatusCondition(q.Status.OsokStatus,
+			ociv1beta1.Provisioning, v1.ConditionTrue, "",
+			fmt.Sprintf("OciQueue %s is %s", safeString(queueInstance.DisplayName), queueInstance.LifecycleState), c.Log)
+		c.Log.InfoLog(fmt.Sprintf("OciQueue %s is %s, requeueing", safeString(queueInstance.DisplayName), queueInstance.LifecycleState))
+		return servicemanager.OSOKResponse{IsSuccessful: false, ShouldRequeue: true}, nil
+	}
 }
 
 // Delete handles deletion of the Queue (called by the finalizer).
@@ -164,22 +170,35 @@ func (c *OciQueueServiceManager) Delete(ctx context.Context, obj runtime.Object)
 		return false, err
 	}
 
-	if q.Status.OsokStatus.Ocid == "" {
+	targetID, err := servicemanager.ResolveResourceID(q.Status.OsokStatus.Ocid, q.Spec.QueueId)
+	if err != nil {
 		c.Log.InfoLog("OciQueue has no OCID, nothing to delete")
 		return true, nil
 	}
 
-	c.Log.InfoLog(fmt.Sprintf("Deleting OciQueue %s", q.Status.OsokStatus.Ocid))
-	if err := c.DeleteQueue(ctx, q.Status.OsokStatus.Ocid); err != nil {
+	c.Log.InfoLog(fmt.Sprintf("Deleting OciQueue %s", targetID))
+	if err := c.DeleteQueue(ctx, targetID); err != nil {
+		if isQueueNotFound(err) {
+			return c.deleteQueueSecret(ctx, q)
+		}
 		c.Log.ErrorLog(err, "Error while deleting OciQueue")
 		return false, err
 	}
 
-	if _, err := c.CredentialClient.DeleteSecret(ctx, q.Name, q.Namespace); err != nil {
-		c.Log.ErrorLog(err, "Error while deleting OciQueue secret")
+	queueInstance, err := c.GetQueue(ctx, targetID)
+	if err != nil {
+		if isQueueNotFound(err) {
+			return c.deleteQueueSecret(ctx, q)
+		}
+		c.Log.ErrorLog(err, "Error while checking OciQueue deletion")
+		return false, err
 	}
 
-	return true, nil
+	if queueInstance.LifecycleState == ociqueue.QueueLifecycleStateDeleted {
+		return c.deleteQueueSecret(ctx, q)
+	}
+
+	return false, nil
 }
 
 // GetCrdStatus returns the OSOK status from the resource.
@@ -197,6 +216,18 @@ func (c *OciQueueServiceManager) convert(obj runtime.Object) (*ociv1beta1.OciQue
 		return nil, fmt.Errorf("failed type assertion for OciQueue")
 	}
 	return q, nil
+}
+
+func (c *OciQueueServiceManager) deleteQueueSecret(ctx context.Context, q *ociv1beta1.OciQueue) (bool, error) {
+	return servicemanager.DeleteOwnedSecretIfPresent(ctx, c.CredentialClient, q.Name, q.Namespace, "OciQueue", q.Name)
+}
+
+func isQueueNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	serviceErr, ok := common.IsServiceError(err)
+	return ok && serviceErr.GetHTTPStatusCode() == 404
 }
 
 func safeString(s *string) string {

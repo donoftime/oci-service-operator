@@ -158,6 +158,12 @@ func (c *NoSQLDatabaseServiceManager) UpdateTable(ctx context.Context, db *ociv1
 		UpdateTableDetails: updateDetails,
 	}
 
+	tableID, err := resolveTableID(db.Status.OsokStatus.Ocid, db.Spec.TableId)
+	if err != nil {
+		return err
+	}
+	req.TableNameOrId = common.String(string(tableID))
+
 	_, err = client.UpdateTable(ctx, req)
 	return err
 }

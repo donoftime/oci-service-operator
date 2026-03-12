@@ -202,7 +202,12 @@ func (c *OciVcnServiceManager) UpdateVcn(ctx context.Context, vcn *ociv1beta1.Oc
 		return err
 	}
 
-	existing, err := c.GetVcn(ctx, vcn.Status.OsokStatus.Ocid)
+	targetID, err := resolveResourceID(vcn.Status.OsokStatus.Ocid, vcn.Spec.VcnId)
+	if err != nil {
+		return err
+	}
+
+	existing, err := c.GetVcn(ctx, targetID)
 	if err != nil {
 		return err
 	}
@@ -224,7 +229,7 @@ func (c *OciVcnServiceManager) UpdateVcn(ctx context.Context, vcn *ociv1beta1.Oc
 	}
 
 	_, err = client.UpdateVcn(ctx, ocicore.UpdateVcnRequest{
-		VcnId:            common.String(string(vcn.Status.OsokStatus.Ocid)),
+		VcnId:            common.String(string(targetID)),
 		UpdateVcnDetails: updateDetails,
 	})
 	return err
@@ -338,7 +343,12 @@ func (c *OciSubnetServiceManager) UpdateSubnet(ctx context.Context, subnet *ociv
 		return err
 	}
 
-	existing, err := c.GetSubnet(ctx, subnet.Status.OsokStatus.Ocid)
+	targetID, err := resolveResourceID(subnet.Status.OsokStatus.Ocid, subnet.Spec.SubnetId)
+	if err != nil {
+		return err
+	}
+
+	existing, err := c.GetSubnet(ctx, targetID)
 	if err != nil {
 		return err
 	}
@@ -360,7 +370,7 @@ func (c *OciSubnetServiceManager) UpdateSubnet(ctx context.Context, subnet *ociv
 	}
 
 	_, err = client.UpdateSubnet(ctx, ocicore.UpdateSubnetRequest{
-		SubnetId:            common.String(string(subnet.Status.OsokStatus.Ocid)),
+		SubnetId:            common.String(string(targetID)),
 		UpdateSubnetDetails: updateDetails,
 	})
 	return err
@@ -458,7 +468,12 @@ func (c *OciInternetGatewayServiceManager) UpdateInternetGateway(ctx context.Con
 		return err
 	}
 
-	existing, err := c.GetInternetGateway(ctx, igw.Status.OsokStatus.Ocid)
+	targetID, err := resolveResourceID(igw.Status.OsokStatus.Ocid, igw.Spec.InternetGatewayId)
+	if err != nil {
+		return err
+	}
+
+	existing, err := c.GetInternetGateway(ctx, targetID)
 	if err != nil {
 		return err
 	}
@@ -480,7 +495,7 @@ func (c *OciInternetGatewayServiceManager) UpdateInternetGateway(ctx context.Con
 	}
 
 	_, err = client.UpdateInternetGateway(ctx, ocicore.UpdateInternetGatewayRequest{
-		IgId:                         common.String(string(igw.Status.OsokStatus.Ocid)),
+		IgId:                         common.String(string(targetID)),
 		UpdateInternetGatewayDetails: updateDetails,
 	})
 	return err
@@ -579,7 +594,12 @@ func (c *OciNatGatewayServiceManager) UpdateNatGateway(ctx context.Context, nat 
 		return err
 	}
 
-	existing, err := c.GetNatGateway(ctx, nat.Status.OsokStatus.Ocid)
+	targetID, err := resolveResourceID(nat.Status.OsokStatus.Ocid, nat.Spec.NatGatewayId)
+	if err != nil {
+		return err
+	}
+
+	existing, err := c.GetNatGateway(ctx, targetID)
 	if err != nil {
 		return err
 	}
@@ -601,7 +621,7 @@ func (c *OciNatGatewayServiceManager) UpdateNatGateway(ctx context.Context, nat 
 	}
 
 	_, err = client.UpdateNatGateway(ctx, ocicore.UpdateNatGatewayRequest{
-		NatGatewayId:            common.String(string(nat.Status.OsokStatus.Ocid)),
+		NatGatewayId:            common.String(string(targetID)),
 		UpdateNatGatewayDetails: updateDetails,
 	})
 	return err
@@ -676,7 +696,7 @@ func (c *OciServiceGatewayServiceManager) GetServiceGatewayOcid(ctx context.Cont
 	resp, err := client.ListServiceGateways(ctx, ocicore.ListServiceGatewaysRequest{
 		CompartmentId: common.String(string(sgw.Spec.CompartmentId)),
 		VcnId:         common.String(string(sgw.Spec.VcnId)),
-		Limit:         common.Int(1),
+		Limit:         common.Int(1000),
 	})
 	if err != nil {
 		c.Log.ErrorLog(err, "Error listing Service Gateways")
@@ -704,7 +724,12 @@ func (c *OciServiceGatewayServiceManager) UpdateServiceGateway(ctx context.Conte
 		return err
 	}
 
-	existing, err := c.GetServiceGateway(ctx, sgw.Status.OsokStatus.Ocid)
+	targetID, err := resolveResourceID(sgw.Status.OsokStatus.Ocid, sgw.Spec.ServiceGatewayId)
+	if err != nil {
+		return err
+	}
+
+	existing, err := c.GetServiceGateway(ctx, targetID)
 	if err != nil {
 		return err
 	}
@@ -726,7 +751,7 @@ func (c *OciServiceGatewayServiceManager) UpdateServiceGateway(ctx context.Conte
 	}
 
 	_, err = client.UpdateServiceGateway(ctx, ocicore.UpdateServiceGatewayRequest{
-		ServiceGatewayId:            common.String(string(sgw.Status.OsokStatus.Ocid)),
+		ServiceGatewayId:            common.String(string(targetID)),
 		UpdateServiceGatewayDetails: updateDetails,
 	})
 	return err
@@ -793,7 +818,7 @@ func (c *OciDrgServiceManager) GetDrgOcid(ctx context.Context, drg ociv1beta1.Oc
 
 	resp, err := client.ListDrgs(ctx, ocicore.ListDrgsRequest{
 		CompartmentId: common.String(string(drg.Spec.CompartmentId)),
-		Limit:         common.Int(50),
+		Limit:         common.Int(1000),
 	})
 	if err != nil {
 		c.Log.ErrorLog(err, "Error listing DRGs")
@@ -821,7 +846,12 @@ func (c *OciDrgServiceManager) UpdateDrg(ctx context.Context, drg *ociv1beta1.Oc
 		return err
 	}
 
-	existing, err := c.GetDrg(ctx, drg.Status.OsokStatus.Ocid)
+	targetID, err := resolveResourceID(drg.Status.OsokStatus.Ocid, drg.Spec.DrgId)
+	if err != nil {
+		return err
+	}
+
+	existing, err := c.GetDrg(ctx, targetID)
 	if err != nil {
 		return err
 	}
@@ -843,7 +873,7 @@ func (c *OciDrgServiceManager) UpdateDrg(ctx context.Context, drg *ociv1beta1.Oc
 	}
 
 	_, err = client.UpdateDrg(ctx, ocicore.UpdateDrgRequest{
-		DrgId:            common.String(string(drg.Status.OsokStatus.Ocid)),
+		DrgId:            common.String(string(targetID)),
 		UpdateDrgDetails: updateDetails,
 	})
 	return err
@@ -1047,7 +1077,7 @@ func (c *OciSecurityListServiceManager) GetSecurityListOcid(ctx context.Context,
 
 	for _, item := range resp.Items {
 		state := string(item.LifecycleState)
-		if state == "AVAILABLE" || state == "PROVISIONING" {
+		if state == "AVAILABLE" || state == "PROVISIONING" || state == "UPDATING" {
 			c.Log.DebugLog(fmt.Sprintf("OciSecurityList %s exists with OCID %s", sl.Spec.DisplayName, *item.Id))
 			return (*ociv1beta1.OCID)(item.Id), nil
 		}
@@ -1060,6 +1090,11 @@ func (c *OciSecurityListServiceManager) GetSecurityListOcid(ctx context.Context,
 // UpdateSecurityList updates an existing Security List's display name, tags, and rules.
 func (c *OciSecurityListServiceManager) UpdateSecurityList(ctx context.Context, sl *ociv1beta1.OciSecurityList) error {
 	client, err := c.getOCIClient()
+	if err != nil {
+		return err
+	}
+
+	targetID, err := resolveResourceID(sl.Status.OsokStatus.Ocid, sl.Spec.SecurityListId)
 	if err != nil {
 		return err
 	}
@@ -1077,7 +1112,7 @@ func (c *OciSecurityListServiceManager) UpdateSecurityList(ctx context.Context, 
 	updateDetails.IngressSecurityRules = buildIngressRules(sl.Spec.IngressSecurityRules)
 
 	_, err = client.UpdateSecurityList(ctx, ocicore.UpdateSecurityListRequest{
-		SecurityListId:            common.String(string(sl.Status.OsokStatus.Ocid)),
+		SecurityListId:            common.String(string(targetID)),
 		UpdateSecurityListDetails: updateDetails,
 	})
 	return err
@@ -1156,7 +1191,7 @@ func (c *OciNetworkSecurityGroupServiceManager) GetNetworkSecurityGroupOcid(ctx 
 
 	for _, item := range resp.Items {
 		state := string(item.LifecycleState)
-		if state == "AVAILABLE" || state == "PROVISIONING" {
+		if state == "AVAILABLE" || state == "PROVISIONING" || state == "UPDATING" {
 			c.Log.DebugLog(fmt.Sprintf("OciNetworkSecurityGroup %s exists with OCID %s", nsg.Spec.DisplayName, *item.Id))
 			return (*ociv1beta1.OCID)(item.Id), nil
 		}
@@ -1173,7 +1208,12 @@ func (c *OciNetworkSecurityGroupServiceManager) UpdateNetworkSecurityGroup(ctx c
 		return err
 	}
 
-	existing, err := c.GetNetworkSecurityGroup(ctx, nsg.Status.OsokStatus.Ocid)
+	targetID, err := resolveResourceID(nsg.Status.OsokStatus.Ocid, nsg.Spec.NetworkSecurityGroupId)
+	if err != nil {
+		return err
+	}
+
+	existing, err := c.GetNetworkSecurityGroup(ctx, targetID)
 	if err != nil {
 		return err
 	}
@@ -1195,7 +1235,7 @@ func (c *OciNetworkSecurityGroupServiceManager) UpdateNetworkSecurityGroup(ctx c
 	}
 
 	_, err = client.UpdateNetworkSecurityGroup(ctx, ocicore.UpdateNetworkSecurityGroupRequest{
-		NetworkSecurityGroupId:            common.String(string(nsg.Status.OsokStatus.Ocid)),
+		NetworkSecurityGroupId:            common.String(string(targetID)),
 		UpdateNetworkSecurityGroupDetails: updateDetails,
 	})
 	return err
@@ -1295,7 +1335,7 @@ func (c *OciRouteTableServiceManager) GetRouteTableOcid(ctx context.Context, rt 
 
 	for _, item := range resp.Items {
 		state := string(item.LifecycleState)
-		if state == "AVAILABLE" || state == "PROVISIONING" {
+		if state == "AVAILABLE" || state == "PROVISIONING" || state == "UPDATING" {
 			c.Log.DebugLog(fmt.Sprintf("OciRouteTable %s exists with OCID %s", rt.Spec.DisplayName, *item.Id))
 			return (*ociv1beta1.OCID)(item.Id), nil
 		}
@@ -1312,6 +1352,11 @@ func (c *OciRouteTableServiceManager) UpdateRouteTable(ctx context.Context, rt *
 		return err
 	}
 
+	targetID, err := resolveResourceID(rt.Status.OsokStatus.Ocid, rt.Spec.RouteTableId)
+	if err != nil {
+		return err
+	}
+
 	updateDetails := ocicore.UpdateRouteTableDetails{}
 
 	if rt.Spec.DisplayName != "" {
@@ -1324,7 +1369,7 @@ func (c *OciRouteTableServiceManager) UpdateRouteTable(ctx context.Context, rt *
 	updateDetails.RouteRules = buildRouteRules(rt.Spec.RouteRules)
 
 	_, err = client.UpdateRouteTable(ctx, ocicore.UpdateRouteTableRequest{
-		RtId:                    common.String(string(rt.Status.OsokStatus.Ocid)),
+		RtId:                    common.String(string(targetID)),
 		UpdateRouteTableDetails: updateDetails,
 	})
 	return err

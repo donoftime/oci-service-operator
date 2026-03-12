@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	ocidataflow "github.com/oracle/oci-go-sdk/v65/dataflow"
@@ -19,7 +18,6 @@ import (
 	"github.com/oracle/oci-service-operator/pkg/servicemanager"
 	"github.com/oracle/oci-service-operator/pkg/util"
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -62,12 +60,20 @@ func (c *DataFlowApplicationServiceManager) CreateOrUpdate(ctx context.Context, 
 			c.Log.ErrorLog(err, "Error while getting DataFlowApplication by spec ID")
 			return servicemanager.OSOKResponse{IsSuccessful: false}, err
 		}
+		if appInstance.LifecycleState == ocidataflow.ApplicationLifecycleStateDeleted {
+			return markDeletedStatus(app, appInstance, c.Log), nil
+		}
 
-		app.Status.OsokStatus.Ocid = ociv1beta1.OCID(*appInstance.Id)
-		app.Status.OsokStatus = util.UpdateOSOKStatusCondition(app.Status.OsokStatus,
-			ociv1beta1.Active, v1.ConditionTrue, "", "DataFlowApplication Bound", c.Log)
+		response := reconcileLifecycleStatus(app, appInstance, c.Log)
+		if !response.IsSuccessful {
+			return response, nil
+		}
+		if err := c.UpdateDataFlowApplication(ctx, app); err != nil {
+			c.Log.ErrorLog(err, "Error while updating DataFlowApplication by spec ID")
+			return servicemanager.OSOKResponse{IsSuccessful: false}, err
+		}
 		c.Log.InfoLog(fmt.Sprintf("DataFlowApplication %s is bound to existing application", safeString(appInstance.DisplayName)))
-		return servicemanager.OSOKResponse{IsSuccessful: true}, nil
+		return response, nil
 	}
 
 	// Path 2: update existing application by status OCID
@@ -79,21 +85,19 @@ func (c *DataFlowApplicationServiceManager) CreateOrUpdate(ctx context.Context, 
 		}
 
 		if appInstance.LifecycleState == ocidataflow.ApplicationLifecycleStateDeleted {
-			app.Status.OsokStatus = util.UpdateOSOKStatusCondition(app.Status.OsokStatus,
-				ociv1beta1.Failed, v1.ConditionFalse, "",
-				fmt.Sprintf("DataFlowApplication %s has been deleted externally", safeString(appInstance.DisplayName)), c.Log)
-			return servicemanager.OSOKResponse{IsSuccessful: false}, nil
+			return markDeletedStatus(app, appInstance, c.Log), nil
 		}
 
+		response := reconcileLifecycleStatus(app, appInstance, c.Log)
+		if !response.IsSuccessful {
+			return response, nil
+		}
 		if err := c.UpdateDataFlowApplication(ctx, app); err != nil {
 			c.Log.ErrorLog(err, "Error while updating DataFlowApplication")
 			return servicemanager.OSOKResponse{IsSuccessful: false}, err
 		}
-
-		app.Status.OsokStatus = util.UpdateOSOKStatusCondition(app.Status.OsokStatus,
-			ociv1beta1.Active, v1.ConditionTrue, "", "DataFlowApplication Active", c.Log)
 		c.Log.InfoLog(fmt.Sprintf("DataFlowApplication %s updated", safeString(appInstance.DisplayName)))
-		return servicemanager.OSOKResponse{IsSuccessful: true}, nil
+		return response, nil
 	}
 
 	// Path 3: look up by name or create new
@@ -105,14 +109,19 @@ func (c *DataFlowApplicationServiceManager) CreateOrUpdate(ctx context.Context, 
 	if existingOcid != nil {
 		// Application exists — use it
 		app.Status.OsokStatus.Ocid = *existingOcid
-		if app.Status.OsokStatus.CreatedAt == nil {
-			now := metav1.NewTime(time.Now())
-			app.Status.OsokStatus.CreatedAt = &now
+		appInstance, err := c.GetDataFlowApplication(ctx, *existingOcid)
+		if err != nil {
+			return servicemanager.OSOKResponse{IsSuccessful: false}, err
 		}
-		app.Status.OsokStatus = util.UpdateOSOKStatusCondition(app.Status.OsokStatus,
-			ociv1beta1.Active, v1.ConditionTrue, "", "DataFlowApplication Active", c.Log)
+		response := reconcileLifecycleStatus(app, appInstance, c.Log)
+		if response.IsSuccessful {
+			if err := c.UpdateDataFlowApplication(ctx, app); err != nil {
+				c.Log.ErrorLog(err, "Error while updating existing DataFlowApplication")
+				return servicemanager.OSOKResponse{IsSuccessful: false}, err
+			}
+		}
 		c.Log.InfoLog(fmt.Sprintf("DataFlowApplication %s found existing", app.Spec.DisplayName))
-		return servicemanager.OSOKResponse{IsSuccessful: true}, nil
+		return response, nil
 	}
 
 	// Create new application
@@ -124,16 +133,9 @@ func (c *DataFlowApplicationServiceManager) CreateOrUpdate(ctx context.Context, 
 		return servicemanager.OSOKResponse{IsSuccessful: false}, err
 	}
 
-	app.Status.OsokStatus.Ocid = ociv1beta1.OCID(*appInstance.Id)
-	if app.Status.OsokStatus.CreatedAt == nil {
-		now := metav1.NewTime(time.Now())
-		app.Status.OsokStatus.CreatedAt = &now
-	}
-	app.Status.OsokStatus = util.UpdateOSOKStatusCondition(app.Status.OsokStatus,
-		ociv1beta1.Active, v1.ConditionTrue, "", "DataFlowApplication Active", c.Log)
 	c.Log.InfoLog(fmt.Sprintf("DataFlowApplication %s created successfully", app.Spec.DisplayName))
 
-	return servicemanager.OSOKResponse{IsSuccessful: true}, nil
+	return reconcileLifecycleStatus(app, appInstance, c.Log), nil
 }
 
 // Delete handles deletion of the DataFlowApplication (called by the finalizer).
@@ -143,18 +145,30 @@ func (c *DataFlowApplicationServiceManager) Delete(ctx context.Context, obj runt
 		return false, err
 	}
 
-	if app.Status.OsokStatus.Ocid == "" {
+	targetID, err := servicemanager.ResolveResourceID(app.Status.OsokStatus.Ocid, app.Spec.DataFlowApplicationId)
+	if err != nil {
 		c.Log.InfoLog("DataFlowApplication has no OCID, nothing to delete")
 		return true, nil
 	}
 
-	c.Log.InfoLog(fmt.Sprintf("Deleting DataFlowApplication %s", app.Status.OsokStatus.Ocid))
-	if err := c.DeleteDataFlowApplication(ctx, app.Status.OsokStatus.Ocid); err != nil {
+	c.Log.InfoLog(fmt.Sprintf("Deleting DataFlowApplication %s", targetID))
+	if err := c.DeleteDataFlowApplication(ctx, targetID); err != nil {
 		c.Log.ErrorLog(err, "Error while deleting DataFlowApplication")
 		return false, err
 	}
 
-	return true, nil
+	appInstance, err := c.GetDataFlowApplication(ctx, targetID)
+	if err != nil {
+		if isNotFoundServiceError(err) || servicemanager.IsNotFoundErrorString(err) {
+			return true, nil
+		}
+		return false, err
+	}
+	if appInstance.LifecycleState == ocidataflow.ApplicationLifecycleStateDeleted {
+		return true, nil
+	}
+
+	return false, nil
 }
 
 // GetCrdStatus returns the OSOK status from the resource.
@@ -172,11 +186,4 @@ func (c *DataFlowApplicationServiceManager) convert(obj runtime.Object) (*ociv1b
 		return nil, fmt.Errorf("failed type assertion for DataFlowApplication")
 	}
 	return app, nil
-}
-
-func safeString(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
 }

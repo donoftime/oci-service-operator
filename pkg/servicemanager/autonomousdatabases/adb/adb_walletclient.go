@@ -12,10 +12,13 @@ import (
 	"fmt"
 	"github.com/oracle/oci-go-sdk/v65/common"
 	"github.com/oracle/oci-go-sdk/v65/database"
+	"github.com/oracle/oci-service-operator/pkg/servicemanager"
 	"io"
 	"io/ioutil"
 	"math"
 	"time"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
 
 func (c *AdbServiceManager) GenerateWallet(ctx context.Context, adbId string, adbDisplayName string,
@@ -29,10 +32,16 @@ func (c *AdbServiceManager) GenerateWallet(ctx context.Context, adbId string, ad
 	}
 
 	c.Log.InfoLog("Checking if the wallet secret already exists")
-	_, err := c.CredentialClient.GetSecret(ctx, walletName, namespace)
+	existingSecret, err := c.CredentialClient.GetSecret(ctx, walletName, namespace)
 	if err == nil {
-		c.Log.InfoLog("Wallet already exists. Not generating wallet.")
-		return true, nil
+		if servicemanager.SecretOwnedBy(existingSecret, autonomousDatabaseKindName, adbInstanceName) {
+			c.Log.InfoLog("Wallet already exists. Not generating wallet.")
+			return true, nil
+		}
+		return false, fmt.Errorf("wallet secret %s/%s already exists and is not owned by autonomous database %s", namespace, walletName, adbInstanceName)
+	}
+	if !servicemanager.IsSecretNotFoundError(err) {
+		return false, err
 	}
 
 	c.Log.InfoLog("Getting the wallet password from the secret")
@@ -66,7 +75,14 @@ func (c *AdbServiceManager) GenerateWallet(ctx context.Context, adbId string, ad
 	}
 
 	c.Log.InfoLog("Creating the Wallet secret")
-	return c.CredentialClient.CreateSecret(ctx, walletName, namespace, nil, credMap)
+	created, err := servicemanager.EnsureOwnedSecret(ctx, c.CredentialClient, walletName, namespace, autonomousDatabaseKindName, adbInstanceName, credMap)
+	if err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			return true, nil
+		}
+		return false, err
+	}
+	return created, nil
 }
 
 func getCredentialMap(adbDisplayName string, resp database.GenerateAutonomousDatabaseWalletResponse) (map[string][]byte, error) {

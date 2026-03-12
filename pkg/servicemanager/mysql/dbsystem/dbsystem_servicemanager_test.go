@@ -68,6 +68,7 @@ type mockOciDbSystemClient struct {
 	listFn   func(context.Context, mysql.ListDbSystemsRequest) (mysql.ListDbSystemsResponse, error)
 	getFn    func(context.Context, mysql.GetDbSystemRequest) (mysql.GetDbSystemResponse, error)
 	updateFn func(context.Context, mysql.UpdateDbSystemRequest) (mysql.UpdateDbSystemResponse, error)
+	deleteFn func(context.Context, mysql.DeleteDbSystemRequest) (mysql.DeleteDbSystemResponse, error)
 }
 
 func (m *mockOciDbSystemClient) CreateDbSystem(ctx context.Context, req mysql.CreateDbSystemRequest) (mysql.CreateDbSystemResponse, error) {
@@ -96,6 +97,13 @@ func (m *mockOciDbSystemClient) UpdateDbSystem(ctx context.Context, req mysql.Up
 		return m.updateFn(ctx, req)
 	}
 	return mysql.UpdateDbSystemResponse{}, nil
+}
+
+func (m *mockOciDbSystemClient) DeleteDbSystem(ctx context.Context, req mysql.DeleteDbSystemRequest) (mysql.DeleteDbSystemResponse, error) {
+	if m.deleteFn != nil {
+		return m.deleteFn(ctx, req)
+	}
+	return mysql.DeleteDbSystemResponse{}, nil
 }
 
 // makeActiveDbSystem returns a minimal mysql.DbSystem for mock responses.
@@ -305,6 +313,7 @@ func TestCreateOrUpdate_OciGetError(t *testing.T) {
 	resp, err := mgr.CreateOrUpdate(context.Background(), dbSystem, ctrl.Request{})
 	assert.Error(t, err)
 	assert.False(t, resp.IsSuccessful)
+	assert.False(t, resp.ShouldRequeue)
 }
 
 // TestCreateOrUpdate_FindExisting verifies that when no MySqlDbSystemId is in the spec,
@@ -368,6 +377,7 @@ func TestCreateOrUpdate_ListError(t *testing.T) {
 	resp, err := mgr.CreateOrUpdate(context.Background(), dbSystem, ctrl.Request{})
 	assert.Error(t, err)
 	assert.False(t, resp.IsSuccessful)
+	assert.False(t, resp.ShouldRequeue)
 }
 
 // TestCreateOrUpdate_CreateNew verifies that when no MySqlDbSystemId is in the spec and
@@ -507,7 +517,7 @@ func TestCreateOrUpdate_LifecycleFailed(t *testing.T) {
 
 	resp, err := mgr.CreateOrUpdate(context.Background(), dbSystem, ctrl.Request{})
 	assert.NoError(t, err)
-	assert.True(t, resp.IsSuccessful)
+	assert.False(t, resp.IsSuccessful)
 	// Status should reflect the FAILED lifecycle
 	assert.Equal(t, ociv1beta1.OCID(dbSystemId), dbSystem.Status.OsokStatus.Ocid)
 }
@@ -516,12 +526,21 @@ func TestCreateOrUpdate_LifecycleFailed(t *testing.T) {
 // DeleteMySqlDbSystem stub coverage
 // ---------------------------------------------------------------------------
 
-// TestDeleteMySqlDbSystem verifies DeleteMySqlDbSystem returns empty string and no error.
+// TestDeleteMySqlDbSystem verifies DeleteMySqlDbSystem issues the OCI delete request for the supplied OCID.
 func TestDeleteMySqlDbSystem(t *testing.T) {
 	mgr := newTestManager(&fakeCredentialClient{})
-	ocid, err := mgr.DeleteMySqlDbSystem()
+	deleteCalled := false
+	ExportSetClientForTest(mgr, &mockOciDbSystemClient{
+		deleteFn: func(_ context.Context, req mysql.DeleteDbSystemRequest) (mysql.DeleteDbSystemResponse, error) {
+			deleteCalled = true
+			assert.Equal(t, "ocid1.mysqldbsystem.oc1..delete", *req.DbSystemId)
+			return mysql.DeleteDbSystemResponse{}, nil
+		},
+	})
+
+	err := mgr.DeleteMySqlDbSystem(context.Background(), "ocid1.mysqldbsystem.oc1..delete")
 	assert.NoError(t, err)
-	assert.Equal(t, "", ocid)
+	assert.True(t, deleteCalled)
 }
 
 // ---------------------------------------------------------------------------
@@ -776,8 +795,9 @@ func TestCreateOrUpdate_LifecycleProvisioning(t *testing.T) {
 	dbSystem.Spec.MySqlDbSystemId = ociv1beta1.OCID(dbSystemId)
 
 	resp, err := mgr.CreateOrUpdate(context.Background(), dbSystem, ctrl.Request{})
-	assert.Error(t, err)
+	assert.NoError(t, err)
 	assert.False(t, resp.IsSuccessful)
+	assert.True(t, resp.ShouldRequeue)
 }
 
 // ---------------------------------------------------------------------------

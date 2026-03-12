@@ -101,9 +101,6 @@ func (m *FunctionsFunctionServiceManager) CreateOrUpdate(ctx context.Context, ob
 		}
 
 		fn.Status.OsokStatus.Ocid = ociv1beta1.OCID(*fnInstance.Id)
-		fn.Status.OsokStatus = util.UpdateOSOKStatusCondition(fn.Status.OsokStatus,
-			ociv1beta1.Active, v1.ConditionTrue, "",
-			fmt.Sprintf("FunctionsFunction %s is %s", *fnInstance.DisplayName, fnInstance.LifecycleState), m.Log)
 		m.Log.InfoLog(fmt.Sprintf("FunctionsFunction %s is %s", *fnInstance.DisplayName, fnInstance.LifecycleState))
 
 	} else {
@@ -114,13 +111,12 @@ func (m *FunctionsFunctionServiceManager) CreateOrUpdate(ctx context.Context, ob
 			return servicemanager.OSOKResponse{IsSuccessful: false}, err
 		}
 
+		fn.Status.OsokStatus.Ocid = fn.Spec.FunctionsFunctionId
 		if err = m.UpdateFunction(ctx, fn); err != nil {
 			m.Log.ErrorLog(err, "Error while updating FunctionsFunction")
 			return servicemanager.OSOKResponse{IsSuccessful: false}, err
 		}
 
-		fn.Status.OsokStatus = util.UpdateOSOKStatusCondition(fn.Status.OsokStatus,
-			ociv1beta1.Active, v1.ConditionTrue, "", "FunctionsFunction Bound/Updated", m.Log)
 		m.Log.InfoLog(fmt.Sprintf("FunctionsFunction %s is bound/updated", *fnInstance.DisplayName))
 	}
 
@@ -130,22 +126,32 @@ func (m *FunctionsFunctionServiceManager) CreateOrUpdate(ctx context.Context, ob
 		fn.Status.OsokStatus.CreatedAt = &now
 	}
 
-	if fnInstance.LifecycleState == ocifunctions.FunctionLifecycleStateFailed {
+	switch fnInstance.LifecycleState {
+	case ocifunctions.FunctionLifecycleStateFailed, ocifunctions.FunctionLifecycleStateDeleted:
 		fn.Status.OsokStatus = util.UpdateOSOKStatusCondition(fn.Status.OsokStatus,
 			ociv1beta1.Failed, v1.ConditionFalse, "",
-			fmt.Sprintf("FunctionsFunction %s creation Failed", *fnInstance.DisplayName), m.Log)
-		m.Log.InfoLog(fmt.Sprintf("FunctionsFunction %s creation Failed", *fnInstance.DisplayName))
+			fmt.Sprintf("FunctionsFunction %s is %s", *fnInstance.DisplayName, fnInstance.LifecycleState), m.Log)
+		m.Log.InfoLog(fmt.Sprintf("FunctionsFunction %s is %s", *fnInstance.DisplayName, fnInstance.LifecycleState))
 		return servicemanager.OSOKResponse{IsSuccessful: false}, nil
-	}
-
-	// Store invoke endpoint in a secret for easy access
-	if fnInstance.InvokeEndpoint != nil {
-		if _, err = m.addToSecret(ctx, fn.Namespace, fn.Name, *fnInstance); err != nil {
-			m.Log.InfoLog("Secret creation for FunctionsFunction endpoint failed")
+	case ocifunctions.FunctionLifecycleStateActive:
+		fn.Status.OsokStatus = util.UpdateOSOKStatusCondition(fn.Status.OsokStatus,
+			ociv1beta1.Active, v1.ConditionTrue, "",
+			fmt.Sprintf("FunctionsFunction %s is %s", *fnInstance.DisplayName, fnInstance.LifecycleState), m.Log)
+		if fnInstance.InvokeEndpoint != nil {
+			if _, err = m.addToSecret(ctx, fn.Namespace, fn.Name, *fnInstance); err != nil {
+				m.Log.InfoLog("Secret creation for FunctionsFunction endpoint failed")
+				return servicemanager.OSOKResponse{IsSuccessful: false}, err
+			}
 		}
-	}
 
-	return servicemanager.OSOKResponse{IsSuccessful: true}, nil
+		return servicemanager.OSOKResponse{IsSuccessful: true}, nil
+	default:
+		fn.Status.OsokStatus = util.UpdateOSOKStatusCondition(fn.Status.OsokStatus,
+			ociv1beta1.Provisioning, v1.ConditionTrue, "",
+			fmt.Sprintf("FunctionsFunction %s is %s", *fnInstance.DisplayName, fnInstance.LifecycleState), m.Log)
+		m.Log.InfoLog(fmt.Sprintf("FunctionsFunction %s is %s, requeueing", *fnInstance.DisplayName, fnInstance.LifecycleState))
+		return servicemanager.OSOKResponse{IsSuccessful: false, ShouldRequeue: true}, nil
+	}
 }
 
 // Delete handles deletion of the FunctionsFunction (called by the finalizer).
@@ -155,22 +161,35 @@ func (m *FunctionsFunctionServiceManager) Delete(ctx context.Context, obj runtim
 		return false, err
 	}
 
-	if fn.Status.OsokStatus.Ocid == "" {
+	targetID, err := servicemanager.ResolveResourceID(fn.Status.OsokStatus.Ocid, fn.Spec.FunctionsFunctionId)
+	if err != nil {
 		m.Log.InfoLog("FunctionsFunction has no OCID, nothing to delete")
 		return true, nil
 	}
 
-	m.Log.InfoLog(fmt.Sprintf("Deleting FunctionsFunction %s", fn.Status.OsokStatus.Ocid))
-	if err := m.DeleteFunction(ctx, fn.Status.OsokStatus.Ocid); err != nil {
+	m.Log.InfoLog(fmt.Sprintf("Deleting FunctionsFunction %s", targetID))
+	if err := m.DeleteFunction(ctx, targetID); err != nil {
+		if isFunctionsNotFound(err) {
+			return m.deleteFunctionSecret(ctx, fn)
+		}
 		m.Log.ErrorLog(err, "Error while deleting FunctionsFunction")
 		return false, err
 	}
 
-	if _, err := m.CredentialClient.DeleteSecret(ctx, fn.Name, fn.Namespace); err != nil {
-		m.Log.ErrorLog(err, "Error while deleting FunctionsFunction secret")
+	fnInstance, err := m.GetFunction(ctx, targetID, nil)
+	if err != nil {
+		if isFunctionsNotFound(err) {
+			return m.deleteFunctionSecret(ctx, fn)
+		}
+		m.Log.ErrorLog(err, "Error while checking FunctionsFunction deletion")
+		return false, err
 	}
 
-	return true, nil
+	if fnInstance.LifecycleState == ocifunctions.FunctionLifecycleStateDeleted {
+		return m.deleteFunctionSecret(ctx, fn)
+	}
+
+	return false, nil
 }
 
 // GetCrdStatus returns the OSOK status from the resource.
@@ -190,13 +209,21 @@ func (m *FunctionsFunctionServiceManager) convert(obj runtime.Object) (*ociv1bet
 	return fn, nil
 }
 
+func (m *FunctionsFunctionServiceManager) deleteFunctionSecret(ctx context.Context, fn *ociv1beta1.FunctionsFunction) (bool, error) {
+	done, err := servicemanager.DeleteOwnedSecretIfPresent(ctx, m.CredentialClient, fn.Name, fn.Namespace, "FunctionsFunction", fn.Name)
+	if err != nil {
+		m.Log.ErrorLog(err, "Error while deleting FunctionsFunction secret")
+	}
+	return done, err
+}
+
 // addToSecret stores the function invoke endpoint in a Kubernetes secret.
 func (m *FunctionsFunctionServiceManager) addToSecret(ctx context.Context, namespace string, fnName string,
 	fn ocifunctions.Function) (bool, error) {
 	m.Log.InfoLog("Creating the FunctionsFunction endpoint secret")
 	credMap := getFunctionCredentialMap(fn)
 	m.Log.InfoLog(fmt.Sprintf("Creating secret for FunctionsFunction %s in namespace %s", fnName, namespace))
-	return m.CredentialClient.CreateSecret(ctx, fnName, namespace, nil, credMap)
+	return servicemanager.EnsureOwnedSecret(ctx, m.CredentialClient, fnName, namespace, "FunctionsFunction", fnName, credMap)
 }
 
 func getFunctionCredentialMap(fn ocifunctions.Function) map[string][]byte {

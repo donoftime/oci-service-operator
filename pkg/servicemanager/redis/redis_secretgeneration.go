@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	"github.com/oracle/oci-go-sdk/v65/redis"
+	"github.com/oracle/oci-service-operator/pkg/servicemanager"
 )
 
 func (c *RedisClusterServiceManager) addToSecret(ctx context.Context, namespace string, clusterName string,
@@ -19,7 +20,7 @@ func (c *RedisClusterServiceManager) addToSecret(ctx context.Context, namespace 
 	credMap := getCredentialMap(cluster)
 
 	c.Log.InfoLog(fmt.Sprintf("Creating secret for RedisCluster %s in namespace %s", clusterName, namespace))
-	return c.CredentialClient.CreateSecret(ctx, clusterName, namespace, nil, credMap)
+	return servicemanager.EnsureOwnedSecret(ctx, c.CredentialClient, clusterName, namespace, "RedisCluster", clusterName, credMap)
 }
 
 func getCredentialMap(cluster redis.RedisCluster) map[string][]byte {
