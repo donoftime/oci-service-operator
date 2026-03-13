@@ -1,0 +1,82 @@
+@startuml
+title OCI DRG Reconcile Sequence
+autonumber
+skinparam shadowing false
+skinparam BackgroundColor #FFFFFF
+skinparam ArrowColor #334155
+skinparam defaultTextAlignment left
+skinparam sequence {
+  ParticipantBackgroundColor #F8FAFC
+  ParticipantBorderColor #475569
+  LifeLineBorderColor #94A3B8
+  LifeLineBackgroundColor #FFFFFF
+  GroupBorderColor #475569
+  GroupBackgroundColor #F8FAFC
+  ActorBackgroundColor #E0F2FE
+  ActorBorderColor #0F766E
+}
+actor "Controller" as Controller
+participant "Service Manager" as ServiceManager
+database "OCI" as OCI
+database "Kubernetes API" as K8s
+
+Controller -> ServiceManager: reconcile desired spec and live status
+ServiceManager -> K8s: read CR status and finalizer state
+
+group Lookup and bind
+  alt tracked or explicit OCID already exists
+    ServiceManager -> OCI: get the current resource by known identifier
+  else no OCID is bound yet
+    ServiceManager -> OCI: list resources by display name
+    loop later pages until a match or exhaustion
+      ServiceManager -> OCI: fetch the next list page
+    end
+    alt existing resource found
+      ServiceManager -> K8s: persist the resolved OCID in status
+    else no existing resource found
+      ServiceManager -> OCI: create the OCI resource
+      ServiceManager -> K8s: persist the created OCID in status
+    end
+  end
+end
+
+alt delete requested
+  group Delete
+    ServiceManager -> OCI: submit OCI delete
+    ServiceManager -> OCI: Confirm deletion with follow-up GetDrg calls until the resource is gone or not found.
+    ServiceManager -> K8s: remove the finalizer after delete confirmation
+  end
+else OCI state is retryable
+  ServiceManager --> Controller: requeue required
+else OCI state is failed or terminal
+  ServiceManager --> Controller: unsuccessful terminal reconcile result
+else OCI state is active and usable
+  group Drift handling
+    Note over ServiceManager,OCI
+      Supported update surface:
+      - display name
+      - freeform tags
+      - defined tags
+    end note
+    ServiceManager -> OCI: Continue full pagination until a display-name match is found or all pages are exhausted.
+    ServiceManager -> OCI: Reuse the resolved OCID for all later update and delete operations once the DRG is found.
+    ServiceManager -> OCI: Move the DRG compartment before calling the mutable update path when compartment drift exists.
+    opt supported drift or collection diff exists
+      ServiceManager -> OCI: apply the supported in-place mutation path
+    end
+  end
+  ServiceManager --> Controller: successful active reconcile
+end
+
+Note over Controller,OCI
+  Boundary notes:
+  - Pagination and field-level drift are still documented primarily in Go
+      code and property tests.
+  Sequence notes:
+  - Later-page matches must keep using the resolved OCID rather than
+      restarting the lookup flow.
+  Controller-local invariants:
+  - StatusPresentUsesStatusInvariant
+end note
+
+@enduml

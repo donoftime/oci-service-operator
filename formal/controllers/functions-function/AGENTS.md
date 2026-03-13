@@ -5,7 +5,7 @@
   `../../shared/ListResolutionContract.tla`, `../../shared/DriftAwareUpdateContract.tla`,
   `../../shared/CollectionEquivalenceContract.tla`, `../../shared/WholeListConvergenceContract.tla`,
   `../../shared/BestEffortCleanupContract.tla`, `../../shared/SecretSideEffectContract.tla`
-- Diagram source: `diagrams/lifecycle.puml`
+- Diagram sources: `diagrams/activity.puml`, `diagrams/sequence.puml`, `diagrams/state-machine.puml`
 - Known gaps and fix history: `logic-gaps.md`
 - Capabilities: `bind_by_id,resolve_by_name,drift_update,confirmed_delete,secret_write,secret_delete`
 

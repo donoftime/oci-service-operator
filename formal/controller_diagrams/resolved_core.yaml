@@ -1,0 +1,140 @@
+{
+  "controllers": {
+    "compute-instance": {
+      "archetype": "resolved-drift-delete",
+      "update_surface": [
+        "displayName",
+        "shape",
+        "shapeConfig",
+        "freeformTags",
+        "definedTags"
+      ],
+      "ordered_steps": [
+        "Keep the retained OCID authoritative for post-bind update and delete paths."
+      ],
+      "reject_paths": [
+        "imageId drift",
+        "subnet and instance-option drift outside the modeled post-bind surface"
+      ],
+      "delete_steps": [
+        "Confirm termination with GetInstance until the resource reaches TERMINATED or is not found."
+      ],
+      "boundary_notes": [
+        "The modeled post-bind surface stops at display name, shape, shape config, and tag drift.",
+        "Compartment changes are handled in place before other supported updates."
+      ],
+      "features": [
+        "move_compartment"
+      ],
+      "sequence_notes": [
+        "RUNNING and STOPPED are both active outcomes, while PROVISIONING, STARTING, and STOPPING remain retryable."
+      ]
+    },
+    "dataflow-application": {
+      "archetype": "resolved-drift-delete",
+      "update_surface": [
+        "diff-based update from observable ACTIVE and INACTIVE application state"
+      ],
+      "ordered_steps": [
+        "Fail explicit-ID binding when the observed application is already DELETED."
+      ],
+      "reject_paths": [],
+      "delete_steps": [
+        "Confirm deletion with GetApplication until the resource is DELETED or not found."
+      ],
+      "boundary_notes": [
+        "The formal model intentionally excludes unobservable asynchronous create-progress states."
+      ],
+      "features": [
+        "inactive_ready_state"
+      ],
+      "sequence_notes": [
+        "INACTIVE is treated as a ready-state outcome rather than a retryable provisioning phase."
+      ]
+    },
+    "functions-application": {
+      "archetype": "resolved-drift-delete",
+      "update_surface": [
+        "config",
+        "networkSecurityGroupIds",
+        "syslogUrl",
+        "freeformTags",
+        "definedTags"
+      ],
+      "ordered_steps": [
+        "Apply diff-based updates through the resolved OCID instead of restarting name resolution."
+      ],
+      "reject_paths": [],
+      "delete_steps": [
+        "Confirm deletion with GetApplication until the resource is DELETED or not found."
+      ],
+      "boundary_notes": [
+        "The current formal partition omits OCI DELETING even though the controller code treats it as retryable."
+      ],
+      "features": [],
+      "sequence_notes": [
+        "Resolved-name binds and explicit-ID binds both continue using the retained OCID for updates."
+      ]
+    },
+    "nosql-database": {
+      "archetype": "resolved-drift-delete",
+      "update_surface": [
+        "ddlStatement",
+        "tableLimits",
+        "freeformTags",
+        "definedTags"
+      ],
+      "ordered_steps": [
+        "Keep the retained OCID authoritative for update and delete once status.ocid is present."
+      ],
+      "reject_paths": [],
+      "delete_steps": [
+        "Look for a matching delete work request before submitting a duplicate delete.",
+        "Wait for the matching table delete work request to succeed, or treat an already-missing table as complete."
+      ],
+      "boundary_notes": [
+        "OCI-managed schema and replication internals outside the CRD surface remain out of model.",
+        "Compartment changes are applied in place before other supported table updates."
+      ],
+      "features": [
+        "delete_work_request",
+        "move_compartment"
+      ],
+      "sequence_notes": [
+        "The delete path is work-request-backed rather than pure Get/404 polling."
+      ]
+    },
+    "open-search-cluster": {
+      "archetype": "resolved-drift-delete",
+      "update_surface": [
+        "node count",
+        "node sizing",
+        "security settings",
+        "software version",
+        "freeformTags",
+        "definedTags"
+      ],
+      "ordered_steps": [
+        "Validate immutable networking and host-shape fields before any resize or general update.",
+        "Keep the retained OCID authoritative across resize and general update branches."
+      ],
+      "reject_paths": [
+        "immutable networking drift",
+        "immutable host-shape drift"
+      ],
+      "delete_steps": [
+        "Confirm deletion with GetOpenSearchCluster until the resource is DELETED or not found."
+      ],
+      "boundary_notes": [
+        "Supported drift splits into immutable-reject, horizontal resize, vertical resize, and general update branches."
+      ],
+      "features": [
+        "resize_horizontal",
+        "resize_vertical"
+      ],
+      "sequence_notes": [
+        "The same retained OCID is reused across resize and non-resize mutation paths."
+      ]
+    }
+  }
+}

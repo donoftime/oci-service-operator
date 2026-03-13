@@ -1,0 +1,195 @@
+{
+  "controllers": {
+    "oci-security-list": {
+      "archetype": "resolved-drift-delete-paginated-collection",
+      "update_surface": [
+        "display name",
+        "freeform tags",
+        "defined tags",
+        "ingress security rules",
+        "egress security rules"
+      ],
+      "ordered_steps": [
+        "Move the security list compartment before reconciling rules or tags.",
+        "Resubmit the full desired ingress and egress rule lists when semantic drift exists."
+      ],
+      "reject_paths": [
+        "vcnId drift"
+      ],
+      "delete_steps": [
+        "Confirm deletion with follow-up GetSecurityList calls until the resource is gone or not found."
+      ],
+      "boundary_notes": [
+        "Later-page name matches must keep using the resolved OCID for later mutation paths.",
+        "Partial OCI-side application of an already-submitted full rule set remains outside the modeled guarantee."
+      ],
+      "features": [
+        "move_compartment"
+      ],
+      "sequence_notes": [
+        "Matching ingress and egress rule lists must skip no-op writes.",
+        "Differing lists converge only after whole-list resubmission."
+      ]
+    },
+    "oci-route-table": {
+      "archetype": "resolved-drift-delete-paginated-collection",
+      "update_surface": [
+        "display name",
+        "freeform tags",
+        "defined tags",
+        "route rules"
+      ],
+      "ordered_steps": [
+        "Move the route table compartment before reconciling route rules or tags.",
+        "Resubmit the full desired route-rule list when semantic drift exists."
+      ],
+      "reject_paths": [
+        "vcnId drift"
+      ],
+      "delete_steps": [
+        "Confirm deletion with follow-up GetRouteTable calls until the resource is gone or not found."
+      ],
+      "boundary_notes": [
+        "Later-page name matches must keep using the resolved OCID for later mutation paths.",
+        "Partial OCI-side application of an already-submitted full route-rule list remains outside the modeled guarantee."
+      ],
+      "features": [
+        "move_compartment"
+      ],
+      "sequence_notes": [
+        "Matching route-rule lists must skip no-op writes.",
+        "Differing lists converge only after whole-list resubmission."
+      ]
+    },
+    "api-gateway-deployment": {
+      "archetype": "resolved-drift-delete-collection",
+      "update_surface": [
+        "display name",
+        "freeform tags",
+        "defined tags",
+        "routes compared semantically"
+      ],
+      "ordered_steps": [
+        "Move the deployment compartment before reconciling route or tag drift.",
+        "Compare routes semantically before deciding whether to call UpdateDeployment."
+      ],
+      "reject_paths": [
+        "gatewayId drift",
+        "pathPrefix drift"
+      ],
+      "delete_steps": [
+        "Confirm deletion with follow-up GetDeployment calls until the lifecycle is DELETED or the resource is not found."
+      ],
+      "boundary_notes": [
+        "Route collection equivalence is part of the modeled ready path, but the current formal state partition does not expose OCI DELETING as retryable.",
+        "Code and tests treat OCI DELETING as requeueing even though spec.cfg only names CREATING and UPDATING as retryable."
+      ],
+      "features": [
+        "move_compartment"
+      ],
+      "sequence_notes": [
+        "Matching route collections must skip no-op writes."
+      ]
+    },
+    "object-storage-bucket": {
+      "archetype": "bindonly-drift-delete-secret",
+      "update_surface": [
+        "compartmentId",
+        "AccessType",
+        "Versioning",
+        "freeform tags",
+        "defined tags"
+      ],
+      "ordered_steps": [
+        "Resolve and persist the bucket namespace before update or delete.",
+        "Validate the composite bucket identifier before any OCI mutation.",
+        "Diff only the modeled bucket attributes before calling UpdateBucket."
+      ],
+      "reject_paths": [
+        "name drift",
+        "namespace drift",
+        "storageType drift",
+        "malformed composite bucket identifier"
+      ],
+      "delete_steps": [
+        "Confirm bucket disappearance with follow-up GetBucket calls until the bucket is gone or not found.",
+        "Delete the owned connection Secret after bucket deletion is confirmed."
+      ],
+      "boundary_notes": [
+        "The modeled update surface excludes storage tier and other unreconciled bucket attributes.",
+        "Missing Secrets still allow completion, but Secret-delete failures block finalizer removal."
+      ],
+      "features": [
+        "namespace_resolution",
+        "composite_id_validation"
+      ],
+      "sequence_notes": [
+        "Connection Secret generation happens only after the bucket reaches READY."
+      ]
+    },
+    "container-instance": {
+      "archetype": "resolved-drift-delete-cleanup",
+      "update_surface": [
+        "display name",
+        "freeform tags",
+        "defined tags"
+      ],
+      "ordered_steps": [
+        "Move the container instance compartment before reconciling supported tag or display-name drift.",
+        "Run duplicate-name cleanup as a separate non-blocking pass over eligible OCI resources."
+      ],
+      "reject_paths": [
+        "availabilityDomain drift",
+        "shape drift",
+        "faultDomain drift",
+        "gracefulShutdownTimeoutInSeconds drift",
+        "containerRestartPolicy drift"
+      ],
+      "delete_steps": [
+        "Confirm deletion with follow-up GetContainerInstance calls until the lifecycle is DELETED or the resource is not found."
+      ],
+      "boundary_notes": [
+        "Best-effort cleanup remains non-blocking and must stay within the controller's eligible duplicate set.",
+        "Implementation lookup also treats INACTIVE container instances as existing matches even though that state is outside the formal lifecycle partition."
+      ],
+      "features": [
+        "move_compartment",
+        "duplicate_cleanup"
+      ],
+      "sequence_notes": [
+        "Managed cleanup should never block a successful active reconcile."
+      ]
+    },
+    "api-gateway": {
+      "archetype": "resolved-drift-delete-secretwrite",
+      "update_surface": [
+        "display name",
+        "NetworkSecurityGroupIds",
+        "CertificateId",
+        "freeform tags",
+        "defined tags"
+      ],
+      "ordered_steps": [
+        "Move the gateway compartment before reconciling supported gateway drift.",
+        "Write the connection Secret only after the gateway reaches ACTIVE."
+      ],
+      "reject_paths": [
+        "endpointType drift",
+        "subnetId drift"
+      ],
+      "delete_steps": [
+        "Confirm deletion with follow-up GetGateway calls until the lifecycle is DELETED or the resource is not found."
+      ],
+      "boundary_notes": [
+        "Endpoint-topology drift remains outside the modeled update surface.",
+        "Code and tests treat OCI DELETING as requeueing even though spec.cfg only names CREATING and UPDATING as retryable."
+      ],
+      "features": [
+        "move_compartment"
+      ],
+      "sequence_notes": [
+        "There is no Secret-delete branch for this controller."
+      ]
+    }
+  }
+}

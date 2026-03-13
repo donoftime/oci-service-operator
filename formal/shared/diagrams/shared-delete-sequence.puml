@@ -1,0 +1,44 @@
+@startuml
+title Shared Delete and Finalizer Sequence
+autonumber
+skinparam shadowing false
+skinparam BackgroundColor #FFFFFF
+skinparam ArrowColor #334155
+skinparam defaultTextAlignment left
+skinparam sequence {
+  ParticipantBackgroundColor #F8FAFC
+  ParticipantBorderColor #475569
+  LifeLineBorderColor #94A3B8
+  LifeLineBackgroundColor #FFFFFF
+  GroupBorderColor #475569
+  GroupBackgroundColor #F8FAFC
+  ActorBackgroundColor #E0F2FE
+  ActorBorderColor #0F766E
+}
+actor "Controller" as Controller
+participant "Service Manager" as ServiceManager
+database "OCI" as OCI
+database "Kubernetes API" as K8s
+collections "Work Request" as WorkRequest
+
+Controller -> ServiceManager: reconcile delete request
+ServiceManager -> OCI: submit OCI delete
+opt delete path returns a work-request ID
+  OCI --> ServiceManager: return a work-request identifier
+  ServiceManager -> WorkRequest: wait for the matching delete work request when the controller models it
+end
+loop until the delete is confirmed
+  ServiceManager -> OCI: Get the current resource
+end
+opt controller owns a Secret side effect
+  ServiceManager -> K8s: delete the owned Secret only after OCI deletion is confirmed
+end
+ServiceManager -> K8s: remove the finalizer after deletion confirmation
+
+note over ServiceManager,K8s
+- Finalizers remain until OCI deletion is confirmed.
+- Secret cleanup failures block completion when the controller models Secret deletion.
+- Missing Secrets may still allow completion for controllers that treat deletion as best effort.
+end note
+
+@enduml

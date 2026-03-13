@@ -1,0 +1,78 @@
+@startuml
+title Data Flow Application Reconcile Activity
+skinparam shadowing false
+skinparam BackgroundColor #FFFFFF
+skinparam ArrowColor #334155
+skinparam defaultTextAlignment left
+skinparam activity {
+  BackgroundColor #F8FAFC
+  BorderColor #475569
+  FontColor #0F172A
+  DiamondBackgroundColor #E2E8F0
+  DiamondBorderColor #475569
+  StartColor #0F766E
+  EndColor #7F1D1D
+}
+start
+
+partition "Observe and Bind" {
+  :Read CR spec, status OCID, and delete intent;
+  if ("Tracked or explicit OCID present?") then (yes)
+    :Get the OCI resource by known identifier;
+  else (no)
+    :Resolve an existing OCI resource by display name;
+    :Persist the resolved or created OCID back into status;
+  endif
+}
+
+if ("Delete requested?") then (yes)
+  partition "Delete" {
+    :Submit OCI delete for Data Flow Application;
+    :Confirm deletion with GetApplication until the resource is DELETED or not found.;
+    :Remove the finalizer after OCI deletion is confirmed;
+  }
+  stop
+else (no)
+  partition "Lifecycle Classification" {
+    if ("OCI state in retryable set?") then (yes)
+      :Request requeue and keep the finalizer;
+      stop
+    endif
+    if ("OCI state in failed set?") then (yes)
+      :Return an unsuccessful terminal reconcile result;
+      stop
+    endif
+  }
+
+  partition "Ready and Drift Handling" {
+    :Compare live OCI state with the supported drift surface;
+    :Fail explicit-ID binding when the observed application is already DELETED.;
+    if ("Supported drift detected?") then (yes)
+      :Apply only the supported in-place update surface;
+    else (no)
+      :Skip the no-op mutation path;
+    endif
+    :Return success for the usable active state;
+  }
+endif
+
+floating note right
+Archetype:
+- resolved-drift-delete
+Retryable OCI states: none
+Active OCI states:
+- ACTIVE
+- INACTIVE
+Failed OCI states:
+- FAILED
+- DELETED
+Update surface:
+- diff-based update from observable ACTIVE and INACTIVE
+    application state
+Reject before mutate: none
+Boundary notes:
+- The formal model intentionally excludes unobservable
+    asynchronous create-progress states.
+end note
+
+@enduml

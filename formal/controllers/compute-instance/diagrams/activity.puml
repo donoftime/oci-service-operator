@@ -1,0 +1,96 @@
+@startuml
+title Compute Instance Reconcile Activity
+skinparam shadowing false
+skinparam BackgroundColor #FFFFFF
+skinparam ArrowColor #334155
+skinparam defaultTextAlignment left
+skinparam activity {
+  BackgroundColor #F8FAFC
+  BorderColor #475569
+  FontColor #0F172A
+  DiamondBackgroundColor #E2E8F0
+  DiamondBorderColor #475569
+  StartColor #0F766E
+  EndColor #7F1D1D
+}
+start
+
+partition "Observe and Bind" {
+  :Read CR spec, status OCID, and delete intent;
+  :Keep status-bound OCID authoritative for later update or delete paths;
+  if ("Tracked or explicit OCID present?") then (yes)
+    :Get the OCI resource by known identifier;
+  else (no)
+    :Resolve an existing OCI resource by display name;
+    :Persist the resolved or created OCID back into status;
+  endif
+}
+
+if ("Delete requested?") then (yes)
+  partition "Delete" {
+    :Submit OCI delete for Compute Instance;
+    :Confirm termination with GetInstance until the resource reaches TERMINATED or is not found.;
+    :Remove the finalizer after OCI deletion is confirmed;
+  }
+  stop
+else (no)
+  partition "Lifecycle Classification" {
+    if ("OCI state in retryable set?") then (yes)
+      :Request requeue and keep the finalizer;
+      stop
+    endif
+    if ("OCI state in failed set?") then (yes)
+      :Return an unsuccessful terminal reconcile result;
+      stop
+    endif
+  }
+
+  partition "Ready and Drift Handling" {
+    :Compare live OCI state with the supported drift surface;
+    if ("Unsupported or immutable drift detected?") then (yes)
+      :Reject the change before any OCI mutation;
+      stop
+    endif
+    :Keep the retained OCID authoritative for post-bind update and delete paths.;
+    if ("Supported drift detected?") then (yes)
+      :Apply only the supported in-place update surface;
+    else (no)
+      :Skip the no-op mutation path;
+    endif
+    :Return success for the usable active state;
+  }
+endif
+
+floating note right
+Archetype:
+- resolved-drift-delete
+Retryable OCI states:
+- PROVISIONING
+- STARTING
+- STOPPING
+Active OCI states:
+- RUNNING
+- STOPPED
+Failed OCI states:
+- FAILED
+- TERMINATED
+Update surface:
+- displayName
+- shape
+- shapeConfig
+- freeformTags
+- definedTags
+Reject before mutate:
+- imageId drift
+- subnet and instance-option drift outside the modeled post-
+    bind surface
+Boundary notes:
+- The modeled post-bind surface stops at display name,
+    shape, shape config, and tag drift.
+- Compartment changes are handled in place before other
+    supported updates.
+Controller-local invariants:
+- StatusPresentUsesStatusInvariant
+end note
+
+@enduml

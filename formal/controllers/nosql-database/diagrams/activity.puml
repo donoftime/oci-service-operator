@@ -1,0 +1,88 @@
+@startuml
+title NoSQL Database Reconcile Activity
+skinparam shadowing false
+skinparam BackgroundColor #FFFFFF
+skinparam ArrowColor #334155
+skinparam defaultTextAlignment left
+skinparam activity {
+  BackgroundColor #F8FAFC
+  BorderColor #475569
+  FontColor #0F172A
+  DiamondBackgroundColor #E2E8F0
+  DiamondBorderColor #475569
+  StartColor #0F766E
+  EndColor #7F1D1D
+}
+start
+
+partition "Observe and Bind" {
+  :Read CR spec, status OCID, and delete intent;
+  :Keep status-bound OCID authoritative for later update or delete paths;
+  if ("Tracked or explicit OCID present?") then (yes)
+    :Get the OCI resource by known identifier;
+  else (no)
+    :Resolve an existing OCI resource by display name;
+    :Persist the resolved or created OCID back into status;
+  endif
+}
+
+if ("Delete requested?") then (yes)
+  partition "Delete" {
+    :Submit OCI delete for NoSQL Database;
+    :Look for a matching delete work request before submitting a duplicate delete.;
+    :Wait for the matching table delete work request to succeed, or treat an already-missing table as complete.;
+    :Remove the finalizer after OCI deletion is confirmed;
+  }
+  stop
+else (no)
+  partition "Lifecycle Classification" {
+    if ("OCI state in retryable set?") then (yes)
+      :Request requeue and keep the finalizer;
+      stop
+    endif
+    if ("OCI state in failed set?") then (yes)
+      :Return an unsuccessful terminal reconcile result;
+      stop
+    endif
+  }
+
+  partition "Ready and Drift Handling" {
+    :Compare live OCI state with the supported drift surface;
+    :Keep the retained OCID authoritative for update and delete once status.ocid is present.;
+    if ("Supported drift detected?") then (yes)
+      :Apply only the supported in-place update surface;
+    else (no)
+      :Skip the no-op mutation path;
+    endif
+    :Return success for the usable active state;
+  }
+endif
+
+floating note right
+Archetype:
+- resolved-drift-delete
+Retryable OCI states:
+- CREATING
+- UPDATING
+Active OCI states:
+- ACTIVE
+Failed OCI states:
+- FAILED
+- DELETING
+- DELETED
+Update surface:
+- ddlStatement
+- tableLimits
+- freeformTags
+- definedTags
+Reject before mutate: none
+Boundary notes:
+- OCI-managed schema and replication internals outside the
+    CRD surface remain out of model.
+- Compartment changes are applied in place before other
+    supported table updates.
+Controller-local invariants:
+- StatusPresentUsesStatusInvariant
+end note
+
+@enduml

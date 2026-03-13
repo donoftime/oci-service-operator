@@ -222,10 +222,18 @@ formal-%: formal-tools ## Run TLC for a single controller slug from formal/contr
 	TMPDIR="$(FORMAL_TMP_DIR)" FORMAL_TMP_DIR="$(FORMAL_TMP_DIR)" ./tools/formal/run_controller.sh "$(TLA2TOOLS_JAR)" "$(FORMAL_DIR)/controllers/$*"
 
 .PHONY: diagrams
-diagrams: formal-tools ## Render all PlantUML diagrams under formal/controllers.
+diagrams: formal-tools ## Render PlantUML diagrams under formal/shared and formal/controllers.
+	python3 ./tools/formal/generate_diagrams.py
+	TMPDIR="$(FORMAL_TMP_DIR)" FORMAL_TMP_DIR="$(FORMAL_TMP_DIR)" ./tools/formal/render_controller.sh "$(PLANTUML_JAR)" "$(FORMAL_DIR)/shared"
 	TMPDIR="$(FORMAL_TMP_DIR)" FORMAL_TMP_DIR="$(FORMAL_TMP_DIR)" ./tools/formal/render_all.sh "$(PLANTUML_JAR)" "$(FORMAL_DIR)/controllers"
 
+.PHONY: diagrams-shared
+diagrams-shared: formal-tools ## Render PlantUML diagrams under formal/shared.
+	python3 ./tools/formal/generate_diagrams.py --shared-only
+	TMPDIR="$(FORMAL_TMP_DIR)" FORMAL_TMP_DIR="$(FORMAL_TMP_DIR)" ./tools/formal/render_controller.sh "$(PLANTUML_JAR)" "$(FORMAL_DIR)/shared"
+
 diagrams-%: formal-tools ## Render PlantUML diagrams for a single controller slug.
+	python3 ./tools/formal/generate_diagrams.py --controller $*
 	TMPDIR="$(FORMAL_TMP_DIR)" FORMAL_TMP_DIR="$(FORMAL_TMP_DIR)" ./tools/formal/render_controller.sh "$(PLANTUML_JAR)" "$(FORMAL_DIR)/controllers/$*"
 
 .PHONY: bundle

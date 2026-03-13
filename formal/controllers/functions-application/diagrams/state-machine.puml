@@ -1,18 +1,61 @@
 @startuml
-title Functions Application Reconcile Model
+title Functions Application Reconcile State Machine
+left to right direction
+hide empty description
+skinparam shadowing false
+skinparam linetype ortho
+skinparam roundcorner 12
+skinparam BackgroundColor #FFFFFF
+skinparam defaultTextAlignment left
+skinparam state {
+  BorderColor #475569
+  FontColor #0F172A
+  BackgroundColor #F8FAFC
+}
+skinparam note {
+  BorderColor #B45309
+  BackgroundColor #FFF7ED
+  FontColor #0F172A
+}
+[*] --> Observe
+Observe : read spec, status, delete intent, and OCI lifecycle
+Observe --> ResolveByName : status/spec OCID missing
+ResolveByName --> EvaluateReady : OCI state in ACTIVE
+ResolveByName --> Retryable : OCI state in CREATING, UPDATING
+ResolveByName --> Failed : OCI state in FAILED, DELETED
+EvaluateReady --> ApplyUpdate : continue active reconcile
+ApplyUpdate --> Ready : supported mutation path completes
+Ready --> Ready : no supported drift remains
+Retryable --> Retryable : OCI remains nonterminal
+Failed --> Failed : OCI remains terminal
+Ready --> DeletePending : delete requested
+Retryable --> DeletePending : delete requested
+Failed --> DeletePending : delete requested
+DeletePending --> Deleted : OCI deletion is confirmed and the finalizer can be removed
+Deleted --> Deleted : terminal stutter
 
-[*] --> Ready : ACTIVE
-[*] --> Retryable : CREATING / UPDATING / DELETING
-[*] --> Failed : FAILED / DELETED
+note right of Ready
+Archetype:
+- resolved-drift-delete
+Update surface:
+- config
+- networkSecurityGroupIds
+- syslogUrl
+- freeformTags
+- definedTags
+Reject before mutate: none
+Boundary notes:
+- The current formal partition omits OCI DELETING even
+    though the controller code treats it as retryable.
+end note
 
-Retryable : requeue required
-
-Ready --> Retryable : OCI enters nonterminal state
-Retryable --> Ready : lifecycle becomes ACTIVE
-Retryable --> Failed : lifecycle becomes FAILED or DELETED
-Ready --> Deleting : delete requested
-Retryable --> Deleting : delete requested
-Failed --> Deleting : delete requested
-Deleting --> Deleted : resource gone, finalizer removed
+note right of DeletePending
+Delete states:
+- DeletePending
+- Deleted
+Delete workflow:
+- Confirm deletion with GetApplication until the resource is
+    DELETED or not found.
+end note
 
 @enduml

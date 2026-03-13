@@ -83,7 +83,7 @@ def build_agents(kind: str, capabilities: str) -> str:
   `../../shared/ListResolutionContract.tla`, `../../shared/DriftAwareUpdateContract.tla`,
   `../../shared/CollectionEquivalenceContract.tla`, `../../shared/WholeListConvergenceContract.tla`,
   `../../shared/BestEffortCleanupContract.tla`, `../../shared/SecretSideEffectContract.tla`
-- Diagram source: `diagrams/lifecycle.puml`
+- Diagram sources: `diagrams/activity.puml`, `diagrams/sequence.puml`, `diagrams/state-machine.puml`
 - Known gaps and fix history: `logic-gaps.md`
 - Capabilities: `{capabilities}`
 
@@ -120,31 +120,6 @@ def build_agents(kind: str, capabilities: str) -> str:
 """
 
 
-def build_puml(kind: str, retryable: str, active: str, failed: str) -> str:
-    retryable_states = ", ".join(item.strip() for item in retryable.split(",") if item.strip())
-    active_states = ", ".join(item.strip() for item in active.split(",") if item.strip())
-    failed_states = ", ".join(item.strip() for item in failed.split(",") if item.strip())
-    return f"""@startuml
-title {kind} Formal Lifecycle
-
-[*] --> Observed
-Observed --> Retryable : {retryable_states}
-Observed --> Active : {active_states}
-Observed --> Failed : {failed_states}
-Active --> DeletePending : delete requested
-Retryable --> DeletePending : delete requested
-Failed --> DeletePending : delete requested
-DeletePending --> Deleted : finalizer removed after delete
-
-state Retryable
-state Active
-state Failed
-state DeletePending
-state Deleted
-@enduml
-"""
-
-
 def main() -> None:
     rows = MANIFEST.read_text(encoding="ascii").strip().splitlines()
     for row in rows[1:]:
@@ -155,7 +130,9 @@ def main() -> None:
                    build_cfg(kind, family, retryable, active, failed, has_secret, capabilities), overwrite=True)
         write_file(controller_dir / "logic-gaps.md", build_logic_gaps(kind, capabilities))
         write_file(controller_dir / "AGENTS.md", build_agents(kind, capabilities), overwrite=True)
-        write_file(controller_dir / "diagrams" / "lifecycle.puml", build_puml(kind, retryable, active, failed))
+        write_file(controller_dir / "diagrams" / "activity.puml", "@startuml\n@enduml\n")
+        write_file(controller_dir / "diagrams" / "sequence.puml", "@startuml\n@enduml\n")
+        write_file(controller_dir / "diagrams" / "state-machine.puml", "@startuml\n@enduml\n")
 
 
 if __name__ == "__main__":

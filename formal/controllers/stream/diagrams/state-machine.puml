@@ -1,19 +1,77 @@
 @startuml
-title Stream Reconcile Model
+title Stream Reconcile State Machine
+left to right direction
+hide empty description
+skinparam shadowing false
+skinparam linetype ortho
+skinparam roundcorner 12
+skinparam BackgroundColor #FFFFFF
+skinparam defaultTextAlignment left
+skinparam state {
+  BorderColor #475569
+  FontColor #0F172A
+  BackgroundColor #F8FAFC
+}
+skinparam note {
+  BorderColor #B45309
+  BackgroundColor #FFF7ED
+  FontColor #0F172A
+}
+[*] --> Observe
+Observe : read spec, status, delete intent, and OCI lifecycle
+Observe --> ResolveByName : status/spec OCID missing
+ResolveByName --> EvaluateReady : OCI state in ACTIVE
+ResolveByName --> Retryable : OCI state in CREATING, UPDATING, DELETING
+ResolveByName --> Failed : OCI state in FAILED, DELETED
+EvaluateReady --> RejectUnsupportedDrift : unsupported or immutable drift is detected
+RejectUnsupportedDrift --> Ready : wait for the spec or live state to change
+EvaluateReady --> MoveCompartment : continue active reconcile
+MoveCompartment --> ApplyUpdate : continue after compartment move
+ApplyUpdate --> SyncSecret : supported mutation path completes
+SyncSecret --> SecretBlocked : Secret write fails
+SecretBlocked --> SyncSecret : retry Secret sync
+SyncSecret --> Ready : Secret side effects succeed
+Ready --> Ready : no supported drift remains
+Retryable --> Retryable : OCI remains nonterminal
+Failed --> Failed : OCI remains terminal
+Ready --> DeletePending : delete requested
+Retryable --> DeletePending : delete requested
+Failed --> DeletePending : delete requested
+DeletePending --> DeleteCleanupBlocked : owned Secret cleanup fails after OCI delete
+DeleteCleanupBlocked --> Deleted : retry Secret cleanup until completion is allowed
+Deleted --> Deleted : terminal stutter
 
-[*] --> Ready : ACTIVE
-[*] --> Retryable : CREATING / UPDATING / DELETING
-[*] --> Failed : FAILED / DELETED
+note right of Ready
+Archetype:
+- resolved-drift-delete-secret
+Update surface:
+- streamPoolId
+- freeform tags
+- defined tags
+Reject before mutate:
+- name drift
+- partitions drift
+- retentionInHours drift
+Boundary notes:
+- Compartment-only drift currently reaches the move path
+    only when another mutable diff already triggers
+    UpdateStream.
+Controller-local invariants:
+- StatusPresentUsesStatusInvariant
+end note
 
-Ready : secret present
-Retryable : requeue required
-
-Ready --> Retryable : OCI enters nonterminal state
-Retryable --> Ready : lifecycle becomes ACTIVE
-Retryable --> Failed : lifecycle becomes FAILED or DELETED
-Ready --> Deleting : delete requested
-Retryable --> Deleting : delete requested
-Failed --> Deleting : delete requested
-Deleting --> Deleted : resource gone, finalizer removed
+note right of DeletePending
+Delete states:
+- DeletePending
+- DeleteCleanupBlocked
+- Deleted
+Delete workflow:
+- Resolve the target stream ID from spec, status, or name
+    lookup before submitting delete.
+- Confirm deletion with GetStream until the lifecycle is
+    DELETED or the resource is not found.
+- Delete the owned Secret only after OCI delete
+    confirmation.
+end note
 
 @enduml

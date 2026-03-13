@@ -1,0 +1,71 @@
+@startuml
+title Compute Instance Reconcile State Machine
+left to right direction
+hide empty description
+skinparam shadowing false
+skinparam linetype ortho
+skinparam roundcorner 12
+skinparam BackgroundColor #FFFFFF
+skinparam defaultTextAlignment left
+skinparam state {
+  BorderColor #475569
+  FontColor #0F172A
+  BackgroundColor #F8FAFC
+}
+skinparam note {
+  BorderColor #B45309
+  BackgroundColor #FFF7ED
+  FontColor #0F172A
+}
+[*] --> Observe
+Observe : read spec, status, delete intent, and OCI lifecycle
+Observe --> ResolveByName : status/spec OCID missing
+ResolveByName --> EvaluateReady : OCI state in RUNNING, STOPPED
+ResolveByName --> Retryable : OCI state in PROVISIONING, STARTING, STOPPING
+ResolveByName --> Failed : OCI state in FAILED, TERMINATED
+EvaluateReady --> RejectUnsupportedDrift : unsupported or immutable drift is detected
+RejectUnsupportedDrift --> Ready : wait for the spec or live state to change
+EvaluateReady --> MoveCompartment : continue active reconcile
+MoveCompartment --> ApplyUpdate : continue after compartment move
+ApplyUpdate --> Ready : supported mutation path completes
+Ready --> Ready : no supported drift remains
+Retryable --> Retryable : OCI remains nonterminal
+Failed --> Failed : OCI remains terminal
+Ready --> DeletePending : delete requested
+Retryable --> DeletePending : delete requested
+Failed --> DeletePending : delete requested
+DeletePending --> Deleted : OCI deletion is confirmed and the finalizer can be removed
+Deleted --> Deleted : terminal stutter
+
+note right of Ready
+Archetype:
+- resolved-drift-delete
+Update surface:
+- displayName
+- shape
+- shapeConfig
+- freeformTags
+- definedTags
+Reject before mutate:
+- imageId drift
+- subnet and instance-option drift outside the modeled post-
+    bind surface
+Boundary notes:
+- The modeled post-bind surface stops at display name,
+    shape, shape config, and tag drift.
+- Compartment changes are handled in place before other
+    supported updates.
+Controller-local invariants:
+- StatusPresentUsesStatusInvariant
+end note
+
+note right of DeletePending
+Delete states:
+- DeletePending
+- Deleted
+Delete workflow:
+- Confirm termination with GetInstance until the resource
+    reaches TERMINATED or is not found.
+end note
+
+@enduml

@@ -1,0 +1,116 @@
+@startuml
+title Autonomous Databases Reconcile Activity
+skinparam shadowing false
+skinparam BackgroundColor #FFFFFF
+skinparam ArrowColor #334155
+skinparam defaultTextAlignment left
+skinparam activity {
+  BackgroundColor #F8FAFC
+  BorderColor #475569
+  FontColor #0F172A
+  DiamondBackgroundColor #E2E8F0
+  DiamondBorderColor #475569
+  StartColor #0F766E
+  EndColor #7F1D1D
+}
+start
+
+partition "Observe and Bind" {
+  :Read CR spec, status OCID, and delete intent;
+  if ("Tracked or explicit OCID present?") then (yes)
+    :Get the OCI resource by known identifier;
+  else (no)
+    :Resolve an existing OCI resource by display name;
+    :Persist the resolved or created OCID back into status;
+  endif
+}
+
+if ("Delete requested?") then (yes)
+  partition "Delete" {
+    :Submit OCI delete for Autonomous Databases;
+    :Record the returned delete work-request ID for operator visibility without using it as the confirmation source.;
+    :Confirm deletion with GetAutonomousDatabase until the resource is not found.;
+    :Only delete Secrets that are owned by this controller;
+    if ("Owned Secret cleanup succeeds?") then (yes)
+      :Remove the finalizer after OCI deletion is confirmed;
+    else (no)
+      :Stay blocked until Secret cleanup succeeds or is absent;
+    endif
+  }
+  stop
+else (no)
+  partition "Lifecycle Classification" {
+    if ("OCI state in retryable set?") then (yes)
+      :Request requeue and keep the finalizer;
+      stop
+    endif
+    if ("OCI state in failed set?") then (yes)
+      :Return an unsuccessful terminal reconcile result;
+      stop
+    endif
+  }
+
+  partition "Ready and Drift Handling" {
+    :Compare live OCI state with the supported drift surface;
+    if ("Unsupported or immutable drift detected?") then (yes)
+      :Reject the change before any OCI mutation;
+      stop
+    endif
+    :Reject dbName drift before any OCI mutation.;
+    :Move the autonomous database compartment before other mutable updates.;
+    :Inject the admin-password Secret only when password rotation is configured.;
+    :Generate a wallet Secret only when wallet generation is configured for a usable database.;
+    if ("Supported drift detected?") then (yes)
+      :Apply only the supported in-place update surface;
+    else (no)
+      :Skip the no-op mutation path;
+    endif
+    if ("Secret sync succeeds?") then (yes)
+      :Return success for the usable active state;
+    else (no)
+      :Block successful completion until Secret sync succeeds;
+    endif
+  }
+endif
+
+floating note right
+Archetype:
+- resolved-drift-delete-secret
+Retryable OCI states:
+- PROVISIONING
+- UPDATING
+- STARTING
+- STOPPING
+- MAINTENANCE_IN_PROGRESS
+- RESTARTING
+- SCALE_IN_PROGRESS
+- BACKUP_IN_PROGRESS
+- RESTORE_IN_PROGRESS
+Active OCI states:
+- AVAILABLE
+- AVAILABLE_NEEDS_ATTENTION
+Failed OCI states:
+- FAILED
+- UNAVAILABLE
+- TERMINATING
+- TERMINATED
+- RESTORE_FAILED
+- INACCESSIBLE
+Update surface:
+- compartmentId
+- computeModel
+- computeCount
+- presence-sensitive booleans
+- freeform tags
+- defined tags
+- adminPassword supplied through a Secret
+Reject before mutate:
+- dbName drift
+Boundary notes:
+- Wallet Secret cleanup is ownership-filtered and legacy
+    unowned wallet Secrets are preserved.
+- The formal secret-delete profile is stronger than current
+    code because wallet cleanup is still best-effort.
+end note
+
+@enduml

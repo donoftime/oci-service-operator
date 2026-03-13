@@ -1,0 +1,21 @@
+@startuml
+title Shared Diagram Legend
+left to right direction
+skinparam shadowing false
+skinparam BackgroundColor #FFFFFF
+skinparam defaultTextAlignment left
+skinparam rectangle {
+  BorderColor #475569
+  FontColor #0F172A
+  BackgroundColor #FFFFFF
+}
+rectangle "Blue lifecycle notes\n==\nRetryable, active, and failed OCI state buckets.\nThese come directly from the formal controller manifest." as lifecycle #E0F2FE
+rectangle "Green ready-path boxes\n==\nSupported update, collection, resize, cleanup, and Secret branches.\nThese combine TLA-proved capabilities with controller-local implementation detail." as ready #DCFCE7
+rectangle "Amber boundary notes\n==\nReject-before-mutate surfaces and accepted modeling boundaries.\nThese call out controller behavior that is important to readers or explicitly outside the model." as boundary #FEF3C7
+rectangle "Orange delete boxes\n==\nDelete confirmation, work-request tracking, Secret cleanup, and finalizer discipline." as delete #FFEDD5
+rectangle "Archetype batches\n==\nbindonly-drift-delete-secret: 1 controller(s)\nresolved-drift-delete: 5 controller(s)\nresolved-drift-delete-cleanup: 1 controller(s)\nresolved-drift-delete-collection: 1 controller(s)\nresolved-drift-delete-paginated: 7 controller(s)\nresolved-drift-delete-paginated-collection: 2 controller(s)\nresolved-drift-delete-secret: 7 controller(s)\nresolved-drift-delete-secretwrite: 1 controller(s)" as archetypes #F8FAFC
+lifecycle --> ready
+ready --> boundary
+ready --> delete
+boundary --> archetypes
+@enduml

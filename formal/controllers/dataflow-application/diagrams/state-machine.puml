@@ -1,0 +1,58 @@
+@startuml
+title Data Flow Application Reconcile State Machine
+left to right direction
+hide empty description
+skinparam shadowing false
+skinparam linetype ortho
+skinparam roundcorner 12
+skinparam BackgroundColor #FFFFFF
+skinparam defaultTextAlignment left
+skinparam state {
+  BorderColor #475569
+  FontColor #0F172A
+  BackgroundColor #F8FAFC
+}
+skinparam note {
+  BorderColor #B45309
+  BackgroundColor #FFF7ED
+  FontColor #0F172A
+}
+[*] --> Observe
+Observe : read spec, status, delete intent, and OCI lifecycle
+Observe --> ResolveByName : status/spec OCID missing
+ResolveByName --> EvaluateReady : OCI state in ACTIVE, INACTIVE
+ResolveByName --> Retryable : OCI state in none
+ResolveByName --> Failed : OCI state in FAILED, DELETED
+EvaluateReady --> ApplyUpdate : continue active reconcile
+ApplyUpdate --> Ready : supported mutation path completes
+Ready --> Ready : no supported drift remains
+Retryable --> Retryable : OCI remains nonterminal
+Failed --> Failed : OCI remains terminal
+Ready --> DeletePending : delete requested
+Retryable --> DeletePending : delete requested
+Failed --> DeletePending : delete requested
+DeletePending --> Deleted : OCI deletion is confirmed and the finalizer can be removed
+Deleted --> Deleted : terminal stutter
+
+note right of Ready
+Archetype:
+- resolved-drift-delete
+Update surface:
+- diff-based update from observable ACTIVE and INACTIVE
+    application state
+Reject before mutate: none
+Boundary notes:
+- The formal model intentionally excludes unobservable
+    asynchronous create-progress states.
+end note
+
+note right of DeletePending
+Delete states:
+- DeletePending
+- Deleted
+Delete workflow:
+- Confirm deletion with GetApplication until the resource is
+    DELETED or not found.
+end note
+
+@enduml

@@ -1,0 +1,100 @@
+@startuml
+title Autonomous Databases Reconcile Sequence
+autonumber
+skinparam shadowing false
+skinparam BackgroundColor #FFFFFF
+skinparam ArrowColor #334155
+skinparam defaultTextAlignment left
+skinparam sequence {
+  ParticipantBackgroundColor #F8FAFC
+  ParticipantBorderColor #475569
+  LifeLineBorderColor #94A3B8
+  LifeLineBackgroundColor #FFFFFF
+  GroupBorderColor #475569
+  GroupBackgroundColor #F8FAFC
+  ActorBackgroundColor #E0F2FE
+  ActorBorderColor #0F766E
+}
+actor "Controller" as Controller
+participant "Service Manager" as ServiceManager
+database "OCI" as OCI
+database "Kubernetes API" as K8s
+collections "Work Request" as WorkRequest
+
+Controller -> ServiceManager: reconcile desired spec and live status
+ServiceManager -> K8s: read CR status and finalizer state
+
+group Lookup and bind
+  alt tracked or explicit OCID already exists
+    ServiceManager -> OCI: get the current resource by known identifier
+  else no OCID is bound yet
+    ServiceManager -> OCI: list resources by display name
+    alt existing resource found
+      ServiceManager -> K8s: persist the resolved OCID in status
+    else no existing resource found
+      ServiceManager -> OCI: create the OCI resource
+      ServiceManager -> K8s: persist the created OCID in status
+    end
+  end
+end
+
+alt delete requested
+  group Delete
+    ServiceManager -> OCI: submit OCI delete
+    OCI --> ServiceManager: return a delete work-request ID
+    ServiceManager -> K8s: record delete progress while retaining the finalizer
+    ServiceManager -> K8s: Record the returned delete work-request ID for operator visibility without using it as the confirmation source.
+    ServiceManager -> OCI: Confirm deletion with GetAutonomousDatabase until the resource is not found.
+    alt owned Secret cleanup succeeds
+      ServiceManager -> K8s: remove the finalizer
+    else Secret cleanup fails
+      ServiceManager --> Controller: retain the finalizer and retry
+    end
+  end
+else OCI state is retryable
+  ServiceManager --> Controller: requeue required
+else OCI state is failed or terminal
+  ServiceManager --> Controller: unsuccessful terminal reconcile result
+else OCI state is active and usable
+  group Drift handling
+    Note over ServiceManager,OCI
+      Supported update surface:
+      - compartmentId
+      - computeModel
+      - computeCount
+      - presence-sensitive booleans
+      - freeform tags
+      - defined tags
+      - adminPassword supplied through a Secret
+      Reject before mutate:
+      - dbName drift
+    end note
+    opt unsupported or immutable drift is detected
+      ServiceManager --> Controller: reject before OCI mutation
+    end
+    ServiceManager -> OCI: Reject dbName drift before any OCI mutation.
+    ServiceManager -> OCI: Move the autonomous database compartment before other mutable updates.
+    ServiceManager -> OCI: Inject the admin-password Secret only when password rotation is configured.
+    ServiceManager -> OCI: Generate a wallet Secret only when wallet generation is configured for a usable database.
+    opt supported drift or collection diff exists
+      ServiceManager -> OCI: apply the supported in-place mutation path
+    end
+    ServiceManager -> K8s: upsert the owned Secret for the usable active resource
+    alt Secret sync fails
+      ServiceManager --> Controller: block success and retry
+    end
+  end
+  ServiceManager --> Controller: successful active reconcile
+end
+
+Note over Controller,OCI
+  Boundary notes:
+  - Wallet Secret cleanup is ownership-filtered and legacy unowned wallet
+      Secrets are preserved.
+  - The formal secret-delete profile is stronger than current code because
+      wallet cleanup is still best-effort.
+  Sequence notes:
+  - AVAILABLE_NEEDS_ATTENTION is a usable active state alongside AVAILABLE.
+end note
+
+@enduml

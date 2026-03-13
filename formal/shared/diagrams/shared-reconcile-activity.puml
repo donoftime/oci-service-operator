@@ -1,0 +1,56 @@
+@startuml
+title Shared Reconcile Activity
+skinparam shadowing false
+skinparam BackgroundColor #FFFFFF
+skinparam ArrowColor #334155
+skinparam defaultTextAlignment left
+skinparam activity {
+  BackgroundColor #F8FAFC
+  BorderColor #475569
+  FontColor #0F172A
+  DiamondBackgroundColor #E2E8F0
+  DiamondBorderColor #475569
+  StartColor #0F766E
+  EndColor #7F1D1D
+}
+start
+partition "Observe and Bind" {
+  :Read spec, status, finalizer, and delete intent;
+  :Prefer bound OCIDs from status or spec when they exist;
+  :Resolve by name only when no OCID is available;
+}
+if ("Delete requested?") then (yes)
+  partition "Delete" {
+    :Submit OCI delete and retain the finalizer;
+    :Confirm that the OCI resource is gone;
+    :Optionally clean up owned Secrets;
+    :Remove the finalizer only after deletion is confirmed;
+  }
+  stop
+else (no)
+  partition "Lifecycle Classification" {
+    if ("OCI state is retryable?") then (yes)
+      :Request requeue;
+      stop
+    endif
+    if ("OCI state is failed?") then (yes)
+      :Return an unsuccessful reconcile result;
+      stop
+    endif
+  }
+  partition "Ready and Drift Handling" {
+    :Diff the supported update surface against live OCI state;
+    :Reject unsupported drift before mutation;
+    :Apply supported updates, collection convergence, or cleanup branches;
+    :Write Secrets only for usable active resources;
+    :Return success for the ready state;
+  }
+endif
+
+floating note right
+- This shared diagram explains the generic flow every controller diagram specializes.
+- Controller-local activity diagrams add the ordered mutation steps, reject surfaces,
+  delete confirmation mode, and side-effect branches specific to one controller.
+end note
+
+@enduml

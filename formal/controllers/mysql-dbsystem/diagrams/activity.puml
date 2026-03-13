@@ -1,0 +1,114 @@
+@startuml
+title MySQL DB System Reconcile Activity
+skinparam shadowing false
+skinparam BackgroundColor #FFFFFF
+skinparam ArrowColor #334155
+skinparam defaultTextAlignment left
+skinparam activity {
+  BackgroundColor #F8FAFC
+  BorderColor #475569
+  FontColor #0F172A
+  DiamondBackgroundColor #E2E8F0
+  DiamondBorderColor #475569
+  StartColor #0F766E
+  EndColor #7F1D1D
+}
+start
+
+partition "Observe and Bind" {
+  :Read CR spec, status OCID, and delete intent;
+  if ("Tracked or explicit OCID present?") then (yes)
+    :Get the OCI resource by known identifier;
+  else (no)
+    :Resolve an existing OCI resource by display name;
+    :Persist the resolved or created OCID back into status;
+  endif
+}
+
+if ("Delete requested?") then (yes)
+  partition "Delete" {
+    :Submit OCI delete for MySQL DB System;
+    :Look for an existing delete work request before submitting a duplicate delete.;
+    :Wait for the matching DB system delete work request to succeed, or treat GetDbSystem not-found as complete.;
+    :Attempt Secret cleanup only after OCI delete confirmation.;
+    if ("Owned Secret cleanup succeeds?") then (yes)
+      :Remove the finalizer after OCI deletion is confirmed;
+    else (no)
+      :Stay blocked until Secret cleanup succeeds or is absent;
+    endif
+  }
+  stop
+else (no)
+  partition "Lifecycle Classification" {
+    if ("OCI state in retryable set?") then (yes)
+      :Request requeue and keep the finalizer;
+      stop
+    endif
+    if ("OCI state in failed set?") then (yes)
+      :Return an unsuccessful terminal reconcile result;
+      stop
+    endif
+  }
+
+  partition "Ready and Drift Handling" {
+    :Compare live OCI state with the supported drift surface;
+    if ("Unsupported or immutable drift detected?") then (yes)
+      :Reject the change before any OCI mutation;
+      stop
+    endif
+    :Treat transient OCI read failures as retryable and requeue;
+    :Turn transient 429 and 5xx OCI read failures into controller-managed requeues.;
+    :Validate immutable fields before any mutable update.;
+    if ("Supported drift detected?") then (yes)
+      :Apply only the supported in-place update surface;
+    else (no)
+      :Skip the no-op mutation path;
+    endif
+    if ("Secret sync succeeds?") then (yes)
+      :Return success for the usable active state;
+    else (no)
+      :Block successful completion until Secret sync succeeds;
+    endif
+  }
+endif
+
+floating note right
+Archetype:
+- resolved-drift-delete-secret
+Retryable OCI states:
+- CREATING
+- UPDATING
+- INACTIVE
+- TRANSIENT_READ_ERROR
+Active OCI states:
+- ACTIVE
+Failed OCI states:
+- FAILED
+- DELETING
+- DELETED
+Update surface:
+- displayName
+- description
+- configuration
+- shape
+- data storage growth
+- hostnameLabel
+- high availability
+- backup policy
+- maintenance window
+- freeform tags
+- defined tags
+Reject before mutate:
+- compartmentId drift in the current code path
+- immutable network-placement drift
+- immutable admin-credential drift
+- immutable source or version drift
+Boundary notes:
+- Managed and name-resolved reconciles currently do not
+    enter the update path, so mutable updates are
+    effectively bound-ID only.
+- The formal secret-delete profile is stronger than current
+    code because Secret cleanup is still best-effort.
+end note
+
+@enduml

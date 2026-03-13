@@ -1,22 +1,78 @@
 @startuml
-title Autonomous Databases Controller Contract
-
-[*] --> LookupOrCreate
-LookupOrCreate --> Provisioning : lifecycle in retryable set
-LookupOrCreate --> Active : lifecycle in active set
-LookupOrCreate --> Failed : lifecycle in failed set
-
-Provisioning --> LookupOrCreate : requeue
-Active --> WalletSecret : wallet enabled
-Active --> [*] : no wallet
-WalletSecret --> [*]
-Failed --> [*]
-
-state Deleting {
-  [*] --> Exists
-  Exists --> Exists : delete request accepted\nresource still visible
-  Exists --> Gone : get returns 404
-  Gone --> [*]
+title Autonomous Databases Reconcile State Machine
+left to right direction
+hide empty description
+skinparam shadowing false
+skinparam linetype ortho
+skinparam roundcorner 12
+skinparam BackgroundColor #FFFFFF
+skinparam defaultTextAlignment left
+skinparam state {
+  BorderColor #475569
+  FontColor #0F172A
+  BackgroundColor #F8FAFC
 }
+skinparam note {
+  BorderColor #B45309
+  BackgroundColor #FFF7ED
+  FontColor #0F172A
+}
+[*] --> Observe
+Observe : read spec, status, delete intent, and OCI lifecycle
+Observe --> ResolveByName : status/spec OCID missing
+ResolveByName --> EvaluateReady : OCI state in AVAILABLE, AVAILABLE_NEEDS_ATTENTION
+ResolveByName --> Retryable : OCI state in PROVISIONING, UPDATING, STARTING, STOPPING, MAINTENANCE_IN_PROGRESS, RESTARTING, SCALE_IN_PROGRESS, BACKUP_IN_PROGRESS, RESTORE_IN_PROGRESS
+ResolveByName --> Failed : OCI state in FAILED, UNAVAILABLE, TERMINATING, TERMINATED, RESTORE_FAILED, INACCESSIBLE
+EvaluateReady --> RejectUnsupportedDrift : unsupported or immutable drift is detected
+RejectUnsupportedDrift --> Ready : wait for the spec or live state to change
+EvaluateReady --> MoveCompartment : continue active reconcile
+MoveCompartment --> ApplyUpdate : continue after compartment move
+ApplyUpdate --> SyncSecret : supported mutation path completes
+SyncSecret --> SecretBlocked : Secret write fails
+SecretBlocked --> SyncSecret : retry Secret sync
+SyncSecret --> Ready : Secret side effects succeed
+Ready --> Ready : no supported drift remains
+Retryable --> Retryable : OCI remains nonterminal
+Failed --> Failed : OCI remains terminal
+Ready --> DeletePending : delete requested
+Retryable --> DeletePending : delete requested
+Failed --> DeletePending : delete requested
+DeletePending --> DeleteWorkRequestRecorded : record the returned work-request identifier
+DeleteWorkRequestRecorded --> DeleteCleanupBlocked : owned Secret cleanup fails after OCI delete
+DeleteCleanupBlocked --> Deleted : retry Secret cleanup until completion is allowed
+Deleted --> Deleted : terminal stutter
+
+note right of Ready
+Archetype:
+- resolved-drift-delete-secret
+Update surface:
+- compartmentId
+- computeModel
+- computeCount
+- presence-sensitive booleans
+- freeform tags
+- defined tags
+- adminPassword supplied through a Secret
+Reject before mutate:
+- dbName drift
+Boundary notes:
+- Wallet Secret cleanup is ownership-filtered and legacy
+    unowned wallet Secrets are preserved.
+- The formal secret-delete profile is stronger than current
+    code because wallet cleanup is still best-effort.
+end note
+
+note right of DeletePending
+Delete states:
+- DeletePending
+- DeleteWorkRequestRecorded
+- DeleteCleanupBlocked
+- Deleted
+Delete workflow:
+- Record the returned delete work-request ID for operator
+    visibility without using it as the confirmation source.
+- Confirm deletion with GetAutonomousDatabase until the
+    resource is not found.
+end note
 
 @enduml

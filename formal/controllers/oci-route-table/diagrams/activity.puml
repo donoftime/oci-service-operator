@@ -1,0 +1,93 @@
+@startuml
+title OCI Route Table Reconcile Activity
+skinparam shadowing false
+skinparam BackgroundColor #FFFFFF
+skinparam ArrowColor #334155
+skinparam defaultTextAlignment left
+skinparam activity {
+  BackgroundColor #F8FAFC
+  BorderColor #475569
+  FontColor #0F172A
+  DiamondBackgroundColor #E2E8F0
+  DiamondBorderColor #475569
+  StartColor #0F766E
+  EndColor #7F1D1D
+}
+start
+
+partition "Observe and Bind" {
+  :Read CR spec, status OCID, and delete intent;
+  :Keep status-bound OCID authoritative for later update or delete paths;
+  if ("Tracked or explicit OCID present?") then (yes)
+    :Get the OCI resource by known identifier;
+  else (no)
+    :Resolve an existing OCI resource by display name;
+    :Continue list pagination until a match or exhaustion;
+    :Persist the resolved or created OCID back into status;
+  endif
+}
+
+if ("Delete requested?") then (yes)
+  partition "Delete" {
+    :Submit OCI delete for OCI Route Table;
+    :Confirm deletion with follow-up GetRouteTable calls until the resource is gone or not found.;
+    :Remove the finalizer after OCI deletion is confirmed;
+  }
+  stop
+else (no)
+  partition "Lifecycle Classification" {
+    if ("OCI state in retryable set?") then (yes)
+      :Request requeue and keep the finalizer;
+      stop
+    endif
+    if ("OCI state in failed set?") then (yes)
+      :Return an unsuccessful terminal reconcile result;
+      stop
+    endif
+  }
+
+  partition "Ready and Drift Handling" {
+    :Compare live OCI state with the supported drift surface;
+    if ("Unsupported or immutable drift detected?") then (yes)
+      :Reject the change before any OCI mutation;
+      stop
+    endif
+    :Move the route table compartment before reconciling route rules or tags.;
+    :Resubmit the full desired route-rule list when semantic drift exists.;
+    if ("Supported drift detected?") then (yes)
+      :Apply only the supported in-place update surface;
+    else (no)
+      :Skip the no-op mutation path;
+    endif
+    :Return success for the usable active state;
+  }
+endif
+
+floating note right
+Archetype:
+- resolved-drift-delete-paginated-collection
+Retryable OCI states:
+- PROVISIONING
+- UPDATING
+Active OCI states:
+- AVAILABLE
+Failed OCI states:
+- FAILED
+- DELETED
+Update surface:
+- display name
+- freeform tags
+- defined tags
+- route rules
+Reject before mutate:
+- vcnId drift
+Boundary notes:
+- Later-page name matches must keep using the resolved OCID
+    for later mutation paths.
+- Partial OCI-side application of an already-submitted full
+    route-rule list remains outside the modeled guarantee.
+Controller-local invariants:
+- StatusPresentUsesStatusInvariant
+end note
+
+@enduml

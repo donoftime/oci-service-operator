@@ -1,14 +1,77 @@
 @startuml
-title Object Storage Bucket Reconcile Model
+title Object Storage Bucket Reconcile State Machine
+left to right direction
+hide empty description
+skinparam shadowing false
+skinparam linetype ortho
+skinparam roundcorner 12
+skinparam BackgroundColor #FFFFFF
+skinparam defaultTextAlignment left
+skinparam state {
+  BorderColor #475569
+  FontColor #0F172A
+  BackgroundColor #F8FAFC
+}
+skinparam note {
+  BorderColor #B45309
+  BackgroundColor #FFF7ED
+  FontColor #0F172A
+}
+[*] --> Observe
+Observe : read spec, status, delete intent, and OCI lifecycle
+Observe --> ResolveNamespace : namespace is required before mutate or delete
+ResolveNamespace --> ValidateCompositeID : validate the bucket composite identifier
+ValidateCompositeID --> EvaluateReady : OCI state in READY
+ValidateCompositeID --> Retryable : OCI state in CREATING, UPDATING, RESOLVING
+ValidateCompositeID --> Failed : OCI state in FAILED, DELETED
+EvaluateReady --> RejectUnsupportedDrift : unsupported or immutable drift is detected
+RejectUnsupportedDrift --> Ready : wait for the spec or live state to change
+EvaluateReady --> ApplyUpdate : continue active reconcile
+ApplyUpdate --> SyncSecret : supported mutation path completes
+SyncSecret --> SecretBlocked : Secret write fails
+SecretBlocked --> SyncSecret : retry Secret sync
+SyncSecret --> Ready : Secret side effects succeed
+Ready --> Ready : no supported drift remains
+Retryable --> Retryable : OCI remains nonterminal
+Failed --> Failed : OCI remains terminal
+Ready --> DeletePending : delete requested
+Retryable --> DeletePending : delete requested
+Failed --> DeletePending : delete requested
+DeletePending --> DeleteCleanupBlocked : owned Secret cleanup fails after OCI delete
+DeleteCleanupBlocked --> Deleted : retry Secret cleanup until completion is allowed
+Deleted --> Deleted : terminal stutter
 
-[*] --> Ready : ACTIVE / BOUND
-[*] --> Failed : FAILED / DELETED
+note right of Ready
+Archetype:
+- bindonly-drift-delete-secret
+Update surface:
+- compartmentId
+- AccessType
+- Versioning
+- freeform tags
+- defined tags
+Reject before mutate:
+- name drift
+- namespace drift
+- storageType drift
+- malformed composite bucket identifier
+Boundary notes:
+- The modeled update surface excludes storage tier and other
+    unreconciled bucket attributes.
+- Missing Secrets still allow completion, but Secret-delete
+    failures block finalizer removal.
+end note
 
-Ready : secret present
-
-Ready --> Deleting : delete requested
-Failed --> Deleting : delete requested
-Deleting : requeue required
-Deleting --> Deleted : bucket gone, finalizer removed
+note right of DeletePending
+Delete states:
+- DeletePending
+- DeleteCleanupBlocked
+- Deleted
+Delete workflow:
+- Confirm bucket disappearance with follow-up GetBucket
+    calls until the bucket is gone or not found.
+- Delete the owned connection Secret after bucket deletion
+    is confirmed.
+end note
 
 @enduml

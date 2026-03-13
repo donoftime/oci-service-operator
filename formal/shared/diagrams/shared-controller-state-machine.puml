@@ -1,0 +1,52 @@
+@startuml
+title Shared Controller State Machine
+left to right direction
+hide empty description
+skinparam shadowing false
+skinparam linetype ortho
+skinparam roundcorner 12
+skinparam BackgroundColor #FFFFFF
+skinparam defaultTextAlignment left
+skinparam state {
+  BorderColor #475569
+  FontColor #0F172A
+  BackgroundColor #F8FAFC
+}
+skinparam note {
+  BorderColor #B45309
+  BackgroundColor #FFF7ED
+  FontColor #0F172A
+}
+[*] --> Observe
+Observe : read spec, status, finalizer, and OCI lifecycle
+Observe --> ResolveByName : no OCID is bound yet
+ResolveByName --> PaginatedLookup : later pages must be searched
+PaginatedLookup --> Ready : an active resource is found or created
+Observe --> Retryable : OCI state is nonterminal
+Observe --> Failed : OCI state is terminal
+Ready --> MoveCompartment : compartment drift is modeled
+MoveCompartment --> ApplyUpdate : continue with the supported mutation path
+Ready --> ApplyUpdate : supported drift exists
+ApplyUpdate --> SyncSecret : Secret generation is modeled
+ApplyUpdate --> ResubmitWholeList : full desired collections must converge
+ApplyUpdate --> BestEffortCleanup : eligible duplicate cleanup is modeled
+SyncSecret --> Ready : Secret side effects succeed
+ResubmitWholeList --> Ready : the desired collection converges
+BestEffortCleanup --> Ready : non-blocking cleanup completes
+Ready --> DeletePending : delete requested
+Retryable --> DeletePending : delete requested
+Failed --> DeletePending : delete requested
+DeletePending --> DeleteWorkRequestPending : delete is tracked through a work request
+DeletePending --> DeleteCleanupBlocked : Secret cleanup fails after OCI delete
+DeletePending --> Deleted : OCI deletion is confirmed
+DeleteWorkRequestPending --> Deleted : delete work request succeeds and OCI deletion is confirmed
+DeleteCleanupBlocked --> Deleted : cleanup retry succeeds
+Deleted --> Deleted : terminal stutter
+
+note right of Ready
+- Controller-local state machines prune or expand these shared states.
+- For example: namespace resolution, resize branches, immutable-drift rejects,
+  best-effort cleanup, or work-request-backed delete paths.
+end note
+
+@enduml

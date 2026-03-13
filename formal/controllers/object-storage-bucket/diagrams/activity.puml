@@ -1,0 +1,101 @@
+@startuml
+title Object Storage Bucket Reconcile Activity
+skinparam shadowing false
+skinparam BackgroundColor #FFFFFF
+skinparam ArrowColor #334155
+skinparam defaultTextAlignment left
+skinparam activity {
+  BackgroundColor #F8FAFC
+  BorderColor #475569
+  FontColor #0F172A
+  DiamondBackgroundColor #E2E8F0
+  DiamondBorderColor #475569
+  StartColor #0F766E
+  EndColor #7F1D1D
+}
+start
+
+partition "Observe and Bind" {
+  :Read CR spec, status OCID, and delete intent;
+  :Bind the OCI resource through explicit identifiers only;
+  :Resolve and persist the Object Storage namespace before mutation or delete;
+  :Validate the composite bucket identifier before delete or update;
+}
+
+if ("Delete requested?") then (yes)
+  partition "Delete" {
+    :Submit OCI delete for Object Storage Bucket;
+    :Confirm bucket disappearance with follow-up GetBucket calls until the bucket is gone or not found.;
+    :Delete the owned connection Secret after bucket deletion is confirmed.;
+    if ("Owned Secret cleanup succeeds?") then (yes)
+      :Remove the finalizer after OCI deletion is confirmed;
+    else (no)
+      :Stay blocked until Secret cleanup succeeds or is absent;
+    endif
+  }
+  stop
+else (no)
+  partition "Lifecycle Classification" {
+    if ("OCI state in retryable set?") then (yes)
+      :Request requeue and keep the finalizer;
+      stop
+    endif
+    if ("OCI state in failed set?") then (yes)
+      :Return an unsuccessful terminal reconcile result;
+      stop
+    endif
+  }
+
+  partition "Ready and Drift Handling" {
+    :Compare live OCI state with the supported drift surface;
+    if ("Unsupported or immutable drift detected?") then (yes)
+      :Reject the change before any OCI mutation;
+      stop
+    endif
+    :Resolve and persist the bucket namespace before update or delete.;
+    :Validate the composite bucket identifier before any OCI mutation.;
+    :Diff only the modeled bucket attributes before calling UpdateBucket.;
+    if ("Supported drift detected?") then (yes)
+      :Apply only the supported in-place update surface;
+    else (no)
+      :Skip the no-op mutation path;
+    endif
+    if ("Secret sync succeeds?") then (yes)
+      :Return success for the usable active state;
+    else (no)
+      :Block successful completion until Secret sync succeeds;
+    endif
+  }
+endif
+
+floating note right
+Archetype:
+- bindonly-drift-delete-secret
+Retryable OCI states:
+- CREATING
+- UPDATING
+- RESOLVING
+Active OCI states:
+- READY
+Failed OCI states:
+- FAILED
+- DELETED
+Update surface:
+- compartmentId
+- AccessType
+- Versioning
+- freeform tags
+- defined tags
+Reject before mutate:
+- name drift
+- namespace drift
+- storageType drift
+- malformed composite bucket identifier
+Boundary notes:
+- The modeled update surface excludes storage tier and other
+    unreconciled bucket attributes.
+- Missing Secrets still allow completion, but Secret-delete
+    failures block finalizer removal.
+end note
+
+@enduml

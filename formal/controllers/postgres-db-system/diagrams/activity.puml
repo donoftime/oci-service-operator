@@ -1,0 +1,105 @@
+@startuml
+title Postgres DB System Reconcile Activity
+skinparam shadowing false
+skinparam BackgroundColor #FFFFFF
+skinparam ArrowColor #334155
+skinparam defaultTextAlignment left
+skinparam activity {
+  BackgroundColor #F8FAFC
+  BorderColor #475569
+  FontColor #0F172A
+  DiamondBackgroundColor #E2E8F0
+  DiamondBorderColor #475569
+  StartColor #0F766E
+  EndColor #7F1D1D
+}
+start
+
+partition "Observe and Bind" {
+  :Read CR spec, status OCID, and delete intent;
+  if ("Tracked or explicit OCID present?") then (yes)
+    :Get the OCI resource by known identifier;
+  else (no)
+    :Resolve an existing OCI resource by display name;
+    :Persist the resolved or created OCID back into status;
+  endif
+}
+
+if ("Delete requested?") then (yes)
+  partition "Delete" {
+    :Submit OCI delete for Postgres DB System;
+    :Confirm deletion with GetDbSystem until the resource is not found.;
+    :Delete the owned Secret after OCI delete confirmation.;
+    if ("Owned Secret cleanup succeeds?") then (yes)
+      :Remove the finalizer after OCI deletion is confirmed;
+    else (no)
+      :Stay blocked until Secret cleanup succeeds or is absent;
+    endif
+  }
+  stop
+else (no)
+  partition "Lifecycle Classification" {
+    if ("OCI state in retryable set?") then (yes)
+      :Request requeue and keep the finalizer;
+      stop
+    endif
+    if ("OCI state in failed set?") then (yes)
+      :Return an unsuccessful terminal reconcile result;
+      stop
+    endif
+  }
+
+  partition "Ready and Drift Handling" {
+    :Compare live OCI state with the supported drift surface;
+    if ("Unsupported or immutable drift detected?") then (yes)
+      :Reject the change before any OCI mutation;
+      stop
+    endif
+    :Validate immutable fields before any mutable update.;
+    :Move the PostgreSQL DB system compartment before supported updates when compartment drift exists.;
+    :Publish the primary endpoint and port through the connection Secret after a usable active reconcile.;
+    if ("Supported drift detected?") then (yes)
+      :Apply only the supported in-place update surface;
+    else (no)
+      :Skip the no-op mutation path;
+    endif
+    if ("Secret sync succeeds?") then (yes)
+      :Return success for the usable active state;
+    else (no)
+      :Block successful completion until Secret sync succeeds;
+    endif
+  }
+endif
+
+floating note right
+Archetype:
+- resolved-drift-delete-secret
+Retryable OCI states:
+- CREATING
+- UPDATING
+Active OCI states:
+- ACTIVE
+Failed OCI states:
+- FAILED
+- DELETED
+Update surface:
+- displayName
+- description
+- freeform tags
+- defined tags
+Reject before mutate:
+- dbVersion drift
+- shape drift
+- subnetId drift
+- storageType drift
+- instanceCount drift
+- instanceOcpuCount drift
+- instanceMemoryInGBs drift
+- admin credential drift
+Boundary notes:
+- Managed and name-resolved reconciles currently do not
+    enter UpdatePostgresDbSystem, so mutable updates are
+    effectively bound-ID only.
+end note
+
+@enduml

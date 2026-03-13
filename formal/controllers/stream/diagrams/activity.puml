@@ -1,0 +1,105 @@
+@startuml
+title Stream Reconcile Activity
+skinparam shadowing false
+skinparam BackgroundColor #FFFFFF
+skinparam ArrowColor #334155
+skinparam defaultTextAlignment left
+skinparam activity {
+  BackgroundColor #F8FAFC
+  BorderColor #475569
+  FontColor #0F172A
+  DiamondBackgroundColor #E2E8F0
+  DiamondBorderColor #475569
+  StartColor #0F766E
+  EndColor #7F1D1D
+}
+start
+
+partition "Observe and Bind" {
+  :Read CR spec, status OCID, and delete intent;
+  :Keep status-bound OCID authoritative for later update or delete paths;
+  if ("Tracked or explicit OCID present?") then (yes)
+    :Get the OCI resource by known identifier;
+  else (no)
+    :Resolve an existing OCI resource by display name;
+    :Persist the resolved or created OCID back into status;
+  endif
+}
+
+if ("Delete requested?") then (yes)
+  partition "Delete" {
+    :Submit OCI delete for Stream;
+    :Resolve the target stream ID from spec, status, or name lookup before submitting delete.;
+    :Confirm deletion with GetStream until the lifecycle is DELETED or the resource is not found.;
+    :Delete the owned Secret only after OCI delete confirmation.;
+    if ("Owned Secret cleanup succeeds?") then (yes)
+      :Remove the finalizer after OCI deletion is confirmed;
+    else (no)
+      :Stay blocked until Secret cleanup succeeds or is absent;
+    endif
+  }
+  stop
+else (no)
+  partition "Lifecycle Classification" {
+    if ("OCI state in retryable set?") then (yes)
+      :Request requeue and keep the finalizer;
+      stop
+    endif
+    if ("OCI state in failed set?") then (yes)
+      :Return an unsuccessful terminal reconcile result;
+      stop
+    endif
+  }
+
+  partition "Ready and Drift Handling" {
+    :Compare live OCI state with the supported drift surface;
+    if ("Unsupported or immutable drift detected?") then (yes)
+      :Reject the change before any OCI mutation;
+      stop
+    endif
+    :Resolve the authoritative OCID from spec, status, or name lookup before any update or delete.;
+    :Move the stream compartment before mutable updates when another supported drift already opens UpdateStream.;
+    :Require MessagesEndpoint before generating the connection Secret.;
+    if ("Supported drift detected?") then (yes)
+      :Apply only the supported in-place update surface;
+    else (no)
+      :Skip the no-op mutation path;
+    endif
+    :Require the live endpoint before writing Secret data;
+    if ("Secret sync succeeds?") then (yes)
+      :Return success for the usable active state;
+    else (no)
+      :Block successful completion until Secret sync succeeds;
+    endif
+  }
+endif
+
+floating note right
+Archetype:
+- resolved-drift-delete-secret
+Retryable OCI states:
+- CREATING
+- UPDATING
+- DELETING
+Active OCI states:
+- ACTIVE
+Failed OCI states:
+- FAILED
+- DELETED
+Update surface:
+- streamPoolId
+- freeform tags
+- defined tags
+Reject before mutate:
+- name drift
+- partitions drift
+- retentionInHours drift
+Boundary notes:
+- Compartment-only drift currently reaches the move path
+    only when another mutable diff already triggers
+    UpdateStream.
+Controller-local invariants:
+- StatusPresentUsesStatusInvariant
+end note
+
+@enduml

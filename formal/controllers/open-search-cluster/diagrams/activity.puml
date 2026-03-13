@@ -1,0 +1,91 @@
+@startuml
+title Open Search Cluster Reconcile Activity
+skinparam shadowing false
+skinparam BackgroundColor #FFFFFF
+skinparam ArrowColor #334155
+skinparam defaultTextAlignment left
+skinparam activity {
+  BackgroundColor #F8FAFC
+  BorderColor #475569
+  FontColor #0F172A
+  DiamondBackgroundColor #E2E8F0
+  DiamondBorderColor #475569
+  StartColor #0F766E
+  EndColor #7F1D1D
+}
+start
+
+partition "Observe and Bind" {
+  :Read CR spec, status OCID, and delete intent;
+  if ("Tracked or explicit OCID present?") then (yes)
+    :Get the OCI resource by known identifier;
+  else (no)
+    :Resolve an existing OCI resource by display name;
+    :Persist the resolved or created OCID back into status;
+  endif
+}
+
+if ("Delete requested?") then (yes)
+  partition "Delete" {
+    :Submit OCI delete for Open Search Cluster;
+    :Confirm deletion with GetOpenSearchCluster until the resource is DELETED or not found.;
+    :Remove the finalizer after OCI deletion is confirmed;
+  }
+  stop
+else (no)
+  partition "Lifecycle Classification" {
+    if ("OCI state in retryable set?") then (yes)
+      :Request requeue and keep the finalizer;
+      stop
+    endif
+    if ("OCI state in failed set?") then (yes)
+      :Return an unsuccessful terminal reconcile result;
+      stop
+    endif
+  }
+
+  partition "Ready and Drift Handling" {
+    :Compare live OCI state with the supported drift surface;
+    if ("Unsupported or immutable drift detected?") then (yes)
+      :Reject the change before any OCI mutation;
+      stop
+    endif
+    :Classify supported drift into horizontal resize, vertical resize, or general update;
+    :Validate immutable networking and host-shape fields before any resize or general update.;
+    :Keep the retained OCID authoritative across resize and general update branches.;
+    if ("Supported drift detected?") then (yes)
+      :Apply only the supported in-place update surface;
+    else (no)
+      :Skip the no-op mutation path;
+    endif
+    :Return success for the usable active state;
+  }
+endif
+
+floating note right
+Archetype:
+- resolved-drift-delete
+Retryable OCI states:
+- CREATING
+- UPDATING
+Active OCI states:
+- ACTIVE
+Failed OCI states:
+- FAILED
+- DELETED
+Update surface:
+- node count
+- node sizing
+- security settings
+- software version
+- freeformTags
+- definedTags
+Reject before mutate:
+- immutable networking drift
+- immutable host-shape drift
+Boundary notes:
+- Supported drift splits into immutable-reject, horizontal
+    resize, vertical resize, and general update branches.
+end note
+
+@enduml

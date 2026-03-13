@@ -1,20 +1,69 @@
 @startuml
-title NoSQL Database Controller Contract
-
-[*] --> LookupOrCreate
-LookupOrCreate --> Provisioning : CREATING / UPDATING
-LookupOrCreate --> Active : ACTIVE
-LookupOrCreate --> Failed : FAILED or terminal fault
-
-Provisioning --> LookupOrCreate : requeue
-Active --> [*]
-Failed --> [*]
-
-state DeleteLoop {
-  [*] --> Exists
-  Exists --> Exists : delete submitted\nget still returns table
-  Exists --> Gone : get returns 404
-  Gone --> [*]
+title NoSQL Database Reconcile State Machine
+left to right direction
+hide empty description
+skinparam shadowing false
+skinparam linetype ortho
+skinparam roundcorner 12
+skinparam BackgroundColor #FFFFFF
+skinparam defaultTextAlignment left
+skinparam state {
+  BorderColor #475569
+  FontColor #0F172A
+  BackgroundColor #F8FAFC
 }
+skinparam note {
+  BorderColor #B45309
+  BackgroundColor #FFF7ED
+  FontColor #0F172A
+}
+[*] --> Observe
+Observe : read spec, status, delete intent, and OCI lifecycle
+Observe --> ResolveByName : status/spec OCID missing
+ResolveByName --> EvaluateReady : OCI state in ACTIVE
+ResolveByName --> Retryable : OCI state in CREATING, UPDATING
+ResolveByName --> Failed : OCI state in FAILED, DELETING, DELETED
+EvaluateReady --> MoveCompartment : continue active reconcile
+MoveCompartment --> ApplyUpdate : continue after compartment move
+ApplyUpdate --> Ready : supported mutation path completes
+Ready --> Ready : no supported drift remains
+Retryable --> Retryable : OCI remains nonterminal
+Failed --> Failed : OCI remains terminal
+Ready --> DeletePending : delete requested
+Retryable --> DeletePending : delete requested
+Failed --> DeletePending : delete requested
+DeletePending --> DeleteWorkRequestPending : wait for the matching delete work request
+DeleteWorkRequestPending --> Deleted : OCI deletion is confirmed and the finalizer can be removed
+Deleted --> Deleted : terminal stutter
+
+note right of Ready
+Archetype:
+- resolved-drift-delete
+Update surface:
+- ddlStatement
+- tableLimits
+- freeformTags
+- definedTags
+Reject before mutate: none
+Boundary notes:
+- OCI-managed schema and replication internals outside the
+    CRD surface remain out of model.
+- Compartment changes are applied in place before other
+    supported table updates.
+Controller-local invariants:
+- StatusPresentUsesStatusInvariant
+end note
+
+note right of DeletePending
+Delete states:
+- DeletePending
+- DeleteWorkRequestPending
+- Deleted
+Delete workflow:
+- Look for a matching delete work request before submitting
+    a duplicate delete.
+- Wait for the matching table delete work request to
+    succeed, or treat an already-missing table as complete.
+end note
 
 @enduml

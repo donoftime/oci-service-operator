@@ -1,0 +1,90 @@
+@startuml
+title Object Storage Bucket Reconcile Sequence
+autonumber
+skinparam shadowing false
+skinparam BackgroundColor #FFFFFF
+skinparam ArrowColor #334155
+skinparam defaultTextAlignment left
+skinparam sequence {
+  ParticipantBackgroundColor #F8FAFC
+  ParticipantBorderColor #475569
+  LifeLineBorderColor #94A3B8
+  LifeLineBackgroundColor #FFFFFF
+  GroupBorderColor #475569
+  GroupBackgroundColor #F8FAFC
+  ActorBackgroundColor #E0F2FE
+  ActorBorderColor #0F766E
+}
+actor "Controller" as Controller
+participant "Service Manager" as ServiceManager
+database "OCI" as OCI
+database "Kubernetes API" as K8s
+
+Controller -> ServiceManager: reconcile desired spec and live status
+ServiceManager -> K8s: read CR status and finalizer state
+
+group Lookup and bind
+  ServiceManager -> OCI: bind or create through explicit identifiers only
+  ServiceManager -> OCI: resolve and persist the bucket namespace
+  ServiceManager -> ServiceManager: validate the composite identifier before mutation
+end
+
+alt delete requested
+  group Delete
+    ServiceManager -> OCI: submit OCI delete
+    ServiceManager -> OCI: Confirm bucket disappearance with follow-up GetBucket calls until the bucket is gone or not found.
+    ServiceManager -> K8s: Delete the owned connection Secret after bucket deletion is confirmed.
+    alt owned Secret cleanup succeeds
+      ServiceManager -> K8s: remove the finalizer
+    else Secret cleanup fails
+      ServiceManager --> Controller: retain the finalizer and retry
+    end
+  end
+else OCI state is retryable
+  ServiceManager --> Controller: requeue required
+else OCI state is failed or terminal
+  ServiceManager --> Controller: unsuccessful terminal reconcile result
+else OCI state is active and usable
+  group Drift handling
+    Note over ServiceManager,OCI
+      Supported update surface:
+      - compartmentId
+      - AccessType
+      - Versioning
+      - freeform tags
+      - defined tags
+      Reject before mutate:
+      - name drift
+      - namespace drift
+      - storageType drift
+      - malformed composite bucket identifier
+    end note
+    opt unsupported or immutable drift is detected
+      ServiceManager --> Controller: reject before OCI mutation
+    end
+    ServiceManager -> OCI: Resolve and persist the bucket namespace before update or delete.
+    ServiceManager -> OCI: Validate the composite bucket identifier before any OCI mutation.
+    ServiceManager -> OCI: Diff only the modeled bucket attributes before calling UpdateBucket.
+    opt supported drift or collection diff exists
+      ServiceManager -> OCI: apply the supported in-place mutation path
+    end
+    ServiceManager -> K8s: upsert the owned Secret for the usable active resource
+    alt Secret sync fails
+      ServiceManager --> Controller: block success and retry
+    end
+  end
+  ServiceManager --> Controller: successful active reconcile
+end
+
+Note over Controller,OCI
+  Boundary notes:
+  - The modeled update surface excludes storage tier and other unreconciled
+      bucket attributes.
+  - Missing Secrets still allow completion, but Secret-delete failures block
+      finalizer removal.
+  Sequence notes:
+  - Connection Secret generation happens only after the bucket reaches
+      READY.
+end note
+
+@enduml

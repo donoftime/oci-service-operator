@@ -1,0 +1,206 @@
+{
+  "controllers": {
+    "oci-vcn": {
+      "archetype": "resolved-drift-delete-paginated",
+      "update_surface": [
+        "display name",
+        "freeform tags",
+        "defined tags"
+      ],
+      "ordered_steps": [
+        "Reuse the tracked OCID from status or spec before any fresh lookup.",
+        "Move the VCN compartment before calling the mutable update path when compartment drift exists."
+      ],
+      "reject_paths": [
+        "cidrBlock drift",
+        "dnsLabel drift"
+      ],
+      "delete_steps": [
+        "Confirm deletion with follow-up GetVcn calls until the resource is gone or not found."
+      ],
+      "boundary_notes": [
+        "The current formal notes keep field-level drift specifics in Go code and property tests even though the controller now reconciles tags and compartment moves."
+      ],
+      "features": [
+        "move_compartment"
+      ],
+      "sequence_notes": [
+        "Paginated name lookup is only used when no status or spec OCID is already bound."
+      ]
+    },
+    "oci-subnet": {
+      "archetype": "resolved-drift-delete-paginated",
+      "update_surface": [
+        "display name",
+        "freeform tags",
+        "defined tags",
+        "cidrBlock",
+        "routeTableId",
+        "securityListIds"
+      ],
+      "ordered_steps": [
+        "Reuse the tracked OCID from status or spec before any fresh lookup.",
+        "Treat securityListIds as an order-insensitive set while diffing live state.",
+        "Move the Subnet compartment before calling the mutable update path when compartment drift exists."
+      ],
+      "reject_paths": [
+        "availabilityDomain drift",
+        "dnsLabel drift",
+        "prohibitPublicIpOnVnic drift",
+        "vcnId drift"
+      ],
+      "delete_steps": [
+        "Confirm deletion with follow-up GetSubnet calls until the resource is gone or not found."
+      ],
+      "boundary_notes": [
+        "The current formal notes remain lifecycle-centric even though the implementation now reconciles CIDR, route table, security list, tag, and compartment drift."
+      ],
+      "features": [
+        "move_compartment"
+      ],
+      "sequence_notes": [
+        "Paginated name lookup is only used when no status or spec OCID is already bound."
+      ]
+    },
+    "oci-internet-gateway": {
+      "archetype": "resolved-drift-delete-paginated",
+      "update_surface": [
+        "display name",
+        "freeform tags",
+        "defined tags"
+      ],
+      "ordered_steps": [
+        "Reuse the tracked OCID from status or spec before any fresh lookup.",
+        "Move the Internet Gateway compartment before calling the mutable update path when compartment drift exists."
+      ],
+      "reject_paths": [
+        "vcnId drift"
+      ],
+      "delete_steps": [
+        "Confirm deletion with follow-up GetInternetGateway calls until the resource is gone or not found."
+      ],
+      "boundary_notes": [
+        "isEnabled remains create-time only; the in-place update surface is limited to display name and tags."
+      ],
+      "features": [
+        "move_compartment"
+      ],
+      "sequence_notes": [
+        "Paginated name lookup is only used when no status or spec OCID is already bound."
+      ]
+    },
+    "oci-nat-gateway": {
+      "archetype": "resolved-drift-delete-paginated",
+      "update_surface": [
+        "display name",
+        "freeform tags",
+        "defined tags",
+        "blockTraffic"
+      ],
+      "ordered_steps": [
+        "Reuse the tracked OCID from status or spec before any fresh lookup.",
+        "Move the NAT Gateway compartment before calling the mutable update path when compartment drift exists."
+      ],
+      "reject_paths": [
+        "vcnId drift"
+      ],
+      "delete_steps": [
+        "Confirm deletion with follow-up GetNatGateway calls until the resource is gone or not found."
+      ],
+      "boundary_notes": [
+        "The current formal notes remain lifecycle-centric even though blockTraffic now participates in the supported update surface."
+      ],
+      "features": [
+        "move_compartment"
+      ],
+      "sequence_notes": [
+        "Paginated name lookup is only used when no status or spec OCID is already bound."
+      ]
+    },
+    "oci-service-gateway": {
+      "archetype": "resolved-drift-delete-paginated",
+      "update_surface": [
+        "display name",
+        "freeform tags",
+        "defined tags",
+        "services collection"
+      ],
+      "ordered_steps": [
+        "Continue full pagination until a display-name match is found or all pages are exhausted.",
+        "Reuse the resolved OCID for all later update and delete operations once the gateway is found.",
+        "Move the Service Gateway compartment before calling the mutable update path when compartment drift exists.",
+        "Compare the services collection order-insensitively before deciding whether UpdateServiceGateway is required."
+      ],
+      "reject_paths": [
+        "vcnId drift"
+      ],
+      "delete_steps": [
+        "Confirm deletion with follow-up GetServiceGateway calls until the resource is gone or not found."
+      ],
+      "boundary_notes": [
+        "Pagination and field-level drift are still documented primarily in Go code and property tests.",
+        "The services collection is reconciled in implementation, but the current formal profile does not model it as a collection-equivalence contract."
+      ],
+      "features": [
+        "move_compartment",
+        "collection_without_contract"
+      ],
+      "sequence_notes": [
+        "Later-page matches must keep using the resolved OCID rather than restarting the lookup flow."
+      ]
+    },
+    "oci-drg": {
+      "archetype": "resolved-drift-delete-paginated",
+      "update_surface": [
+        "display name",
+        "freeform tags",
+        "defined tags"
+      ],
+      "ordered_steps": [
+        "Continue full pagination until a display-name match is found or all pages are exhausted.",
+        "Reuse the resolved OCID for all later update and delete operations once the DRG is found.",
+        "Move the DRG compartment before calling the mutable update path when compartment drift exists."
+      ],
+      "reject_paths": [],
+      "delete_steps": [
+        "Confirm deletion with follow-up GetDrg calls until the resource is gone or not found."
+      ],
+      "boundary_notes": [
+        "Pagination and field-level drift are still documented primarily in Go code and property tests."
+      ],
+      "features": [
+        "move_compartment"
+      ],
+      "sequence_notes": [
+        "Later-page matches must keep using the resolved OCID rather than restarting the lookup flow."
+      ]
+    },
+    "oci-network-security-group": {
+      "archetype": "resolved-drift-delete-paginated",
+      "update_surface": [
+        "display name",
+        "freeform tags",
+        "defined tags"
+      ],
+      "ordered_steps": [
+        "Reuse the tracked OCID from status or spec before any fresh lookup.",
+        "Move the Network Security Group compartment before calling the mutable update path when compartment drift exists."
+      ],
+      "reject_paths": [
+        "vcnId drift"
+      ],
+      "delete_steps": [
+        "Confirm deletion with follow-up GetNetworkSecurityGroup calls until the resource is gone or not found."
+      ],
+      "boundary_notes": [
+        "The current formal notes remain lifecycle-centric even though the implementation now reconciles tags and compartment moves."
+      ],
+      "features": [
+        "move_compartment"
+      ],
+      "sequence_notes": [
+        "Paginated name lookup is only used when no status or spec OCID is already bound."
+      ]
+    }
+  }
+}

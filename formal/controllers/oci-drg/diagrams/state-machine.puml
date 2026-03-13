@@ -1,0 +1,63 @@
+@startuml
+title OCI DRG Reconcile State Machine
+left to right direction
+hide empty description
+skinparam shadowing false
+skinparam linetype ortho
+skinparam roundcorner 12
+skinparam BackgroundColor #FFFFFF
+skinparam defaultTextAlignment left
+skinparam state {
+  BorderColor #475569
+  FontColor #0F172A
+  BackgroundColor #F8FAFC
+}
+skinparam note {
+  BorderColor #B45309
+  BackgroundColor #FFF7ED
+  FontColor #0F172A
+}
+[*] --> Observe
+Observe : read spec, status, delete intent, and OCI lifecycle
+Observe --> ResolveByName : status/spec OCID missing
+ResolveByName --> PaginatedLookup : continue searching later list pages
+PaginatedLookup --> EvaluateReady : OCI state in AVAILABLE
+PaginatedLookup --> Retryable : OCI state in PROVISIONING, UPDATING
+PaginatedLookup --> Failed : OCI state in FAILED, DELETED
+EvaluateReady --> MoveCompartment : continue active reconcile
+MoveCompartment --> ApplyUpdate : continue after compartment move
+ApplyUpdate --> Ready : supported mutation path completes
+Ready --> Ready : no supported drift remains
+Retryable --> Retryable : OCI remains nonterminal
+Failed --> Failed : OCI remains terminal
+Ready --> DeletePending : delete requested
+Retryable --> DeletePending : delete requested
+Failed --> DeletePending : delete requested
+DeletePending --> Deleted : OCI deletion is confirmed and the finalizer can be removed
+Deleted --> Deleted : terminal stutter
+
+note right of Ready
+Archetype:
+- resolved-drift-delete-paginated
+Update surface:
+- display name
+- freeform tags
+- defined tags
+Reject before mutate: none
+Boundary notes:
+- Pagination and field-level drift are still documented
+    primarily in Go code and property tests.
+Controller-local invariants:
+- StatusPresentUsesStatusInvariant
+end note
+
+note right of DeletePending
+Delete states:
+- DeletePending
+- Deleted
+Delete workflow:
+- Confirm deletion with follow-up GetDrg calls until the
+    resource is gone or not found.
+end note
+
+@enduml

@@ -1,0 +1,109 @@
+@startuml
+title MySQL DB System Reconcile Sequence
+autonumber
+skinparam shadowing false
+skinparam BackgroundColor #FFFFFF
+skinparam ArrowColor #334155
+skinparam defaultTextAlignment left
+skinparam sequence {
+  ParticipantBackgroundColor #F8FAFC
+  ParticipantBorderColor #475569
+  LifeLineBorderColor #94A3B8
+  LifeLineBackgroundColor #FFFFFF
+  GroupBorderColor #475569
+  GroupBackgroundColor #F8FAFC
+  ActorBackgroundColor #E0F2FE
+  ActorBorderColor #0F766E
+}
+actor "Controller" as Controller
+participant "Service Manager" as ServiceManager
+database "OCI" as OCI
+database "Kubernetes API" as K8s
+collections "Work Request" as WorkRequest
+
+Controller -> ServiceManager: reconcile desired spec and live status
+ServiceManager -> K8s: read CR status and finalizer state
+
+group Lookup and bind
+  alt tracked or explicit OCID already exists
+    ServiceManager -> OCI: get the current resource by known identifier
+  else no OCID is bound yet
+    ServiceManager -> OCI: list resources by display name
+    alt existing resource found
+      ServiceManager -> K8s: persist the resolved OCID in status
+    else no existing resource found
+      ServiceManager -> OCI: create the OCI resource
+      ServiceManager -> K8s: persist the created OCID in status
+    end
+  end
+end
+
+alt delete requested
+  group Delete
+    ServiceManager -> OCI: submit OCI delete
+    OCI --> ServiceManager: return a delete work-request ID
+    ServiceManager -> WorkRequest: wait for the matching delete work request to succeed
+    ServiceManager -> WorkRequest: Look for an existing delete work request before submitting a duplicate delete.
+    ServiceManager -> WorkRequest: Wait for the matching DB system delete work request to succeed, or treat GetDbSystem not-found as complete.
+    ServiceManager -> K8s: Attempt Secret cleanup only after OCI delete confirmation.
+    alt owned Secret cleanup succeeds
+      ServiceManager -> K8s: remove the finalizer
+    else Secret cleanup fails
+      ServiceManager --> Controller: retain the finalizer and retry
+    end
+  end
+else OCI state is retryable
+  ServiceManager --> Controller: requeue required
+else OCI state is failed or terminal
+  ServiceManager --> Controller: unsuccessful terminal reconcile result
+else OCI state is active and usable
+  group Drift handling
+    Note over ServiceManager,OCI
+      Supported update surface:
+      - displayName
+      - description
+      - configuration
+      - shape
+      - data storage growth
+      - hostnameLabel
+      - high availability
+      - backup policy
+      - maintenance window
+      - freeform tags
+      - defined tags
+      Reject before mutate:
+      - compartmentId drift in the current code path
+      - immutable network-placement drift
+      - immutable admin-credential drift
+      - immutable source or version drift
+    end note
+    opt unsupported or immutable drift is detected
+      ServiceManager --> Controller: reject before OCI mutation
+    end
+    opt transient OCI read failure occurs
+      ServiceManager --> Controller: requeue instead of surfacing a hard failure
+    end
+    ServiceManager -> OCI: Turn transient 429 and 5xx OCI read failures into controller-managed requeues.
+    ServiceManager -> OCI: Validate immutable fields before any mutable update.
+    opt supported drift or collection diff exists
+      ServiceManager -> OCI: apply the supported in-place mutation path
+    end
+    ServiceManager -> K8s: upsert the owned Secret for the usable active resource
+    alt Secret sync fails
+      ServiceManager --> Controller: block success and retry
+    end
+  end
+  ServiceManager --> Controller: successful active reconcile
+end
+
+Note over Controller,OCI
+  Boundary notes:
+  - Managed and name-resolved reconciles currently do not enter the update
+      path, so mutable updates are effectively bound-ID only.
+  - The formal secret-delete profile is stronger than current code because
+      Secret cleanup is still best-effort.
+  Sequence notes:
+  - INACTIVE and TRANSIENT_READ_ERROR behave as retryable outcomes.
+end note
+
+@enduml

@@ -1,0 +1,88 @@
+@startuml
+title API Gateway Reconcile Sequence
+autonumber
+skinparam shadowing false
+skinparam BackgroundColor #FFFFFF
+skinparam ArrowColor #334155
+skinparam defaultTextAlignment left
+skinparam sequence {
+  ParticipantBackgroundColor #F8FAFC
+  ParticipantBorderColor #475569
+  LifeLineBorderColor #94A3B8
+  LifeLineBackgroundColor #FFFFFF
+  GroupBorderColor #475569
+  GroupBackgroundColor #F8FAFC
+  ActorBackgroundColor #E0F2FE
+  ActorBorderColor #0F766E
+}
+actor "Controller" as Controller
+participant "Service Manager" as ServiceManager
+database "OCI" as OCI
+database "Kubernetes API" as K8s
+
+Controller -> ServiceManager: reconcile desired spec and live status
+ServiceManager -> K8s: read CR status and finalizer state
+
+group Lookup and bind
+  alt tracked or explicit OCID already exists
+    ServiceManager -> OCI: get the current resource by known identifier
+  else no OCID is bound yet
+    ServiceManager -> OCI: list resources by display name
+    alt existing resource found
+      ServiceManager -> K8s: persist the resolved OCID in status
+    else no existing resource found
+      ServiceManager -> OCI: create the OCI resource
+      ServiceManager -> K8s: persist the created OCID in status
+    end
+  end
+end
+
+alt delete requested
+  group Delete
+    ServiceManager -> OCI: submit OCI delete
+    ServiceManager -> OCI: Confirm deletion with follow-up GetGateway calls until the lifecycle is DELETED or the resource is not found.
+    ServiceManager -> K8s: remove the finalizer after delete confirmation
+  end
+else OCI state is retryable
+  ServiceManager --> Controller: requeue required
+else OCI state is failed or terminal
+  ServiceManager --> Controller: unsuccessful terminal reconcile result
+else OCI state is active and usable
+  group Drift handling
+    Note over ServiceManager,OCI
+      Supported update surface:
+      - display name
+      - NetworkSecurityGroupIds
+      - CertificateId
+      - freeform tags
+      - defined tags
+      Reject before mutate:
+      - endpointType drift
+      - subnetId drift
+    end note
+    opt unsupported or immutable drift is detected
+      ServiceManager --> Controller: reject before OCI mutation
+    end
+    ServiceManager -> OCI: Move the gateway compartment before reconciling supported gateway drift.
+    ServiceManager -> OCI: Write the connection Secret only after the gateway reaches ACTIVE.
+    opt supported drift or collection diff exists
+      ServiceManager -> OCI: apply the supported in-place mutation path
+    end
+    ServiceManager -> K8s: upsert the owned Secret for the usable active resource
+    alt Secret sync fails
+      ServiceManager --> Controller: block success and retry
+    end
+  end
+  ServiceManager --> Controller: successful active reconcile
+end
+
+Note over Controller,OCI
+  Boundary notes:
+  - Endpoint-topology drift remains outside the modeled update surface.
+  - Code and tests treat OCI DELETING as requeueing even though spec.cfg
+      only names CREATING and UPDATING as retryable.
+  Sequence notes:
+  - There is no Secret-delete branch for this controller.
+end note
+
+@enduml

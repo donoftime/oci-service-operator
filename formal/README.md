@@ -1,6 +1,8 @@
 # Formal Verification Layout
 
 - `formal/shared/` contains reusable TLA+ operators and shared controller contract notes.
+- `formal/controller_diagrams/` contains controller-local diagram metadata shards in JSON-compatible YAML.
+  See `formal/controller_diagrams/README.md` for the shard schema.
 - `formal/controllers/<controller-slug>/` contains one controller's source of truth:
   - `spec.tla`
   - `spec.cfg`
@@ -14,6 +16,7 @@ The repo-level entrypoints are:
 - `make formal`
 - `make formal-<controller-slug>`
 - `make diagrams`
+- `make diagrams-shared`
 - `make diagrams-<controller-slug>`
 
 The shared controller contract is grounded in `pkg/core/reconciler.go`:
@@ -29,3 +32,21 @@ The shared controller contract is grounded in `pkg/core/reconciler.go`:
 - collection-based desired state must trigger update on semantic difference and converge after full-list resubmission
 - best-effort cleanup must remain non-blocking and stay within the controller's eligible target set
 - secret side-effect failures must block successful completion
+
+## Diagram Strategy
+
+- `formal/shared/diagrams/shared-reconcile-activity.svg` explains the common reconcile flow once.
+- `formal/shared/diagrams/shared-resolution-sequence.svg` explains shared ID binding and paginated
+  lookup behavior.
+- `formal/shared/diagrams/shared-delete-sequence.svg` explains finalizer discipline, delete
+  confirmation, optional work-request tracking, and optional Secret cleanup.
+- `formal/shared/diagrams/shared-controller-state-machine.svg` explains the common controller phase
+  model that controller-local state machines specialize.
+- `formal/shared/diagrams/shared-legend.svg` explains diagram colors and the controller archetype
+  batches used by the generator.
+- Each controller now has three generated diagrams under `diagrams/`:
+  - `activity.svg`
+  - `sequence.svg`
+  - `state-machine.svg`
+- Controller-local diagrams are generated from `formal/controller_diagrams/*.yaml`,
+  `formal/controller_manifest.tsv`, and each controller's `spec.cfg`.

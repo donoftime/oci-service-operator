@@ -1,0 +1,95 @@
+@startuml
+title Redis Cluster Reconcile Sequence
+autonumber
+skinparam shadowing false
+skinparam BackgroundColor #FFFFFF
+skinparam ArrowColor #334155
+skinparam defaultTextAlignment left
+skinparam sequence {
+  ParticipantBackgroundColor #F8FAFC
+  ParticipantBorderColor #475569
+  LifeLineBorderColor #94A3B8
+  LifeLineBackgroundColor #FFFFFF
+  GroupBorderColor #475569
+  GroupBackgroundColor #F8FAFC
+  ActorBackgroundColor #E0F2FE
+  ActorBorderColor #0F766E
+}
+actor "Controller" as Controller
+participant "Service Manager" as ServiceManager
+database "OCI" as OCI
+database "Kubernetes API" as K8s
+
+Controller -> ServiceManager: reconcile desired spec and live status
+ServiceManager -> K8s: read CR status and finalizer state
+
+group Lookup and bind
+  alt tracked or explicit OCID already exists
+    ServiceManager -> OCI: get the current resource by known identifier
+  else no OCID is bound yet
+    ServiceManager -> OCI: list resources by display name
+    alt existing resource found
+      ServiceManager -> K8s: persist the resolved OCID in status
+    else no existing resource found
+      ServiceManager -> OCI: create the OCI resource
+      ServiceManager -> K8s: persist the created OCID in status
+    end
+  end
+end
+
+alt delete requested
+  group Delete
+    ServiceManager -> OCI: submit OCI delete
+    ServiceManager -> OCI: Confirm deletion with GetRedisCluster until the lifecycle is DELETED or the resource is not found.
+    ServiceManager -> K8s: Delete the owned Secret after OCI delete confirmation.
+    alt owned Secret cleanup succeeds
+      ServiceManager -> K8s: remove the finalizer
+    else Secret cleanup fails
+      ServiceManager --> Controller: retain the finalizer and retry
+    end
+  end
+else OCI state is retryable
+  ServiceManager --> Controller: requeue required
+else OCI state is failed or terminal
+  ServiceManager --> Controller: unsuccessful terminal reconcile result
+else OCI state is active and usable
+  group Drift handling
+    Note over ServiceManager,OCI
+      Supported update surface:
+      - displayName
+      - nodeCount
+      - nodeMemoryInGBs
+      - freeform tags
+      - defined tags
+      Reject before mutate:
+      - softwareVersion drift
+      - subnetId drift
+    end note
+    opt unsupported or immutable drift is detected
+      ServiceManager --> Controller: reject before OCI mutation
+    end
+    ServiceManager -> OCI: Always route resolved or bound resources through UpdateRedisCluster.
+    ServiceManager -> OCI: Move the Redis cluster compartment before mutable updates when compartment drift exists.
+    opt supported drift or collection diff exists
+      ServiceManager -> OCI: apply the supported in-place mutation path
+    end
+    ServiceManager -> K8s: upsert the owned Secret for the usable active resource
+    alt Secret sync fails
+      ServiceManager --> Controller: block success and retry
+    end
+  end
+  ServiceManager --> Controller: successful active reconcile
+end
+
+Note over Controller,OCI
+  Boundary notes:
+  - A direct DeleteRedisCluster 404 currently short-circuits completion and
+      can skip Secret cleanup on that branch.
+  Sequence notes:
+  - Resolved-name and status-based binds both keep using the retained OCID
+      for later update and delete.
+  Controller-local invariants:
+  - StatusPresentUsesStatusInvariant
+end note
+
+@enduml
