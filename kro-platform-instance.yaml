@@ -28,8 +28,6 @@ spec:
 
   adbDbName: myplatformadb
   nosqlTableName: myplatform_events
-  noReapTagValue: "true"
-
   containerImageUrl: iad.ocir.io/okedev/dmayo/osok:latest
   # Replace with a valid OCI Functions-compatible image in your OCIR repo.
   functionImageUrl: iad.ocir.io/okedev/dmayo/osok-function:latest
