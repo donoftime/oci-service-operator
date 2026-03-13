@@ -132,10 +132,10 @@ docker-build-sample: ## Build docker image with the manager.
 ##@ Build
 
 build: module-cache cache-dirs generate fmt vet ## Build manager binary.
-	go build -o bin/manager main.go
+	go build -o bin/manager .
 
 run: module-cache cache-dirs manifests generate fmt vet ## Run a controller from your host.
-	go run ./main.go
+	go run .
 
 docker-build: test bundle ## Build docker image with the manager and CRDs
 	docker build -t ${IMG} .

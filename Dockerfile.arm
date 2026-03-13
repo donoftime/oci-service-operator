@@ -22,7 +22,7 @@ COPY go.sum go.sum
 COPY . ./
 
 # Build
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 GO111MODULE=on go build -mod vendor -a -o manager main.go
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 GO111MODULE=on go build -mod vendor -a -o manager .
 
 FROM arm64v8/oraclelinux:7-slim
 WORKDIR /

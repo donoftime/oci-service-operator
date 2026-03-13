@@ -9,6 +9,11 @@
 - Fixed: Redis updates now reconcile freeform and defined tag drift, and subnet changes are rejected at the CRD boundary before reconcile.
 - Fixed: `spec.softwareVersion` drift now fails closed through CEL and reconcile-time validation before any compartment-move or update mutation is submitted.
 
+## Cluster Exercise Findings (2026-03-13)
+- During `OSOKPlatform` teardown, the Redis CR deleted successfully before the VCN could be deleted, and the VCN later failed delete with `409 IncorrectState` because a security list was still in use.
+- The remaining provider-side VCN dependency was observed as a security list named `redis-security-list`. Redis only models a subnet in the CR surface, so this appears to be a provider-managed side artifact that outlives the Redis CR.
+- The Redis delete path may therefore be declaring success before OCI has fully cleaned up Redis-managed networking dependencies needed for downstream VCN deletion.
+
 ## Pending Update Surface Audit
 
 ### Should Reconcile In Place

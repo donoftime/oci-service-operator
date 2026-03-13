@@ -13,8 +13,14 @@
 - Managed and bound ADB reconciles now persist and reuse the tracked OCID before update, so supported update drift is applied to resolved resources instead of only create-time paths.
 - `spec.compartmentId` drift is now reconciled in place through OCI's Autonomous Database compartment-move API before supported updates are applied.
 - `spec.computeModel` and `spec.computeCount` drift now flow through `UpdateAutonomousDatabaseDetails` instead of remaining create-only fields.
-- `spec.adminPassword` now flows through `UpdateAutonomousDatabaseDetails` when an admin-password Secret is configured, which keeps password rotation on the supported update surface despite OCI not returning a diffable live password value.
+- `spec.adminPassword` now flows through `UpdateAutonomousDatabaseDetails`, but the current implementation still lacks drift gating and treats a configured admin-password Secret as unconditional update input.
 - `spec.dbName` drift is now rejected before mutation instead of being sent through `UpdateAutonomousDatabaseDetails`.
+
+## Cluster Exercise Findings (2026-03-13)
+- Managed ADB reconciles still call `UpdateAdb` whenever `status.ocid` is present, and `applyAdbPasswordUpdate` always injects `AdminPassword` when `spec.adminPassword.secret.secretName` is set. A tag-only update therefore resubmits the admin password and OCI rejects it with `InvalidParameter` if the password was used recently.
+- Failed ADB update attempts are not reflected in CR status. During the `no_reap=true` tag exercise, the controller logged the OCI update failure, but the CR still reported `Active` with `AutonomousDatabase my-platform-adb is AVAILABLE`.
+- OCI verification confirmed the provider-side consequence of that failure: the database remained `AVAILABLE`, but the requested `no_reap` freeform tag was still absent even though the CR spec carried it.
+- Delete can also wedge after the provider reaches a terminal state. During `OSOKPlatform` teardown, OCI reported the Autonomous Database was already `TERMINATED`, but the controller treated `DeleteAutonomousDatabase` returning `409 IncorrectState` as a hard delete failure instead of as delete-complete, so the CR remained stuck on its finalizer.
 
 ## Accepted Boundaries
 - The vendored OCI Database SDK exposes delete work-request IDs but does not provide generated work-request lookup APIs, so delete completion still relies on follow-up `GetAutonomousDatabase` calls until OCI returns `404`.

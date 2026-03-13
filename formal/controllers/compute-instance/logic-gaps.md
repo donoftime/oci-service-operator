@@ -9,6 +9,9 @@
 - Fixed: `spec.imageId` drift now fails closed through CEL and reconcile-time validation before any compartment-move or update mutation is submitted.
 - Accepted boundary: the formal model intentionally stops at the fields OSOK actually reconciles on bound instances: display name, shape, shape config, and freeform/defined tags. Image, subnet, and instance-option drift remain outside the model because the controller rejects or does not update those fields after bind.
 
+## Cluster Exercise Findings (2026-03-13)
+- The create path still emits a false error log, `key and value must be string`, before the OCI launch request succeeds. This comes from the structured logger call in `LaunchInstance` passing a non-string value to `DebugLog`, so successful creates look like controller errors in the operator logs.
+
 ## Pending Update Surface Audit
 
 ### Should Reconcile In Place

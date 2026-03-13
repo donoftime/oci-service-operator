@@ -12,19 +12,21 @@ spec:
       cidrBlock: string
       subnetCidrBlock: string
       lbSubnetId: string
+      serviceGatewayServiceId: string
+      serviceGatewayDestination: string
       objectStorageNamespace: string
+      dataflowFileUri: string
+      dataflowWarehouseBucketUri: string
       mysqlCredentialsSecret: string
       adbAdminPasswordSecret: string
       adbDbName: string
       nosqlTableName: string
+      noReapTagValue: string
       containerImageUrl: string
+      functionImageUrl: string
       imageId: string
-      # Legacy fields retained for schema compatibility; not referenced by resource templates
-      subnetId: string
-      vcnId: string
 
   resources:
-
     # ── 1. Object Storage Bucket ──────────────────────────────────────────────
     - id: objectStorageBucket
       template:
@@ -35,9 +37,36 @@ spec:
         spec:
           compartmentId: ${schema.spec.compartmentId}
           name: ${schema.metadata.name}-bucket
+          namespace: ${schema.spec.objectStorageNamespace}
           accessType: NoPublicAccess
           storageType: Standard
           versioning: Enabled
+          freeformTags:
+            no_reap: ${schema.spec.noReapTagValue}
+
+    # ── 1b. OCI Data Flow Application ────────────────────────────────────────
+    # SQL mode keeps the example single-apply; the logs bucket is the platform
+    # bucket created above, so kro establishes a bucket -> Data Flow dependency.
+    - id: dataflowApplication
+      template:
+        apiVersion: oci.oracle.com/v1beta1
+        kind: DataFlowApplication
+        metadata:
+          name: ${schema.metadata.name}-dataflow
+        spec:
+          compartmentId: ${schema.spec.compartmentId}
+          displayName: ${schema.metadata.name}-dataflow
+          freeformTags:
+            no_reap: ${schema.spec.noReapTagValue}
+          language: SQL
+          driverShape: VM.Standard2.1
+          executorShape: VM.Standard2.1
+          numExecutors: 1
+          sparkVersion: "3.2.1"
+          fileUri: ${schema.spec.dataflowFileUri}
+          logsBucketUri: "oci://${objectStorageBucket.spec.name}@${schema.spec.objectStorageNamespace}/dataflow-logs"
+          warehouseBucketUri: ${schema.spec.dataflowWarehouseBucketUri}
+          description: "Uses Object Storage bucket ${objectStorageBucket.status.status.ocid} for Data Flow logs"
 
     # ── 2. Oracle Streaming Service ───────────────────────────────────────────
     - id: stream
@@ -51,6 +80,8 @@ spec:
           name: ${schema.metadata.name}-stream
           partitions: 1
           retentionInHours: 24
+          freeformTags:
+            no_reap: ${schema.spec.noReapTagValue}
 
     # ── 3. OCI Queue ──────────────────────────────────────────────────────────
     - id: queue
@@ -65,6 +96,8 @@ spec:
           retentionInSeconds: 86400
           visibilityInSeconds: 30
           deadLetterQueueDeliveryCount: 3
+          freeformTags:
+            no_reap: ${schema.spec.noReapTagValue}
 
     # ── 4. Autonomous Database ────────────────────────────────────────────────
     - id: adb
@@ -76,6 +109,8 @@ spec:
         spec:
           compartmentId: ${schema.spec.compartmentId}
           displayName: ${schema.metadata.name}-adb
+          freeformTags:
+            no_reap: ${schema.spec.noReapTagValue}
           dbName: ${schema.spec.adbDbName}
           dbWorkload: OLTP
           computeModel: ECPU
@@ -99,6 +134,8 @@ spec:
           displayName: ${schema.metadata.name}-vcn
           cidrBlock: ${schema.spec.cidrBlock}
           dnsLabel: platform
+          freeformTags:
+            no_reap: ${schema.spec.noReapTagValue}
 
     # ── 6. Internet Gateway ───────────────────────────────────────────────────
     - id: internetGateway
@@ -112,6 +149,8 @@ spec:
           vcnId: ${vcn.status.status.ocid}
           displayName: ${schema.metadata.name}-igw
           isEnabled: true
+          freeformTags:
+            no_reap: ${schema.spec.noReapTagValue}
       readyWhen:
         - ${internetGateway.status.status.ocid != ""}
 
@@ -127,6 +166,8 @@ spec:
           vcnId: ${vcn.status.status.ocid}
           displayName: ${schema.metadata.name}-ngw
           blockTraffic: false
+          freeformTags:
+            no_reap: ${schema.spec.noReapTagValue}
       readyWhen:
         - ${natGateway.status.status.ocid != ""}
 
@@ -142,7 +183,9 @@ spec:
           vcnId: ${vcn.status.status.ocid}
           displayName: ${schema.metadata.name}-sgw
           services:
-            - ocid1.service.oc1.iad.aaaaaaaam4zfmy2rjue6fmglumm3czgisxzrnvrwqeodtztg7hwa272mlfna
+            - ${schema.spec.serviceGatewayServiceId}
+          freeformTags:
+            no_reap: ${schema.spec.noReapTagValue}
       readyWhen:
         - ${serviceGateway.status.status.ocid != ""}
 
@@ -157,11 +200,13 @@ spec:
           compartmentId: ${schema.spec.compartmentId}
           vcnId: ${vcn.status.status.ocid}
           displayName: ${schema.metadata.name}-rt
+          freeformTags:
+            no_reap: ${schema.spec.noReapTagValue}
           routeRules:
             - destination: "0.0.0.0/0"
               networkEntityId: ${natGateway.status.status.ocid}
               destinationType: CIDR_BLOCK
-            - destination: all-iad-services-in-oracle-services-network
+            - destination: ${schema.spec.serviceGatewayDestination}
               networkEntityId: ${serviceGateway.status.status.ocid}
               destinationType: SERVICE_CIDR_BLOCK
       readyWhen:
@@ -178,9 +223,16 @@ spec:
           compartmentId: ${schema.spec.compartmentId}
           vcnId: ${vcn.status.status.ocid}
           displayName: ${schema.metadata.name}-seclist
+          freeformTags:
+            no_reap: ${schema.spec.noReapTagValue}
           egressSecurityRules:
             - protocol: "all"
-              destination: all-iad-services-in-oracle-services-network
+              destination: "0.0.0.0/0"
+              destinationType: CIDR_BLOCK
+              isStateless: false
+              description: "Allow outbound internet via NAT"
+            - protocol: "all"
+              destination: ${schema.spec.serviceGatewayDestination}
               destinationType: SERVICE_CIDR_BLOCK
               isStateless: false
               description: "Allow all egress to OCI services via SGW"
@@ -189,8 +241,56 @@ spec:
               source: ${schema.spec.subnetCidrBlock}
               isStateless: false
               description: "Allow TCP within subnet"
+            - protocol: "6"
+              source: "0.0.0.0/0"
+              isStateless: false
+              description: "Allow OpenSearch API access"
+              tcpOptions:
+                destinationPortRange:
+                  min: 9200
+                  max: 9200
+            - protocol: "6"
+              source: "0.0.0.0/0"
+              isStateless: false
+              description: "Allow OpenSearch Dashboards access"
+              tcpOptions:
+                destinationPortRange:
+                  min: 5601
+                  max: 5601
       readyWhen:
         - ${securityList.status.status.ocid != ""}
+
+    # ── 7c. Network Security Group ───────────────────────────────────────────
+    # Attached to the Functions application below to exercise NSG references.
+    - id: networkSecurityGroup
+      template:
+        apiVersion: oci.oracle.com/v1beta1
+        kind: OciNetworkSecurityGroup
+        metadata:
+          name: ${schema.metadata.name}-nsg
+        spec:
+          compartmentId: ${schema.spec.compartmentId}
+          vcnId: ${vcn.status.status.ocid}
+          displayName: ${schema.metadata.name}-nsg
+          freeformTags:
+            no_reap: ${schema.spec.noReapTagValue}
+      readyWhen:
+        - ${networkSecurityGroup.status.status.ocid != ""}
+
+    # ── 7d. Dynamic Routing Gateway ──────────────────────────────────────────
+    # Standalone for controller coverage; the repo does not yet include a DRG
+    # attachment controller to wire it into the VCN topology.
+    - id: drg
+      template:
+        apiVersion: oci.oracle.com/v1beta1
+        kind: OciDrg
+        metadata:
+          name: ${schema.metadata.name}-drg
+        spec:
+          compartmentId: ${schema.spec.compartmentId}
+          displayName: ${schema.metadata.name}-drg
+          freeformTags:
+            no_reap: ${schema.spec.noReapTagValue}
 
     # ── 8. Subnet ─────────────────────────────────────────────────────────────
     - id: subnet
@@ -209,6 +309,10 @@ spec:
           routeTableId: ${routeTable.status.status.ocid}
           securityListIds:
             - ${securityList.status.status.ocid}
+          freeformTags:
+            no_reap: ${schema.spec.noReapTagValue}
+      readyWhen:
+        - ${subnet.status.status.conditions.filter(c, c.type == "Active" && c.status == "True").size() > 0}
 
     # ── 9. MySQL DB System ───────────────────────────────────────────────────
     - id: mysql
@@ -220,6 +324,8 @@ spec:
         spec:
           compartmentId: ${schema.spec.compartmentId}
           displayName: ${schema.metadata.name}-mysql
+          freeformTags:
+            no_reap: ${schema.spec.noReapTagValue}
           shapeName: MySQL.VM.Standard.E3.1.8GB
           subnetId: ${subnet.status.status.ocid}
           availabilityDomain: ${schema.spec.availabilityDomain}
@@ -242,10 +348,11 @@ spec:
         spec:
           compartmentId: ${schema.spec.compartmentId}
           displayName: ${schema.metadata.name}-postgres
+          freeformTags:
+            no_reap: ${schema.spec.noReapTagValue}
           dbVersion: "14"
           shape: PostgreSQL.VM.Standard.E5.Flex
           subnetId: ${subnet.status.status.ocid}
-          storageType: HighPerformance
           instanceCount: 1
           instanceOcpuCount: 2
           instanceMemoryInGBs: 32
@@ -266,6 +373,8 @@ spec:
         spec:
           compartmentId: ${schema.spec.compartmentId}
           name: ${schema.spec.nosqlTableName}
+          freeformTags:
+            no_reap: ${schema.spec.noReapTagValue}
           ddlStatement: >-
             CREATE TABLE IF NOT EXISTS ${schema.spec.nosqlTableName}
             (id STRING, ts TIMESTAMP(3), payload JSON, PRIMARY KEY(id))
@@ -284,6 +393,8 @@ spec:
         spec:
           compartmentId: ${schema.spec.compartmentId}
           displayName: ${schema.metadata.name}-redis
+          freeformTags:
+            no_reap: ${schema.spec.noReapTagValue}
           softwareVersion: V7_0_5
           nodeCount: 3
           nodeMemoryInGBs: 2
@@ -299,6 +410,8 @@ spec:
         spec:
           compartmentId: ${schema.spec.compartmentId}
           displayName: ${schema.metadata.name}-opensearch
+          freeformTags:
+            no_reap: ${schema.spec.noReapTagValue}
           softwareVersion: "2.11.0"
           masterNodeCount: 3
           masterNodeHostType: FLEX
@@ -329,6 +442,8 @@ spec:
           displayName: ${schema.metadata.name}-apigw
           endpointType: PUBLIC
           subnetId: ${schema.spec.lbSubnetId}
+          freeformTags:
+            no_reap: ${schema.spec.noReapTagValue}
 
     # ── 15. API Gateway Deployment ────────────────────────────────────────────
     # Stock responses only — no function backend required.
@@ -343,6 +458,8 @@ spec:
           displayName: ${schema.metadata.name}-apigw-deploy
           gatewayId: ${apiGateway.status.status.ocid}
           pathPrefix: /v1
+          freeformTags:
+            no_reap: ${schema.spec.noReapTagValue}
           routes:
             - path: /health
               methods:
@@ -352,7 +469,49 @@ spec:
                 status: 200
                 body: '{"status":"ok"}'
 
-    # ── 16. Container Instance ────────────────────────────────────────────────
+    # ── 16. Functions Application ────────────────────────────────────────────
+    # Runs on the platform subnet and references the NSG above so the example
+    # exercises both networking and Functions controller dependencies.
+    - id: functionsApplication
+      template:
+        apiVersion: oci.oracle.com/v1beta1
+        kind: FunctionsApplication
+        metadata:
+          name: ${schema.metadata.name}-functions-app
+        spec:
+          compartmentId: ${schema.spec.compartmentId}
+          displayName: ${schema.metadata.name}-functions-app
+          freeformTags:
+            no_reap: ${schema.spec.noReapTagValue}
+          subnetIds:
+            - ${subnet.status.status.ocid}
+          networkSecurityGroupIds:
+            - ${networkSecurityGroup.status.status.ocid}
+          shape: GENERIC_X86
+          config:
+            PLATFORM_NAME: ${schema.metadata.name}
+      readyWhen:
+        - ${functionsApplication.status.status.ocid != ""}
+
+    # ── 17. Functions Function ───────────────────────────────────────────────
+    - id: functionsFunction
+      template:
+        apiVersion: oci.oracle.com/v1beta1
+        kind: FunctionsFunction
+        metadata:
+          name: ${schema.metadata.name}-function
+        spec:
+          applicationId: ${functionsApplication.status.status.ocid}
+          displayName: ${schema.metadata.name}-function
+          image: ${schema.spec.functionImageUrl}
+          memoryInMBs: 256
+          timeoutInSeconds: 30
+          freeformTags:
+            no_reap: ${schema.spec.noReapTagValue}
+          config:
+            LOG_LEVEL: info
+
+    # ── 18. Container Instance ────────────────────────────────────────────────
     - id: containerInstance
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -363,6 +522,8 @@ spec:
           compartmentId: ${schema.spec.compartmentId}
           availabilityDomain: ${schema.spec.availabilityDomain}
           displayName: ${schema.metadata.name}-ci
+          freeformTags:
+            no_reap: ${schema.spec.noReapTagValue}
           shape: CI.Standard.x86.Generic
           shapeConfig:
             ocpus: 1
@@ -381,7 +542,7 @@ spec:
               displayName: primary-vnic
           containerRestartPolicy: ON_FAILURE
 
-    # ── 17. Compute Instance ──────────────────────────────────────────────────
+    # ── 19. Compute Instance ──────────────────────────────────────────────────
     - id: computeInstance
       template:
         apiVersion: oci.oracle.com/v1beta1
@@ -392,6 +553,8 @@ spec:
           compartmentId: ${schema.spec.compartmentId}
           displayName: ${schema.metadata.name}-vm
           availabilityDomain: ${schema.spec.availabilityDomain}
+          freeformTags:
+            no_reap: ${schema.spec.noReapTagValue}
           shape: VM.Standard.E4.Flex
           shapeConfig:
             ocpus: 1

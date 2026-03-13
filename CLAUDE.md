@@ -104,6 +104,17 @@ if spec.Description != "" { details.Description = common.String(spec.Description
 After resource is ACTIVE, write endpoint/connection info to a k8s Secret.
 See `gateway_secretgeneration.go` or `containerinstance` for the pattern.
 
+### KRO Example Invariants
+The KRO example files (`kro-platform-rgd.yaml`, `kro-platform-instance.yaml`, `docs/kro-example.md`)
+contain tested example values that should not be "normalized" to match generic samples.
+These are KRO-example-specific rules, not repo-wide defaults for every manifest.
+
+- PostgreSQL `dbVersion` in the KRO example is intentionally major-only.
+- PostgreSQL `shape` in the KRO example is intentionally the tested service-specific PostgreSQL shape.
+- Container Instance `shape` in the KRO example is intentionally the tested service-specific value.
+- `containerImageUrl` in the KRO example must remain an OCIR image reference, not a `docker.io` image.
+- Only change these values if the user explicitly requests it or new cluster testing has confirmed a replacement.
+
 ## Quality Control
 
 Use these repo-level checks before considering work complete:

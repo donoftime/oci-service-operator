@@ -11,22 +11,28 @@ spec:
   cidrBlock: "10.0.0.0/16"
   subnetCidrBlock: "10.0.1.0/24"
 
-  # Legacy fields — kept for schema compatibility
-  subnetId: ocid1.subnet.oc1.iad.aaaaaaaajubm6en7abkdkvyjb7oieedx6erstxi62zovgj3q5qbami2ygxza
-  vcnId: ocid1.vcn.oc1.iad.amaaaaaa2ahbgkyacqezlzup3hbkakou2pd2c7atxdrc76huezowualjc5xq
-
   # lbSubnetId is a pre-existing public subnet for the API Gateway
   lbSubnetId: ocid1.subnet.oc1.iad.aaaaaaaacmqn5tbxatzapwnqgapigor5jw7g2lft2gzqa2iqfnk56z6r2coa
 
+  # OCI Services Network values are region-specific
+  serviceGatewayServiceId: ocid1.service.oc1.iad.aaaaaaaam4zfmy2rjue6fmglumm3czgisxzrnvrwqeodtztg7hwa272mlfna
+  serviceGatewayDestination: all-iad-services-in-oracle-services-network
   objectStorageNamespace: okedev
+  # Pre-upload a SQL file and point Data Flow at its OCI URI.
+  dataflowFileUri: oci://my-platform-dataflow-artifacts-20260313-053100@okedev/dataflow/my-platform.sql
+  # Data Flow SQL also needs a warehouse bucket URI.
+  dataflowWarehouseBucketUri: oci://my-platform-dataflow-artifacts-20260313-053100@okedev
 
   mysqlCredentialsSecret: osok-platform-mysql-creds
   adbAdminPasswordSecret: osok-platform-adb-creds
 
   adbDbName: myplatformadb
   nosqlTableName: myplatform_events
+  noReapTagValue: "true"
 
   containerImageUrl: iad.ocir.io/okedev/dmayo/osok:latest
+  # Replace with a valid OCI Functions-compatible image in your OCIR repo.
+  functionImageUrl: iad.ocir.io/okedev/dmayo/osok-function:latest
 
   # imageId for the Compute Instance VM (Oracle-Linux-8.10-2026.01.29-0 in us-ashburn-1)
   imageId: ocid1.image.oc1.iad.aaaaaaaanfvealtkbagzff3alti6od4ehazp67jnstifmfrripsabel3khsa

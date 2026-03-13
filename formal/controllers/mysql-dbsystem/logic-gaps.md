@@ -9,6 +9,10 @@
 - Supported MySQL update reconciliation now includes backup policy drift, data-storage growth, hostname label drift, HA toggles, maintenance window drift, and shape drift in addition to the earlier display-name/configuration/tag surface.
 - Immutable spec changes now fail closed at the CRD boundary for the audited reject surface, while the service manager rejects the live-visible immutable fields before mutation.
 
+## Cluster Exercise Findings (2026-03-13)
+- Managed MySQL reconciles still skip the update path after resolving an existing DB system by name. `resolveManagedDbSystem` returns the live instance without calling `UpdateMySqlDbSystem`, so managed-spec drift is silently ignored.
+- During the `no_reap=true` tag exercise, the CR spec and CR status both looked healthy (`Active` with `spec.freeformTags.no_reap=true`), but OCI still reported the DB system `ACTIVE` without the `no_reap` freeform tag.
+
 ## Pending Update Surface Audit
 
 ### Should Reconcile In Place
